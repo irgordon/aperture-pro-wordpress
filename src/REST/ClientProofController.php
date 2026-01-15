@@ -4,15 +4,14 @@ namespace AperturePro\REST;
 
 use WP_REST_Request;
 use AperturePro\Auth\CookieService;
-use AperturePro\Storage\StorageFactory;
-use AperturePro\Workflow\Workflow;
+use AperturePro\Proof\ProofService;
 use AperturePro\Helpers\Logger;
+use AperturePro\Storage\StorageFactory;
 
 /**
- * ClientProofController
+ * ClientProofController (updated)
  *
- * Proofing endpoints used by client portal: list proofs, select, comment, approve.
- * All endpoints are guarded by client session checks and use with_error_boundary.
+ * Returns watermarked low-resolution proof URLs for client proofing.
  */
 class ClientProofController extends BaseController
 {
@@ -43,9 +42,6 @@ class ClientProofController extends BaseController
         ]);
     }
 
-    /**
-     * Ensure the client session matches the project.
-     */
     protected function require_client_session_for_project(int $projectId): ?array
     {
         $session = CookieService::getClientSession();
@@ -76,9 +72,6 @@ class ClientProofController extends BaseController
         return $row ?: null;
     }
 
-    /**
-     * Return proofs for a project (proof gallery).
-     */
     public function get_proofs(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -112,8 +105,6 @@ class ClientProofController extends BaseController
                 )
             );
 
-            $storage = StorageFactory::make();
-
             $imageData = [];
             foreach ($images as $img) {
                 $comments = [];
@@ -124,9 +115,28 @@ class ClientProofController extends BaseController
                     }
                 }
 
+                // Generate or fetch watermarked low-res proof URL
+                $proofUrl = null;
+                try {
+                    $proofUrl = ProofService::getProofUrlForImage($img, ['expires' => 300]);
+                } catch (\Throwable $e) {
+                    Logger::log('warning', 'client_proof', 'ProofService failed', ['image_id' => $img->id, 'error' => $e->getMessage()]);
+                }
+
+                // Fallback: if proof generation failed, return a signed URL for original but with short TTL
+                if (empty($proofUrl)) {
+                    try {
+                        $storage = StorageFactory::make();
+                        $proofUrl = $storage->getUrl($img->storage_key_original, ['signed' => true, 'expires' => 120]);
+                    } catch (\Throwable $e) {
+                        Logger::log('warning', 'client_proof', 'Failed to get fallback original URL', ['image_id' => $img->id, 'error' => $e->getMessage()]);
+                        $proofUrl = null;
+                    }
+                }
+
                 $imageData[] = [
                     'id'          => (int) $img->id,
-                    'url'         => $storage->getUrl($img->storage_key_original, ['signed' => true, 'expires' => 300]),
+                    'url'         => $proofUrl,
                     'is_selected' => (bool) $img->is_selected,
                     'comments'    => $comments,
                 ];
@@ -140,9 +150,7 @@ class ClientProofController extends BaseController
         }, ['endpoint' => 'client_get_proofs']);
     }
 
-    /**
-     * Toggle selection for an image.
-     */
+    // select_image, comment_image, approve_proofs unchanged from earlier implementation
     public function select_image(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -203,9 +211,6 @@ class ClientProofController extends BaseController
         }, ['endpoint' => 'client_select_image']);
     }
 
-    /**
-     * Add a comment to an image.
-     */
     public function comment_image(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -291,9 +296,6 @@ class ClientProofController extends BaseController
         }, ['endpoint' => 'client_comment_image']);
     }
 
-    /**
-     * Approve proofs (finalize selection).
-     */
     public function approve_proofs(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -341,8 +343,7 @@ class ClientProofController extends BaseController
                 return $this->respond_error('update_failed', 'Could not approve proofs.', 500);
             }
 
-            // Trigger workflow hook
-            Workflow::onProofsApproved((int) $gallery->project_id, $galleryId);
+            \AperturePro\Workflow\Workflow::onProofsApproved((int) $gallery->project_id, $galleryId);
 
             Logger::log('info', 'client_proof', 'Proofs approved by client', ['project_id' => (int)$gallery->project_id, 'gallery_id' => $galleryId]);
 
