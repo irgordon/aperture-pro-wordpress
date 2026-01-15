@@ -149,6 +149,55 @@ class AdminUI
             $existing = get_option(self::OPTION_KEY, []);
             $out['cloud_api_key'] = $existing['cloud_api_key'] ?? '';
         }
+// S3 bucket
+$out['s3_bucket'] = isset($input['s3_bucket'])
+    ? sanitize_text_field($input['s3_bucket'])
+    : '';
+
+// S3 region
+$out['s3_region'] = isset($input['s3_region'])
+    ? sanitize_text_field($input['s3_region'])
+    : '';
+
+// S3 access key (encrypted)
+if (!empty($input['s3_access_key'])) {
+    $out['s3_access_key'] = Crypto::encrypt(
+        sanitize_text_field($input['s3_access_key'])
+    );
+} else {
+    $existing = get_option(self::OPTION_KEY, []);
+    $out['s3_access_key'] = $existing['s3_access_key'] ?? '';
+}
+
+// S3 secret key (encrypted)
+if (!empty($input['s3_secret_key'])) {
+    $out['s3_secret_key'] = Crypto::encrypt(
+        sanitize_text_field($input['s3_secret_key'])
+    );
+} else {
+    $existing = get_option(self::OPTION_KEY, []);
+    $out['s3_secret_key'] = $existing['s3_secret_key'] ?? '';
+}
+
+// CloudFront domain
+$out['cloudfront_domain'] = isset($input['cloudfront_domain'])
+    ? esc_url_raw($input['cloudfront_domain'])
+    : '';
+
+// CloudFront key pair ID
+$out['cloudfront_key_pair_id'] = isset($input['cloudfront_key_pair_id'])
+    ? sanitize_text_field($input['cloudfront_key_pair_id'])
+    : '';
+
+// CloudFront private key (encrypted)
+if (!empty($input['cloudfront_private_key'])) {
+    $out['cloudfront_private_key'] = Crypto::encrypt(
+        trim($input['cloudfront_private_key'])
+    );
+} else {
+    $existing = get_option(self::OPTION_KEY, []);
+    $out['cloudfront_private_key'] = $existing['cloudfront_private_key'] ?? '';
+}
 
         // Email sender
         $out['email_sender'] = isset($input['email_sender']) ? sanitize_email($input['email_sender']) : get_option('admin_email');
