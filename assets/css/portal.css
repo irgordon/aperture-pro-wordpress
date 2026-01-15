@@ -1,0 +1,38 @@
+.ap-portal {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.ap-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.ap-proof-card {
+  border: 1px solid #ddd;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.ap-proof-card.selected {
+  border-color: #007cba;
+  box-shadow: 0 0 0 1px #007cba;
+}
+
+.ap-proof-card img {
+  max-width: 100%;
+  display: block;
+}
+
+.ap-proof-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.ap-comments {
+  margin-top: 8px;
+  padding-left: 16px;
+  font-size: 12px;
+}
