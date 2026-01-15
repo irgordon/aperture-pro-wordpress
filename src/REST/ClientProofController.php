@@ -6,7 +6,14 @@ use WP_REST_Request;
 use AperturePro\Auth\CookieService;
 use AperturePro\Storage\StorageFactory;
 use AperturePro\Workflow\Workflow;
+use AperturePro\Helpers\Logger;
 
+/**
+ * ClientProofController
+ *
+ * Proofing endpoints used by client portal: list proofs, select, comment, approve.
+ * All endpoints are guarded by client session checks and use with_error_boundary.
+ */
 class ClientProofController extends BaseController
 {
     public function register_routes(): void
@@ -36,6 +43,9 @@ class ClientProofController extends BaseController
         ]);
     }
 
+    /**
+     * Ensure the client session matches the project.
+     */
     protected function require_client_session_for_project(int $projectId): ?array
     {
         $session = CookieService::getClientSession();
@@ -66,6 +76,9 @@ class ClientProofController extends BaseController
         return $row ?: null;
     }
 
+    /**
+     * Return proofs for a project (proof gallery).
+     */
     public function get_proofs(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -113,7 +126,7 @@ class ClientProofController extends BaseController
 
                 $imageData[] = [
                     'id'          => (int) $img->id,
-                    'url'         => $storage->getUrl($img->storage_key_original),
+                    'url'         => $storage->getUrl($img->storage_key_original, ['signed' => true, 'expires' => 300]),
                     'is_selected' => (bool) $img->is_selected,
                     'comments'    => $comments,
                 ];
@@ -127,6 +140,9 @@ class ClientProofController extends BaseController
         }, ['endpoint' => 'client_get_proofs']);
     }
 
+    /**
+     * Toggle selection for an image.
+     */
     public function select_image(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -187,6 +203,9 @@ class ClientProofController extends BaseController
         }, ['endpoint' => 'client_select_image']);
     }
 
+    /**
+     * Add a comment to an image.
+     */
     public function comment_image(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -272,6 +291,9 @@ class ClientProofController extends BaseController
         }, ['endpoint' => 'client_comment_image']);
     }
 
+    /**
+     * Approve proofs (finalize selection).
+     */
     public function approve_proofs(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -319,7 +341,10 @@ class ClientProofController extends BaseController
                 return $this->respond_error('update_failed', 'Could not approve proofs.', 500);
             }
 
+            // Trigger workflow hook
             Workflow::onProofsApproved((int) $gallery->project_id, $galleryId);
+
+            Logger::log('info', 'client_proof', 'Proofs approved by client', ['project_id' => (int)$gallery->project_id, 'gallery_id' => $galleryId]);
 
             return $this->respond_success([
                 'project_id' => (int) $gallery->project_id,
