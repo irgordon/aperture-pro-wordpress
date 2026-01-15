@@ -323,9 +323,13 @@ class AdminController extends BaseController
 
             $results['checks']['tables'] = [];
 
+            $like = $wpdb->prefix . '%';
+            $existingTables = $wpdb->get_col("SHOW TABLES LIKE '{$like}'");
+            $existingMap = array_flip($existingTables);
+
             foreach ($requiredTables as $table) {
                 $full = $wpdb->prefix . $table;
-                $exists = ($wpdb->get_var("SHOW TABLES LIKE '{$full}'") === $full);
+                $exists = isset($existingMap[$full]);
 
                 $results['checks']['tables'][$table] = $exists;
 
