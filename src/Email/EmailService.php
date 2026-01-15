@@ -7,28 +7,28 @@ use AperturePro\Helpers\Logger;
 /**
  * EmailService
  *
- * Lightweight templated email sender for Aperture Pro.
+ * - sendTemplate() remains for normal transactional emails to clients.
+ * - enqueueAdminNotification() queues admin emails to avoid email storms.
+ * - A WP Cron job processes the admin email queue at a controlled rate.
  *
- * Usage:
- *  EmailService::sendTemplate('project-created', $to, $placeholders);
+ * Queue storage:
+ *  - Stored in an option 'ap_admin_email_queue' as an array of items.
+ *  - Each item: ['level','context','subject','body','meta','created_at']
  *
- * Templates are PHP files under src/Email/Templates that return an array:
- *  ['subject' => '...', 'body' => '...']
- *
- * Placeholders are simple key => value replacements in subject and body.
+ * Rate limiting:
+ *  - The processor will send up to MAX_PER_RUN emails per run and will dedupe similar contexts.
  */
 class EmailService
 {
     const TEMPLATE_PATH = __DIR__ . '/Templates/';
+    const ADMIN_QUEUE_OPTION = 'ap_admin_email_queue';
+    const ADMIN_QUEUE_LOCK = 'ap_admin_email_queue_lock';
+    const CRON_HOOK = 'aperture_pro_send_admin_emails';
+    const MAX_PER_RUN = 3; // send up to 3 admin emails per cron run
+    const DEDUPE_WINDOW = 900; // 15 minutes dedupe window for same context
 
     /**
-     * Send a templated email.
-     *
-     * @param string $templateName e.g., 'project-created'
-     * @param string|array $to email or array of emails
-     * @param array $placeholders associative replacements
-     * @param array $headers optional headers for wp_mail
-     * @return bool true on success, false on failure
+     * Send a templated email to client(s).
      */
     public static function sendTemplate(string $templateName, $to, array $placeholders = [], array $headers = []): bool
     {
@@ -38,7 +38,6 @@ class EmailService
             return false;
         }
 
-        // Load template
         $template = include $templateFile;
         if (!is_array($template) || empty($template['subject']) || empty($template['body'])) {
             Logger::log('error', 'email', 'Email template returned invalid structure', ['template' => $templateName, 'notify_admin' => true]);
@@ -48,24 +47,28 @@ class EmailService
         $subject = self::applyPlaceholders($template['subject'], $placeholders);
         $body = self::applyPlaceholders($template['body'], $placeholders);
 
-        // Default headers
         $defaultHeaders = [
             'Content-Type: text/plain; charset=UTF-8',
         ];
 
         $allHeaders = array_merge($defaultHeaders, $headers);
 
-        // Attempt to send, with a single retry on failure
         $sent = @wp_mail($to, $subject, $body, $allHeaders);
 
         if (!$sent) {
-            // Retry once after a short pause
+            // Retry once
             sleep(1);
             $sent = @wp_mail($to, $subject, $body, $allHeaders);
         }
 
         if (!$sent) {
             Logger::log('error', 'email', 'Failed to send email', ['template' => $templateName, 'to' => $to, 'placeholders' => $placeholders, 'notify_admin' => true]);
+            // Queue admin notification about email failure
+            self::enqueueAdminNotification('error', 'email', 'Failed to send transactional email', [
+                'template' => $templateName,
+                'to' => $to,
+                'placeholders' => $placeholders,
+            ]);
             return false;
         }
 
@@ -74,9 +77,115 @@ class EmailService
     }
 
     /**
-     * Replace placeholders in a string.
+     * Enqueue an admin notification. This avoids immediate email storms.
      *
-     * Placeholders are in the form {{key}}.
+     * @param string $level
+     * @param string $context
+     * @param string $message
+     * @param array $meta
+     */
+    public static function enqueueAdminNotification(string $level, string $context, string $message, array $meta = []): void
+    {
+        $queue = get_option(self::ADMIN_QUEUE_OPTION, []);
+        if (!is_array($queue)) {
+            $queue = [];
+        }
+
+        $item = [
+            'level' => $level,
+            'context' => $context,
+            'subject' => sprintf('[Aperture Pro] %s: %s', strtoupper($level), $context),
+            'body' => $message . "\n\n" . print_r($meta, true),
+            'meta' => $meta,
+            'created_at' => current_time('mysql'),
+        ];
+
+        $queue[] = $item;
+        update_option(self::ADMIN_QUEUE_OPTION, $queue, false);
+
+        // Ensure cron is scheduled
+        if (!wp_next_scheduled(self::CRON_HOOK)) {
+            wp_schedule_event(time() + 60, 'minute', self::CRON_HOOK);
+        }
+    }
+
+    /**
+     * Cron processor for admin email queue.
+     * Sends up to MAX_PER_RUN emails per run, deduping by context within DEDUPE_WINDOW.
+     */
+    public static function processAdminQueue(): void
+    {
+        // Simple lock to avoid concurrent runs
+        if (get_transient(self::ADMIN_QUEUE_LOCK)) {
+            return;
+        }
+        set_transient(self::ADMIN_QUEUE_LOCK, 1, 30);
+
+        $queue = get_option(self::ADMIN_QUEUE_OPTION, []);
+        if (!is_array($queue) || empty($queue)) {
+            delete_transient(self::ADMIN_QUEUE_LOCK);
+            return;
+        }
+
+        $sentCount = 0;
+        $now = time();
+        $sentContexts = [];
+
+        // Load last-sent times to dedupe
+        $lastSent = get_option('ap_admin_email_last_sent', []);
+        if (!is_array($lastSent)) {
+            $lastSent = [];
+        }
+
+        $remaining = [];
+
+        foreach ($queue as $item) {
+            if ($sentCount >= self::MAX_PER_RUN) {
+                $remaining[] = $item;
+                continue;
+            }
+
+            $context = $item['context'] ?? 'general';
+            $last = isset($lastSent[$context]) ? strtotime($lastSent[$context]) : 0;
+
+            if (($now - $last) < self::DEDUPE_WINDOW) {
+                // Skip sending now; keep in queue
+                $remaining[] = $item;
+                continue;
+            }
+
+            // Send email
+            $adminEmail = get_option('admin_email');
+            if (empty($adminEmail)) {
+                // Can't send; keep in queue and log
+                Logger::log('warning', 'email_queue', 'No admin email configured; keeping notification in queue', ['context' => $context]);
+                $remaining[] = $item;
+                continue;
+            }
+
+            $headers = ['Content-Type: text/plain; charset=UTF-8'];
+            $sent = @wp_mail($adminEmail, $item['subject'], $item['body'], $headers);
+
+            if ($sent) {
+                $sentCount++;
+                $lastSent[$context] = current_time('mysql');
+                Logger::log('info', 'email_queue', 'Admin notification sent', ['context' => $context]);
+            } else {
+                // Failed to send; keep in queue and log
+                Logger::log('warning', 'email_queue', 'Failed to send admin notification; will retry', ['context' => $context]);
+                $remaining[] = $item;
+            }
+        }
+
+        // Persist remaining queue and lastSent
+        update_option(self::ADMIN_QUEUE_OPTION, $remaining, false);
+        update_option('ap_admin_email_last_sent', $lastSent, false);
+
+        delete_transient(self::ADMIN_QUEUE_LOCK);
+    }
+
+    /**
+     * Apply placeholders in text.
      */
     protected static function applyPlaceholders(string $text, array $placeholders = []): string
     {
@@ -86,10 +195,9 @@ class EmailService
 
         $search = [];
         $replace = [];
-
         foreach ($placeholders as $k => $v) {
             $search[] = '{{' . $k . '}}';
-            $replace[] = (string) $v;
+            $replace[] = (string)$v;
         }
 
         return str_replace($search, $replace, $text);
