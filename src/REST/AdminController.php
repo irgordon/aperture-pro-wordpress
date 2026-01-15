@@ -7,7 +7,14 @@ use AperturePro\Config\Config;
 use AperturePro\Storage\StorageFactory;
 use AperturePro\Helpers\Logger;
 use AperturePro\Workflow\Workflow;
+use AperturePro\Email\EmailService;
 
+/**
+ * AdminController
+ *
+ * Admin-only endpoints for project creation, download link generation, logs, and health.
+ * All endpoints use with_error_boundary and surface critical issues to Health Card and admin queue.
+ */
 class AdminController extends BaseController
 {
     public function register_routes(): void
@@ -42,6 +49,9 @@ class AdminController extends BaseController
         return current_user_can('manage_options');
     }
 
+    /**
+     * Create a project and client if needed.
+     */
     public function create_project(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -155,44 +165,93 @@ class AdminController extends BaseController
                     'Create project failed: ' . $e->getMessage(),
                     [
                         'trace' => $e->getTraceAsString(),
+                        'notify_admin' => true,
                     ]
                 );
+
+                EmailService::enqueueAdminNotification('error', 'admin_create_project', 'Project creation failed', ['error' => $e->getMessage()]);
 
                 return $this->respond_error('create_failed', 'Could not create project.', 500);
             }
         }, ['endpoint' => 'admin_create_project']);
     }
 
+    /**
+     * Generate a download token for a project (admin-triggered).
+     * Accepts optional email to bind the token to a recipient.
+     */
     public function generate_download_link(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
             $projectId = (int) $request['project_id'];
+            $email = sanitize_email((string) $request->get_param('email'));
+
             if ($projectId <= 0) {
                 return $this->respond_error('invalid_input', 'Invalid project id.', 400);
             }
 
-            $token = Workflow::generateDownloadTokenForProject($projectId);
-            if (!$token) {
+            global $wpdb;
+            $downloadsTable = $wpdb->prefix . 'ap_download_tokens';
+
+            $token = bin2hex(random_bytes(32));
+            $expiresAt = date('Y-m-d H:i:s', time() + (7 * 24 * 3600)); // 7 days
+
+            $galleryId = $this->get_final_gallery_id_for_project($projectId);
+
+            $inserted = $wpdb->insert(
+                $downloadsTable,
+                [
+                    'gallery_id' => $galleryId,
+                    'project_id' => $projectId,
+                    'token'      => $token,
+                    'expires_at' => $expiresAt,
+                    'created_at' => current_time('mysql'),
+                    'email'      => $email,
+                ],
+                ['%d', '%d', '%s', '%s', '%s', '%s']
+            );
+
+            if ($inserted === false) {
+                Logger::log('error', 'admin', 'Failed to persist download token', ['project_id' => $projectId, 'notify_admin' => true]);
                 return $this->respond_error('token_failed', 'Could not generate download link.', 500);
             }
 
+            // Set transient for quick lookup
+            $transientKey = 'ap_download_' . $token;
+            $payload = [
+                'gallery_id' => $galleryId,
+                'project_id' => $projectId,
+                'email'      => $email,
+                'created_at' => time(),
+                'expires_at' => strtotime($expiresAt),
+            ];
+            set_transient($transientKey, $payload, 7 * 24 * 3600);
+
             $url = add_query_arg('ap_download', $token, home_url('/'));
 
-            Logger::log(
-                'info',
-                'admin',
-                'Download link generated',
-                [
-                    'project_id' => $projectId,
-                ]
-            );
+            Logger::log('info', 'admin', 'Download link generated', ['project_id' => $projectId, 'token' => $token]);
 
             return $this->respond_success([
                 'download_url' => $url,
+                'expires_at'   => $expiresAt,
             ]);
         }, ['endpoint' => 'admin_generate_download_link']);
     }
 
+    /**
+     * Helper: find final gallery id for a project (first final gallery)
+     */
+    protected function get_final_gallery_id_for_project(int $projectId): ?int
+    {
+        global $wpdb;
+        $galleries = $wpdb->prefix . 'ap_galleries';
+        $id = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$galleries} WHERE project_id = %d AND type = %s LIMIT 1", $projectId, 'final'));
+        return $id ? (int)$id : null;
+    }
+
+    /**
+     * Return recent logs for admin UI.
+     */
     public function get_logs(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
@@ -237,6 +296,10 @@ class AdminController extends BaseController
         }, ['endpoint' => 'admin_get_logs']);
     }
 
+    /**
+     * Health check endpoint used by Admin Command Center.
+     * Includes storage, DB tables, config, and upload watchdog health.
+     */
     public function health_check(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () {
@@ -288,9 +351,14 @@ class AdminController extends BaseController
                 Logger::log(
                     'error',
                     'health_check',
-                    'Storage driver unavailable: ' . $e->getMessage()
+                    'Storage driver unavailable: ' . $e->getMessage(),
+                    ['notify_admin' => true]
                 );
             }
+
+            // Upload watchdog health (if present)
+            $watchdog = get_transient('ap_upload_watchdog_health');
+            $results['checks']['upload_watchdog'] = $watchdog ?: ['ok' => true];
 
             try {
                 Logger::log('info', 'health_check', 'Health check executed.');
