@@ -736,9 +736,4 @@
   // Initialize UI
   UI.init();
 
-  // Expose for debugging
-  window.ApertureClientUploader = {
-    ChunkedUploader,
-    UI,
-  };
 })();
