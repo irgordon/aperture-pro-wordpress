@@ -14,25 +14,72 @@ if (!defined('ABSPATH')) {
 $autoload = __DIR__ . '/vendor/autoload.php';
 if (file_exists($autoload)) {
     require_once $autoload;
+} else {
+    // Minimal manual requires for critical classes if not using Composer
+    $base = __DIR__;
+    $maybe = [
+        '/src/Helpers/Crypto.php',
+        '/src/Admin/AdminUI.php',
+        '/src/ClientPortal/PortalController.php',
+        '/src/ClientPortal/PortalRenderer.php',
+        '/src/REST/UploadController.php',
+        '/src/REST/AuthController.php',
+        '/src/REST/ClientProofController.php',
+        '/src/REST/AdminController.php',
+        '/src/REST/DownloadController.php',
+        '/src/REST/PaymentController.php',
+        '/src/Upload/ChunkedUploadHandler.php',
+        '/src/Upload/Watchdog.php',
+        '/src/Email/EmailService.php',
+        '/src/Proof/ProofService.php',
+        '/src/Services/PaymentService.php',
+        // add other required files as needed
+    ];
+    foreach ($maybe as $rel) {
+        $path = $base . $rel;
+        if (file_exists($path)) {
+            require_once $path;
+        }
+    }
 }
 
-// Fallback autoloader or manual requires could be added here if not using Composer.
+// Initialize helpers and admin UI
+if (class_exists('\AperturePro\Helpers\Crypto')) {
+    // No explicit init required for Crypto; ensure class is autoloadable
+}
 
-// Register REST controllers and cron hooks on init
+if (class_exists('\AperturePro\Admin\AdminUI')) {
+    \AperturePro\Admin\AdminUI::init();
+}
+
+// Theme variables admin module (optional)
+if (class_exists('\AperturePro\Admin\ThemeVariables')) {
+    \AperturePro\Admin\ThemeVariables::init();
+}
+
+// Client portal initialization
+if (class_exists('\AperturePro\ClientPortal\PortalController')) {
+    \AperturePro\ClientPortal\PortalController::init();
+}
+
+// Register REST controllers on rest_api_init
 add_action('rest_api_init', function () {
-    // Instantiate controllers and register routes
     $controllers = [
-        new \AperturePro\REST\UploadController(),
-        new \AperturePro\REST\AuthController(),
-        new \AperturePro\REST\ClientProofController(),
-        new \AperturePro\REST\AdminController(),
-        new \AperturePro\REST\DownloadController(),
-        // other controllers already present in the plugin...
+        '\AperturePro\REST\UploadController',
+        '\AperturePro\REST\AuthController',
+        '\AperturePro\REST\ClientProofController',
+        '\AperturePro\REST\AdminController',
+        '\AperturePro\REST\DownloadController',
+        '\AperturePro\REST\PaymentController',
+        // add other controllers as needed
     ];
 
-    foreach ($controllers as $controller) {
-        if (method_exists($controller, 'register_routes')) {
-            $controller->register_routes();
+    foreach ($controllers as $class) {
+        if (class_exists($class)) {
+            $instance = new $class();
+            if (method_exists($instance, 'register_routes')) {
+                $instance->register_routes();
+            }
         }
     }
 });
@@ -45,15 +92,21 @@ add_filter('cron_schedules', function ($schedules) {
             'display' => __('Every 15 Minutes'),
         ];
     }
+    // Ensure minute schedule exists for email queue processing
+    if (!isset($schedules['minute'])) {
+        $schedules['minute'] = [
+            'interval' => 60,
+            'display' => __('Every Minute'),
+        ];
+    }
     return $schedules;
 });
 
-// Schedule Watchdog cron (every 15 minutes)
+// Schedule Watchdog cron (every 15 minutes) and admin email queue (every minute)
 register_activation_hook(__FILE__, function () {
     if (!wp_next_scheduled('aperture_pro_watchdog_cron')) {
         wp_schedule_event(time() + 60, 'quarterhour', 'aperture_pro_watchdog_cron');
     }
-    // Schedule admin email queue processor (every minute)
     if (!wp_next_scheduled('aperture_pro_send_admin_emails')) {
         wp_schedule_event(time() + 60, 'minute', 'aperture_pro_send_admin_emails');
     }
@@ -66,8 +119,14 @@ register_deactivation_hook(__FILE__, function () {
 });
 
 // Hook cron callbacks to service methods
-add_action('aperture_pro_watchdog_cron', ['\AperturePro\Upload\Watchdog', 'run']);
-add_action('aperture_pro_send_admin_emails', ['\AperturePro\Email\EmailService', 'processAdminQueue']);
+if (class_exists('\AperturePro\Upload\Watchdog')) {
+    add_action('aperture_pro_watchdog_cron', ['\AperturePro\Upload\Watchdog', 'run']);
+}
+if (class_exists('\AperturePro\Email\EmailService')) {
+    add_action('aperture_pro_send_admin_emails', ['\AperturePro\Email\EmailService', 'processAdminQueue']);
+}
 
-// Optionally, ensure EmailService cron hook is registered for processing admin queue
-// (EmailService::CRON_HOOK constant exists in EmailService; we also schedule above).
+// Optional: expose a small health endpoint or admin notice integration here
+// (Health Card reads transients set by Watchdog and controllers)
+
+// End of bootstrap
