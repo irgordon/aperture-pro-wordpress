@@ -3,16 +3,20 @@
 namespace AperturePro\REST;
 
 use WP_REST_Request;
-use WP_REST_Response;
 use AperturePro\Download\ZipStreamService;
 use AperturePro\Helpers\Logger;
+use AperturePro\Auth\MagicLinkService;
+use AperturePro\Auth\CookieService;
 
+/**
+ * DownloadController
+ *
+ * - Validates download tokens bound to project and email.
+ * - Provides endpoint for ZIP downloads (token in URL).
+ * - Provides endpoint for regenerating a download token from the client portal (client must be authenticated via cookie).
+ */
 class DownloadController extends BaseController
 {
-    // Rate limiting settings
-    const RATE_LIMIT_WINDOW = 60; // seconds
-    const RATE_LIMIT_MAX = 10; // max requests per window per token/ip
-
     public function register_routes(): void
     {
         register_rest_route($this->namespace, '/download/(?P<token>[a-f0-9]{64})', [
@@ -21,31 +25,26 @@ class DownloadController extends BaseController
             'permission_callback' => '__return_true',
         ]);
 
-        // New route: serve local files by signed token
-        register_rest_route($this->namespace, '/local-file/(?P<token>[a-f0-9]{64})', [
-            'methods'             => 'GET',
-            'callback'            => [$this, 'serve_local_file'],
+        // Client portal: regenerate download token for project (valid for 7 days)
+        register_rest_route($this->namespace, '/projects/(?P<project_id>\d+)/regenerate-download-token', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'regenerate_download_token'],
             'permission_callback' => '__return_true',
-            'args' => [
-                'token' => [
-                    'required' => true,
-                ],
-            ],
         ]);
     }
 
     /**
-     * Existing ZIP download route (unchanged).
+     * Stream ZIP by token. Token must be bound to project/email as enforced by ZipStreamService.
      */
     public function download_zip(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
             $token = sanitize_text_field($request->get_param('token'));
-
             if (empty($token)) {
                 return $this->respond_error('missing_token', 'Download token is required.', 400);
             }
 
+            // If token is persisted in DB, it may include email binding. We do not require additional params here.
             $result = ZipStreamService::streamByToken($token);
 
             if (!is_array($result) || empty($result['success'])) {
@@ -71,215 +70,88 @@ class DownloadController extends BaseController
     }
 
     /**
-     * Serve a local file referenced by a signed transient token.
+     * Regenerate a download token for a project from the client portal.
      *
-     * This method streams the file directly and exits. It validates:
-     *  - transient exists
-     *  - not expired
-     *  - file exists on disk
-     *  - token bound IP matches request IP (if binding enabled)
-     *  - rate limiting per token/IP
-     *
-     * On any critical failure, it logs and sends admin notification via Logger.
-     *
-     * Partial download / resumability:
-     *  - This method includes a basic single-range implementation for "Range" header.
-     *  - For production, consider robust support for multiple ranges and resume semantics.
+     * Requirements:
+     *  - Client must have a valid cookie session (CookieService)
+     *  - Session project_id must match requested project_id
+     *  - Generates a new token valid for 7 days and persists it as a transient and DB record
      */
-    public function serve_local_file(WP_REST_Request $request)
+    public function regenerate_download_token(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
-            $token = sanitize_text_field($request->get_param('token'));
-            if (empty($token)) {
-                return $this->respond_error('missing_token', 'Token is required.', 400);
+            $projectId = (int) $request['project_id'];
+            if ($projectId <= 0) {
+                return $this->respond_error('invalid_input', 'Invalid project id.', 400);
             }
 
-            $transientKey = 'ap_local_file_' . $token;
-            $payload = get_transient($transientKey);
-
-            if (empty($payload) || !is_array($payload)) {
-                Logger::log('warning', 'download', 'Local file token invalid or expired', ['token' => $token]);
-                return $this->respond_error('invalid_token', 'This link is no longer valid.', 410);
+            $session = CookieService::getClientSession();
+            if (!$session || (int)$session['project_id'] !== $projectId) {
+                return $this->respond_error('unauthorized', 'You do not have access to this project.', 403);
             }
 
-            // Rate limiting: per-token and per-IP counters
-            $clientIp = $this->getClientIp();
-            $rateKeyToken = "ap_local_rate_token_{$token}";
-            $rateKeyIp = "ap_local_rate_ip_" . md5($clientIp);
+            // Create a new token bound to project and client email (if available)
+            // We will persist token in DB ap_download_tokens for audit and regeneration
+            global $wpdb;
+            $downloadsTable = $wpdb->prefix . 'ap_download_tokens';
 
-            $tokenCount = (int) get_transient($rateKeyToken);
-            $ipCount = (int) get_transient($rateKeyIp);
+            // Generate token
+            $token = bin2hex(random_bytes(32));
+            $expiresAt = date('Y-m-d H:i:s', time() + (7 * 24 * 3600)); // 7 days
 
-            if ($tokenCount >= self::RATE_LIMIT_MAX || $ipCount >= self::RATE_LIMIT_MAX) {
-                Logger::log('warning', 'download', 'Rate limit exceeded for token or IP', ['token' => $token, 'ip' => $clientIp]);
-                return $this->respond_error('rate_limited', 'Too many requests. Please try again later.', 429);
+            // Determine client email if available via clients table
+            $clientsTable = $wpdb->prefix . 'ap_clients';
+            $clientRow = $wpdb->get_row($wpdb->prepare("SELECT email FROM {$clientsTable} WHERE id = %d LIMIT 1", (int)$session['client_id']));
+            $email = $clientRow ? $clientRow->email : null;
+
+            $inserted = $wpdb->insert(
+                $downloadsTable,
+                [
+                    'gallery_id' => self::get_final_gallery_id_for_project($projectId),
+                    'token'      => $token,
+                    'expires_at' => $expiresAt,
+                    'created_at' => current_time('mysql'),
+                    'email'      => $email,
+                    'project_id' => $projectId,
+                ],
+                ['%d', '%s', '%s', '%s', '%s', '%d']
+            );
+
+            if ($inserted === false) {
+                Logger::log('error', 'download', 'Failed to persist download token', ['project_id' => $projectId, 'notify_admin' => true]);
+                return $this->respond_error('persist_failed', 'Could not create download token.', 500);
             }
 
-            // Increment counters (set TTL to window)
-            set_transient($rateKeyToken, $tokenCount + 1, self::RATE_LIMIT_WINDOW);
-            set_transient($rateKeyIp, $ipCount + 1, self::RATE_LIMIT_WINDOW);
+            // Also set transient for quick lookup
+            $transientKey = 'ap_download_' . $token;
+            $payload = [
+                'gallery_id' => (int) self::get_final_gallery_id_for_project($projectId),
+                'project_id' => $projectId,
+                'email'      => $email,
+                'created_at' => time(),
+                'expires_at' => strtotime($expiresAt),
+            ];
+            set_transient($transientKey, $payload, 7 * 24 * 3600);
 
-            // Check expiry
-            $now = time();
-            if (!empty($payload['expires_at']) && $now > (int) $payload['expires_at']) {
-                delete_transient($transientKey);
-                Logger::log('warning', 'download', 'Local file token expired', ['token' => $token]);
-                return $this->respond_error('expired_token', 'This link has expired.', 410);
-            }
+            $downloadUrl = add_query_arg('ap_download', $token, home_url('/'));
 
-            // IP binding check
-            if (!empty($payload['bind_ip'])) {
-                $boundIp = $payload['ip'] ?? null;
-                if ($boundIp && $boundIp !== $clientIp) {
-                    Logger::log('warning', 'download', 'Token IP mismatch', ['token' => $token, 'expected_ip' => $boundIp, 'request_ip' => $clientIp]);
-                    return $this->respond_error('ip_mismatch', 'This link is not valid from your network.', 403);
-                }
-            }
+            Logger::log('info', 'download', 'Download token regenerated', ['project_id' => $projectId, 'token' => $token]);
 
-            $path = $payload['path'] ?? null;
-            $mime = $payload['mime'] ?? 'application/octet-stream';
-            $inline = !empty($payload['inline']);
-
-            if (empty($path) || !file_exists($path)) {
-                // Critical: token exists but file missing. Log and notify admin.
-                Logger::log('error', 'download', 'Local file missing for token', ['token' => $token, 'path' => $path, 'notify_admin' => true]);
-                delete_transient($transientKey);
-                return $this->respond_error('file_missing', 'The requested file is no longer available.', 410);
-            }
-
-            // Delete the transient to make token single-use
-            delete_transient($transientKey);
-
-            // Prepare streaming with support for Range header (basic single-range)
-            $filesize = filesize($path);
-            $start = 0;
-            $end = $filesize - 1;
-            $statusCode = 200;
-            $headers = [];
-
-            // Handle Range header for resumable downloads (basic single-range support)
-            $rangeHeader = $_SERVER['HTTP_RANGE'] ?? $_SERVER['REDIRECT_HTTP_RANGE'] ?? null;
-            if ($rangeHeader) {
-                // Example: "Range: bytes=0-1023"
-                if (preg_match('/bytes=(\d*)-(\d*)/', $rangeHeader, $matches)) {
-                    $rangeStart = $matches[1] !== '' ? intval($matches[1]) : null;
-                    $rangeEnd = $matches[2] !== '' ? intval($matches[2]) : null;
-
-                    if ($rangeStart !== null && $rangeEnd !== null) {
-                        $start = max(0, $rangeStart);
-                        $end = min($filesize - 1, $rangeEnd);
-                    } elseif ($rangeStart !== null) {
-                        $start = max(0, $rangeStart);
-                        $end = $filesize - 1;
-                    } elseif ($rangeEnd !== null) {
-                        // suffix-length: last N bytes
-                        $length = $rangeEnd;
-                        $start = max(0, $filesize - $length);
-                        $end = $filesize - 1;
-                    }
-
-                    if ($start > $end || $start >= $filesize) {
-                        // Invalid range
-                        Logger::log('warning', 'download', 'Invalid Range header', ['range' => $rangeHeader, 'path' => $path]);
-                        return $this->respond_error('invalid_range', 'Requested Range Not Satisfiable', 416);
-                    }
-
-                    $statusCode = 206; // Partial Content
-                    $headers['Content-Range'] = "bytes {$start}-{$end}/{$filesize}";
-                }
-            }
-
-            $length = ($end - $start) + 1;
-
-            // Clear output buffers to avoid corrupting the stream
-            while (ob_get_level()) {
-                ob_end_clean();
-            }
-
-            // Set headers
-            header('Content-Description: File Transfer');
-            header('Content-Type: ' . $mime);
-            $filename = basename($payload['key'] ?? $path);
-            $disposition = $inline ? 'inline' : 'attachment';
-            header('Content-Disposition: ' . $disposition . '; filename="' . rawurlencode($filename) . '"');
-            header('Content-Transfer-Encoding: binary');
-            header('Expires: 0');
-            header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-            header('Pragma: public');
-            header('Accept-Ranges: bytes');
-            header('Content-Length: ' . $length);
-            if (!empty($headers['Content-Range'])) {
-                header('HTTP/1.1 206 Partial Content');
-                header('Content-Range: ' . $headers['Content-Range']);
-            } else {
-                header('HTTP/1.1 200 OK');
-            }
-
-            // Stream file in chunks to avoid memory blowout
-            $chunkSize = 1024 * 1024; // 1MB
-            $handle = fopen($path, 'rb');
-            if ($handle === false) {
-                Logger::log('error', 'download', 'Failed to open file for streaming', ['path' => $path, 'notify_admin' => true]);
-                return $this->respond_error('stream_error', 'Unable to stream file.', 500);
-            }
-
-            // Seek to start
-            if (fseek($handle, $start) === -1) {
-                Logger::log('error', 'download', 'Failed to seek file for streaming', ['path' => $path, 'start' => $start, 'notify_admin' => true]);
-                fclose($handle);
-                return $this->respond_error('stream_error', 'Unable to stream file.', 500);
-            }
-
-            $bytesRemaining = $length;
-
-            try {
-                while ($bytesRemaining > 0 && !feof($handle)) {
-                    $read = ($bytesRemaining > $chunkSize) ? $chunkSize : $bytesRemaining;
-                    $data = fread($handle, $read);
-                    if ($data === false) {
-                        throw new \RuntimeException('fread returned false');
-                    }
-                    echo $data;
-                    $bytesRemaining -= strlen($data);
-
-                    // Flush buffers
-                    if (function_exists('fastcgi_finish_request')) {
-                        @flush();
-                    } else {
-                        @flush();
-                        @ob_flush();
-                    }
-                }
-            } catch (\Throwable $e) {
-                Logger::log('error', 'download', 'Error during file streaming: ' . $e->getMessage(), ['path' => $path, 'notify_admin' => true]);
-                fclose($handle);
-                return $this->respond_error('stream_error', 'Error during streaming.', 500);
-            }
-
-            fclose($handle);
-
-            // After streaming, exit to prevent WP from appending HTML
-            exit;
-        }, ['endpoint' => 'download_local_file']);
+            return $this->respond_success([
+                'download_url' => $downloadUrl,
+                'expires_at'   => $expiresAt,
+            ]);
+        }, ['endpoint' => 'regenerate_download_token']);
     }
 
     /**
-     * Get client IP address, respecting common proxy headers.
+     * Helper: find final gallery id for a project (first final gallery)
      */
-    protected function getClientIp(): string
+    protected static function get_final_gallery_id_for_project(int $projectId): ?int
     {
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-
-        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-            $first = trim($parts[0]);
-            if (filter_var($first, FILTER_VALIDATE_IP)) {
-                $ip = $first;
-            }
-        } elseif (!empty($_SERVER['HTTP_CLIENT_IP']) && filter_var($_SERVER['HTTP_CLIENT_IP'], FILTER_VALIDATE_IP)) {
-            $ip = $_SERVER['HTTP_CLIENT_IP'];
-        }
-
-        return $ip;
+        global $wpdb;
+        $galleries = $wpdb->prefix . 'ap_galleries';
+        $id = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$galleries} WHERE project_id = %d AND type = %s LIMIT 1", $projectId, 'final'));
+        return $id ? (int)$id : null;
     }
 }
