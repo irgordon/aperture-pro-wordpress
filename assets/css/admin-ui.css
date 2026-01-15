@@ -1,0 +1,117 @@
+/* Admin UI CSS for Aperture Pro
+ * Scoped to .ap-admin-wrap to avoid conflicts with WP admin styles
+ */
+
+.ap-admin-wrap {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.ap-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 980px) {
+  .ap-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ap-col-main { }
+.ap-col-side { }
+
+.ap-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 18px;
+  box-shadow: 0 6px 18px rgba(31,41,51,0.04);
+}
+
+.ap-card h2 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 1.1rem;
+}
+
+.ap-muted {
+  color: #6b7280;
+  margin-bottom: 12px;
+}
+
+.ap-form-table th {
+  width: 220px;
+  vertical-align: top;
+  padding: 12px 16px 12px 0;
+  text-align: left;
+}
+
+.ap-form-table td {
+  padding: 12px 0;
+}
+
+.ap-tooltip {
+  display: inline-block;
+  margin-left: 8px;
+  background: #eef2ff;
+  color: #0b74de;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  text-align: center;
+  line-height: 18px;
+  font-weight: 700;
+  cursor: help;
+  font-size: 12px;
+}
+
+.ap-tooltip-bubble {
+  position: absolute;
+  background: #111827;
+  color: #fff;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  max-width: 320px;
+  z-index: 9999;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+}
+
+.ap-test-result {
+  margin-left: 12px;
+  font-weight: 600;
+}
+
+.ap-test-success {
+  color: #16a34a;
+}
+
+.ap-test-fail {
+  color: #ef4444;
+}
+
+.ap-performance-checklist ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #374151;
+}
+
+.ap-card .description {
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+/* Buttons */
+button#ap-test-api-key,
+button#ap-validate-webhook {
+  margin-left: 8px;
+}
+
+/* Small responsive tweaks */
+@media (max-width: 640px) {
+  .ap-form-table th { width: 100%; display: block; margin-bottom: 6px; }
+  .ap-form-table td { display: block; }
+}
