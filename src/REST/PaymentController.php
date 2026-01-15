@@ -6,6 +6,7 @@ use WP_REST_Request;
 use AperturePro\Services\PaymentService;
 use AperturePro\Config\Config;
 use AperturePro\Helpers\Logger;
+use AperturePro\Helpers\Crypto;
 
 /**
  * PaymentController
@@ -29,8 +30,21 @@ class PaymentController extends BaseController
         $payload = file_get_contents('php://input');
         $signature = $_SERVER['HTTP_X_PAYMENT_SIGNATURE'] ?? $_SERVER['HTTP_X_PAYMENT_SIGNATURE'] ?? '';
 
+        // Load config (may include encrypted webhook secret)
         $config = Config::all();
-        $secret = $config['payment']['webhook_secret'] ?? '';
+        $encryptedSecret = $config['payment']['webhook_secret'] ?? '';
+
+        if (empty($encryptedSecret)) {
+            Logger::log('error', 'payment', 'Webhook secret not configured', ['notify_admin' => true]);
+            return new \WP_REST_Response(['success' => false, 'message' => 'Webhook secret not configured'], 500);
+        }
+
+        // Decrypt secret
+        $secret = \AperturePro\Helpers\Crypto::decrypt($encryptedSecret);
+        if ($secret === null) {
+            Logger::log('error', 'payment', 'Failed to decrypt webhook secret', ['notify_admin' => true]);
+            return new \WP_REST_Response(['success' => false, 'message' => 'Webhook secret invalid'], 500);
+        }
 
         if (!PaymentService::verifySignature($payload, $signature, $secret)) {
             Logger::log('warning', 'payment', 'Webhook signature verification failed', ['signature' => $signature]);
