@@ -2,6 +2,7 @@
 namespace AperturePro\Admin;
 
 use AperturePro\Helpers\Logger;
+use AperturePro\Helpers\Crypto;
 
 /**
  * AdminUI
@@ -14,6 +15,11 @@ use AperturePro\Helpers\Logger;
  *  - Tooltips and help text for each field
  *  - AJAX endpoints to test API keys and webhook secrets
  *  - Enqueues admin JS/CSS only on the plugin settings page
+ *
+ * Notes:
+ *  - Sensitive values (cloud_api_key, webhook_secret) are encrypted before being persisted using Crypto::encrypt().
+ *  - Decryption must be performed by consumers using Crypto::decrypt() when the secret is required at runtime.
+ *  - AJAX endpoints are protected by capability checks and a nonce.
  */
 class AdminUI
 {
@@ -21,6 +27,9 @@ class AdminUI
     const PAGE_SLUG = 'aperture-pro-settings';
     const NONCE_ACTION = 'aperture_pro_admin_nonce';
 
+    /**
+     * Initialize hooks.
+     */
     public static function init(): void
     {
         add_action('admin_menu', [self::class, 'register_menu']);
@@ -30,6 +39,9 @@ class AdminUI
         add_action('wp_ajax_aperture_pro_validate_webhook', [self::class, 'ajax_validate_webhook']);
     }
 
+    /**
+     * Register top-level menu and settings submenu.
+     */
     public static function register_menu(): void
     {
         add_menu_page(
@@ -52,9 +64,11 @@ class AdminUI
         );
     }
 
+    /**
+     * Simple overview page.
+     */
     public static function render_overview(): void
     {
-        // Simple overview page linking to settings and health
         ?>
         <div class="wrap">
             <h1>Aperture Pro</h1>
@@ -67,6 +81,9 @@ class AdminUI
         <?php
     }
 
+    /**
+     * Register settings and fields using the Settings API.
+     */
     public static function register_settings(): void
     {
         register_setting('aperture_pro_group', self::OPTION_KEY, [self::class, 'sanitize_options']);
@@ -91,6 +108,14 @@ class AdminUI
         add_settings_field('theme_overrides', 'Enable Theme Overrides', [self::class, 'field_theme_overrides'], self::PAGE_SLUG, 'aperture_pro_section_general');
     }
 
+    /**
+     * Sanitize and persist options.
+     *
+     * Sensitive fields are encrypted before saving.
+     *
+     * @param array $input
+     * @return array
+     */
     public static function sanitize_options($input)
     {
         $out = [];
@@ -108,14 +133,39 @@ class AdminUI
         $cloud = isset($input['cloud_provider']) ? sanitize_text_field($input['cloud_provider']) : 'none';
         $out['cloud_provider'] = in_array($cloud, $allowedCloud, true) ? $cloud : 'none';
 
-        // Cloud API key (store encrypted in future; for now sanitize)
-        $out['cloud_api_key'] = isset($input['cloud_api_key']) ? sanitize_text_field($input['cloud_api_key']) : '';
+        // Cloud API key (encrypt before storing)
+        $rawApiKey = isset($input['cloud_api_key']) ? sanitize_text_field($input['cloud_api_key']) : '';
+        if (!empty($rawApiKey)) {
+            try {
+                $encrypted = Crypto::encrypt($rawApiKey);
+                $out['cloud_api_key'] = $encrypted;
+            } catch (\Throwable $e) {
+                // If encryption fails, do not store the raw key; log and return empty
+                Logger::log('error', 'admin', 'Failed to encrypt cloud API key: ' . $e->getMessage(), ['notify_admin' => true]);
+                $out['cloud_api_key'] = '';
+            }
+        } else {
+            // Preserve existing encrypted key if input is empty? For safety, we clear only if explicitly empty.
+            $existing = get_option(self::OPTION_KEY, []);
+            $out['cloud_api_key'] = $existing['cloud_api_key'] ?? '';
+        }
 
         // Email sender
         $out['email_sender'] = isset($input['email_sender']) ? sanitize_email($input['email_sender']) : get_option('admin_email');
 
-        // Webhook secret
-        $out['webhook_secret'] = isset($input['webhook_secret']) ? sanitize_text_field($input['webhook_secret']) : '';
+        // Webhook secret (encrypt before storing)
+        $rawWebhook = isset($input['webhook_secret']) ? sanitize_text_field($input['webhook_secret']) : '';
+        if (!empty($rawWebhook)) {
+            try {
+                $out['webhook_secret'] = Crypto::encrypt($rawWebhook);
+            } catch (\Throwable $e) {
+                Logger::log('error', 'admin', 'Failed to encrypt webhook secret: ' . $e->getMessage(), ['notify_admin' => true]);
+                $out['webhook_secret'] = '';
+            }
+        } else {
+            $existing = get_option(self::OPTION_KEY, []);
+            $out['webhook_secret'] = $existing['webhook_secret'] ?? '';
+        }
 
         // Require OTP
         $out['require_otp'] = !empty($input['require_otp']) ? 1 : 0;
@@ -123,7 +173,7 @@ class AdminUI
         // Theme overrides
         $out['theme_overrides'] = !empty($input['theme_overrides']) ? 1 : 0;
 
-        // Log changes for audit (non-sensitive fields only)
+        // Log non-sensitive metadata for audit
         Logger::log('info', 'admin_settings', 'Aperture Pro settings updated', [
             'storage_driver' => $out['storage_driver'],
             'cloud_provider' => $out['cloud_provider'],
@@ -134,9 +184,13 @@ class AdminUI
         return $out;
     }
 
+    /**
+     * Enqueue admin assets only on plugin pages.
+     *
+     * @param string $hook
+     */
     public static function enqueue_assets($hook)
     {
-        // Only enqueue on our settings page
         $screen = get_current_screen();
         if (!$screen) {
             return;
@@ -151,7 +205,6 @@ class AdminUI
         wp_enqueue_style('ap-admin-ui-css', $pluginUrl . 'assets/css/admin-ui.css', [], '1.0.0');
         wp_enqueue_script('ap-admin-ui-js', $pluginUrl . 'assets/js/admin-ui.js', ['jquery'], '1.0.0', true);
 
-        // Localize script with REST endpoints and nonce
         $data = [
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce(self::NONCE_ACTION),
@@ -167,18 +220,19 @@ class AdminUI
         wp_localize_script('ap-admin-ui-js', 'ApertureAdmin', $data);
     }
 
+    /**
+     * Render the settings page.
+     */
     public static function render_settings_page()
     {
-        // Load current options
         $opts = get_option(self::OPTION_KEY, []);
         include __DIR__ . '/../../templates/admin/settings-page.php';
     }
 
     /**
-     * AJAX: test API key (placeholder)
+     * AJAX: test API key (placeholder).
      *
      * Security: requires manage_options and nonce.
-     * In production, replace the placeholder test with a provider-specific API call.
      */
     public static function ajax_test_api_key()
     {
@@ -211,13 +265,13 @@ class AdminUI
             wp_send_json_success(['message' => 'API key validated (simulated).']);
         }
 
-        // Log failure for admin attention
+        // Log failure for admin attention (do not log full key)
         Logger::log('warning', 'admin_api_test', 'API key test failed', ['provider' => $provider, 'key_preview' => substr($key, 0, 6) . '...']);
         wp_send_json_error(['message' => 'API key validation failed (simulated). Please verify the key and provider.'], 400);
     }
 
     /**
-     * AJAX: validate webhook secret format (placeholder)
+     * AJAX: validate webhook secret format (placeholder).
      */
     public static function ajax_validate_webhook()
     {
@@ -240,4 +294,105 @@ class AdminUI
         // Simulate verification success
         wp_send_json_success(['message' => 'Webhook secret format looks valid.']);
     }
+
+    /* -------------------------
+     * Field rendering callbacks
+     * ------------------------- */
+
+    public static function field_storage_driver()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $storage_driver = $opts['storage_driver'] ?? 'local';
+        ?>
+        <select id="storage_driver" name="<?php echo esc_attr(self::OPTION_KEY); ?>[storage_driver]">
+            <option value="local" <?php selected($storage_driver, 'local'); ?>>Local (server)</option>
+            <option value="cloudinary" <?php selected($storage_driver, 'cloudinary'); ?>>Cloudinary</option>
+            <option value="imagekit" <?php selected($storage_driver, 'imagekit'); ?>>ImageKit</option>
+        </select>
+        <span class="ap-tooltip" title="Choose where files are stored. Local stores on your server; Cloudinary and ImageKit use cloud providers.">?</span>
+        <?php
+    }
+
+    public static function field_local_storage_path()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $local_storage_path = $opts['local_storage_path'] ?? '';
+        ?>
+        <input type="text" id="local_storage_path" name="<?php echo esc_attr(self::OPTION_KEY); ?>[local_storage_path]" value="<?php echo esc_attr($local_storage_path); ?>" class="regular-text" />
+        <p class="description">Relative to WP uploads directory. Leave blank to use default uploads/aperture/</p>
+        <?php
+    }
+
+    public static function field_cloud_provider()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $cloud_provider = $opts['cloud_provider'] ?? 'none';
+        ?>
+        <select id="cloud_provider" name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloud_provider]">
+            <option value="none" <?php selected($cloud_provider, 'none'); ?>>None</option>
+            <option value="cloudinary" <?php selected($cloud_provider, 'cloudinary'); ?>>Cloudinary</option>
+            <option value="imagekit" <?php selected($cloud_provider, 'imagekit'); ?>>ImageKit</option>
+        </select>
+        <span class="ap-tooltip" title="If using a cloud provider, select it here and provide the API key below.">?</span>
+        <?php
+    }
+
+    public static function field_cloud_api_key()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        // Do not decrypt and display the key in the admin UI for security.
+        // Show a placeholder if a key exists.
+        $hasKey = !empty($opts['cloud_api_key']);
+        ?>
+        <input type="password" id="cloud_api_key" name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloud_api_key]" value="" class="regular-text" autocomplete="new-password" placeholder="<?php echo $hasKey ? '••••••••' : ''; ?>" />
+        <button type="button" class="button" id="ap-test-api-key" data-provider="<?php echo esc_attr($opts['cloud_provider'] ?? 'cloudinary'); ?>">Test</button>
+        <span id="ap-test-api-key-result" class="ap-test-result"></span>
+        <p class="description">Enter your cloud provider API key. For security we do not display stored keys. Use Test to verify.</p>
+        <?php
+    }
+
+    public static function field_email_sender()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $email_sender = $opts['email_sender'] ?? get_option('admin_email');
+        ?>
+        <input type="email" id="email_sender" name="<?php echo esc_attr(self::OPTION_KEY); ?>[email_sender]" value="<?php echo esc_attr($email_sender); ?>" class="regular-text" />
+        <p class="description">The 'From' address used for transactional emails (OTP, download links).</p>
+        <?php
+    }
+
+    public static function field_webhook_secret()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $hasSecret = !empty($opts['webhook_secret']);
+        ?>
+        <input type="password" id="webhook_secret" name="<?php echo esc_attr(self::OPTION_KEY); ?>[webhook_secret]" value="" class="regular-text" autocomplete="new-password" placeholder="<?php echo $hasSecret ? '••••••••' : ''; ?>" />
+        <button type="button" class="button" id="ap-validate-webhook">Validate</button>
+        <span id="ap-validate-webhook-result" class="ap-test-result"></span>
+        <p class="description">This secret is used to verify incoming payment webhooks. Keep it private.</p>
+        <?php
+    }
+
+    public static function field_require_otp()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $require_otp = !empty($opts['require_otp']);
+        ?>
+        <label><input type="checkbox" id="require_otp" name="<?php echo esc_attr(self::OPTION_KEY); ?>[require_otp]" value="1" <?php checked($require_otp); ?> /> Enable OTP verification</label>
+        <p class="description">When enabled, clients must verify a one-time code sent to their email before downloading final files.</p>
+        <?php
+    }
+
+    public static function field_theme_overrides()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $theme_overrides = !empty($opts['theme_overrides']);
+        ?>
+        <label><input type="checkbox" id="theme_overrides" name="<?php echo esc_attr(self::OPTION_KEY); ?>[theme_overrides]" value="1" <?php checked($theme_overrides); ?> /> Enable</label>
+        <p class="description">When enabled, you can customize colors and spacing for the client portal from Settings → Aperture Portal Theme.</p>
+        <?php
+    }
 }
+
+// Initialize Admin UI
+AdminUI::init();
