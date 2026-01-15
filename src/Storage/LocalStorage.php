@@ -7,48 +7,94 @@ use AperturePro\Helpers\Logger;
 /**
  * LocalStorage
  *
- * Stores files in the WordPress uploads directory. This driver is synchronous
- * and intended for small to medium files. For large files or production usage,
- * prefer a cloud-backed driver.
+ * Stores files in the WordPress uploads directory. This driver hides server
+ * file paths by issuing signed, single-use tokens that map to the real file.
+ * The token is returned as a REST URL which the DownloadController serves.
+ *
+ * Security:
+ *  - Raw server paths are never returned to clients.
+ *  - Tokens are single-use and time-limited (TTL).
+ *
+ * Performance / failure policy:
+ *  - Failures are logged via Logger::log and will trigger admin notification
+ *    when appropriate (see Logger::log).
+ *  - This class does not throw for routine failures; it returns structured
+ *    responses and logs details for admin attention.
  */
 class LocalStorage implements StorageInterface
 {
     protected array $config;
     protected string $baseDir;
     protected string $baseUrl;
+    protected int $tokenTtl;
+
+    const TRANSIENT_PREFIX = 'ap_local_file_';
+    const TOKEN_BYTES = 32;
 
     public function __construct(array $config = [])
     {
         $this->config = $config;
 
         $uploads = wp_upload_dir();
-        $this->baseDir = trailingslashit($uploads['basedir']) . ($config['path'] ?? 'aperture-pro/');
-        $this->baseUrl = trailingslashit($uploads['baseurl']) . ($config['path'] ?? 'aperture-pro/');
+        $path = $config['path'] ?? 'aperture-pro/';
+        $this->baseDir = trailingslashit($uploads['basedir']) . $path;
+        $this->baseUrl = trailingslashit($uploads['baseurl']) . $path;
+
+        $this->tokenTtl = (int) ($config['signed_url_ttl'] ?? 3600);
 
         if (!file_exists($this->baseDir)) {
-            wp_mkdir_p($this->baseDir);
+            $created = wp_mkdir_p($this->baseDir);
+            if (!$created) {
+                Logger::log('error', 'local_storage', 'Failed to create base storage directory', ['path' => $this->baseDir, 'notify_admin' => true]);
+            }
         }
     }
 
+    /**
+     * Upload a local file into the storage area.
+     *
+     * Returns a structured array. On success 'url' will be a signed REST URL
+     * that can be used to retrieve the file. The raw server path is never returned.
+     */
     public function upload(string $localPath, string $remoteKey, array $options = []): array
     {
         $dest = $this->baseDir . ltrim($remoteKey, '/');
 
         $destDir = dirname($dest);
         if (!file_exists($destDir)) {
-            wp_mkdir_p($destDir);
+            $created = wp_mkdir_p($destDir);
+            if (!$created) {
+                Logger::log('error', 'local_storage', 'Failed to create destination directory', ['destDir' => $destDir, 'notify_admin' => true]);
+                return ['success' => false, 'key' => $remoteKey, 'url' => null, 'meta' => []];
+            }
         }
 
         $success = @copy($localPath, $dest);
         if (!$success) {
-            Logger::log('error', 'local_storage', 'Failed to copy file to local storage', ['src' => $localPath, 'dest' => $dest]);
+            Logger::log('error', 'local_storage', 'Failed to copy file to local storage', ['src' => $localPath, 'dest' => $dest, 'notify_admin' => true]);
             return ['success' => false, 'key' => $remoteKey, 'url' => null, 'meta' => []];
         }
 
-        // Optionally set file permissions
         @chmod($dest, 0644);
 
-        $url = $this->getUrl($remoteKey);
+        // Create a signed URL for immediate access if requested, otherwise return key and meta.
+        $signed = $options['signed'] ?? false;
+        $url = null;
+        if ($signed) {
+            $token = $this->createSignedTokenForPath($dest, $remoteKey);
+            if ($token) {
+                $url = $this->buildSignedUrl($token);
+            } else {
+                // Token creation failed; log and return success but without URL.
+                Logger::log('warning', 'local_storage', 'Signed token creation failed after upload', ['dest' => $dest, 'key' => $remoteKey]);
+            }
+        } else {
+            // For non-signed requests, still return a signed URL but with default TTL.
+            $token = $this->createSignedTokenForPath($dest, $remoteKey);
+            if ($token) {
+                $url = $this->buildSignedUrl($token);
+            }
+        }
 
         return [
             'success' => true,
@@ -61,11 +107,73 @@ class LocalStorage implements StorageInterface
         ];
     }
 
+    /**
+     * Returns a signed REST URL that maps to the file. The URL does not reveal
+     * the server path. The token is single-use and expires after tokenTtl seconds.
+     */
     public function getUrl(string $remoteKey, array $options = []): ?string
     {
-        return $this->baseUrl . ltrim($remoteKey, '/');
+        $path = $this->baseDir . ltrim($remoteKey, '/');
+
+        if (!file_exists($path)) {
+            Logger::log('warning', 'local_storage', 'getUrl requested for missing file', ['path' => $path]);
+            return null;
+        }
+
+        $token = $this->createSignedTokenForPath($path, $remoteKey, $options);
+        if (!$token) {
+            Logger::log('error', 'local_storage', 'Failed to create signed token for getUrl', ['path' => $path, 'notify_admin' => true]);
+            return null;
+        }
+
+        return $this->buildSignedUrl($token);
     }
 
+    /**
+     * Create a transient token mapping to the real file path and metadata.
+     *
+     * Returns token string on success or null on failure.
+     */
+    protected function createSignedTokenForPath(string $path, string $remoteKey, array $options = []): ?string
+    {
+        try {
+            $token = bin2hex(random_bytes(self::TOKEN_BYTES));
+        } catch (\Throwable $e) {
+            // Fallback to less secure uniqid if random_bytes fails (very unlikely)
+            $token = hash('sha256', uniqid('ap_', true));
+        }
+
+        $payload = [
+            'path'       => $path,
+            'key'        => $remoteKey,
+            'mime'       => $this->detectMimeType($path),
+            'created_at' => time(),
+            'expires_at' => time() + ($options['ttl'] ?? $this->tokenTtl),
+            'inline'     => $options['inline'] ?? false,
+        ];
+
+        $saved = set_transient(self::TRANSIENT_PREFIX . $token, $payload, $payload['expires_at'] - time());
+        if (!$saved) {
+            Logger::log('error', 'local_storage', 'Failed to save signed token transient', ['token' => $token, 'path' => $path, 'notify_admin' => true]);
+            return null;
+        }
+
+        return $token;
+    }
+
+    /**
+     * Build the REST URL that will serve the file for the given token.
+     */
+    protected function buildSignedUrl(string $token): string
+    {
+        // Use the plugin REST namespace route implemented in DownloadController
+        $restBase = rest_url('aperture/v1/local-file/' . $token);
+        return esc_url_raw($restBase);
+    }
+
+    /**
+     * Delete a stored object.
+     */
     public function delete(string $remoteKey): bool
     {
         $path = $this->baseDir . ltrim($remoteKey, '/');
@@ -75,7 +183,7 @@ class LocalStorage implements StorageInterface
 
         $deleted = @unlink($path);
         if (!$deleted) {
-            Logger::log('warning', 'local_storage', 'Failed to delete file', ['path' => $path]);
+            Logger::log('warning', 'local_storage', 'Failed to delete file', ['path' => $path, 'notify_admin' => true]);
         }
 
         return (bool) $deleted;
@@ -109,5 +217,32 @@ class LocalStorage implements StorageInterface
         }
 
         return $results;
+    }
+
+    /**
+     * Detect mime type for a file path.
+     */
+    protected function detectMimeType(string $path): string
+    {
+        $mime = null;
+
+        if (function_exists('mime_content_type')) {
+            $mime = @mime_content_type($path);
+        }
+
+        if (empty($mime) && function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo) {
+                $mime = finfo_file($finfo, $path);
+                finfo_close($finfo);
+            }
+        }
+
+        if (empty($mime)) {
+            // Fallback to generic binary
+            $mime = 'application/octet-stream';
+        }
+
+        return $mime;
     }
 }
