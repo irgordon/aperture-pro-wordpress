@@ -5,6 +5,13 @@ namespace AperturePro\ClientPortal;
 class PortalRenderer {
 
     public static function render() {
+        wp_enqueue_style(
+            'aperture-portal',
+            plugins_url('../../assets/css/portal.css', __FILE__),
+            [],
+            '1.0'
+        );
+
         wp_enqueue_script(
             'aperture-portal',
             plugins_url('../../assets/js/portal-app.js', __FILE__),
