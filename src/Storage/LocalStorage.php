@@ -14,6 +14,7 @@ use AperturePro\Helpers\Logger;
  * Security:
  *  - Raw server paths are never returned to clients.
  *  - Tokens are single-use and time-limited (TTL).
+ *  - Tokens can be bound to client IP addresses to reduce token theft risk.
  *
  * Performance / failure policy:
  *  - Failures are logged via Logger::log and will trigger admin notification
@@ -27,6 +28,7 @@ class LocalStorage implements StorageInterface
     protected string $baseDir;
     protected string $baseUrl;
     protected int $tokenTtl;
+    protected bool $bindIp;
 
     const TRANSIENT_PREFIX = 'ap_local_file_';
     const TOKEN_BYTES = 32;
@@ -41,6 +43,7 @@ class LocalStorage implements StorageInterface
         $this->baseUrl = trailingslashit($uploads['baseurl']) . $path;
 
         $this->tokenTtl = (int) ($config['signed_url_ttl'] ?? 3600);
+        $this->bindIp = !empty($config['bind_token_to_ip']);
 
         if (!file_exists($this->baseDir)) {
             $created = wp_mkdir_p($this->baseDir);
@@ -78,21 +81,15 @@ class LocalStorage implements StorageInterface
         @chmod($dest, 0644);
 
         // Create a signed URL for immediate access if requested, otherwise return key and meta.
-        $signed = $options['signed'] ?? false;
+        $signed = $options['signed'] ?? true;
         $url = null;
         if ($signed) {
-            $token = $this->createSignedTokenForPath($dest, $remoteKey);
+            $token = $this->createSignedTokenForPath($dest, $remoteKey, $options);
             if ($token) {
                 $url = $this->buildSignedUrl($token);
             } else {
                 // Token creation failed; log and return success but without URL.
                 Logger::log('warning', 'local_storage', 'Signed token creation failed after upload', ['dest' => $dest, 'key' => $remoteKey]);
-            }
-        } else {
-            // For non-signed requests, still return a signed URL but with default TTL.
-            $token = $this->createSignedTokenForPath($dest, $remoteKey);
-            if ($token) {
-                $url = $this->buildSignedUrl($token);
             }
         }
 
@@ -133,6 +130,11 @@ class LocalStorage implements StorageInterface
      * Create a transient token mapping to the real file path and metadata.
      *
      * Returns token string on success or null on failure.
+     *
+     * Options:
+     *  - ttl: override TTL in seconds
+     *  - inline: bool (serve inline vs attachment)
+     *  - bind_ip: bool override default binding behavior
      */
     protected function createSignedTokenForPath(string $path, string $remoteKey, array $options = []): ?string
     {
@@ -143,6 +145,9 @@ class LocalStorage implements StorageInterface
             $token = hash('sha256', uniqid('ap_', true));
         }
 
+        $clientIp = $this->getClientIp();
+        $bindIp = $options['bind_ip'] ?? $this->bindIp;
+
         $payload = [
             'path'       => $path,
             'key'        => $remoteKey,
@@ -150,6 +155,9 @@ class LocalStorage implements StorageInterface
             'created_at' => time(),
             'expires_at' => time() + ($options['ttl'] ?? $this->tokenTtl),
             'inline'     => $options['inline'] ?? false,
+            'bind_ip'    => $bindIp,
+            'ip'         => $bindIp ? $clientIp : null,
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
         ];
 
         $saved = set_transient(self::TRANSIENT_PREFIX . $token, $payload, $payload['expires_at'] - time());
@@ -163,12 +171,18 @@ class LocalStorage implements StorageInterface
 
     /**
      * Build the REST URL that will serve the file for the given token.
+     *
+     * Enforces HTTPS scheme for the returned URL.
      */
     protected function buildSignedUrl(string $token): string
     {
         // Use the plugin REST namespace route implemented in DownloadController
         $restBase = rest_url('aperture/v1/local-file/' . $token);
-        return esc_url_raw($restBase);
+
+        // Force https for signed URLs to ensure tokens are not leaked over plain HTTP.
+        $httpsUrl = set_url_scheme($restBase, 'https');
+
+        return esc_url_raw($httpsUrl);
     }
 
     /**
@@ -244,5 +258,26 @@ class LocalStorage implements StorageInterface
         }
 
         return $mime;
+    }
+
+    /**
+     * Get client IP address, respecting common proxy headers.
+     */
+    protected function getClientIp(): string
+    {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+        // Respect X-Forwarded-For if present (first IP)
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+            $first = trim($parts[0]);
+            if (filter_var($first, FILTER_VALIDATE_IP)) {
+                $ip = $first;
+            }
+        } elseif (!empty($_SERVER['HTTP_CLIENT_IP']) && filter_var($_SERVER['HTTP_CLIENT_IP'], FILTER_VALIDATE_IP)) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        }
+
+        return $ip;
     }
 }
