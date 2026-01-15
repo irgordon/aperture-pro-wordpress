@@ -9,6 +9,10 @@ use AperturePro\Helpers\Logger;
 
 class DownloadController extends BaseController
 {
+    // Rate limiting settings
+    const RATE_LIMIT_WINDOW = 60; // seconds
+    const RATE_LIMIT_MAX = 10; // max requests per window per token/ip
+
     public function register_routes(): void
     {
         register_rest_route($this->namespace, '/download/(?P<token>[a-f0-9]{64})', [
@@ -73,13 +77,17 @@ class DownloadController extends BaseController
      *  - transient exists
      *  - not expired
      *  - file exists on disk
+     *  - token bound IP matches request IP (if binding enabled)
+     *  - rate limiting per token/IP
      *
      * On any critical failure, it logs and sends admin notification via Logger.
+     *
+     * Partial download / resumability:
+     *  - This method includes a basic single-range implementation for "Range" header.
+     *  - For production, consider robust support for multiple ranges and resume semantics.
      */
     public function serve_local_file(WP_REST_Request $request)
     {
-        // We intentionally do not wrap the streaming block in the same response object,
-        // because streaming requires sending headers and raw output.
         return $this->with_error_boundary(function () use ($request) {
             $token = sanitize_text_field($request->get_param('token'));
             if (empty($token)) {
@@ -94,12 +102,38 @@ class DownloadController extends BaseController
                 return $this->respond_error('invalid_token', 'This link is no longer valid.', 410);
             }
 
+            // Rate limiting: per-token and per-IP counters
+            $clientIp = $this->getClientIp();
+            $rateKeyToken = "ap_local_rate_token_{$token}";
+            $rateKeyIp = "ap_local_rate_ip_" . md5($clientIp);
+
+            $tokenCount = (int) get_transient($rateKeyToken);
+            $ipCount = (int) get_transient($rateKeyIp);
+
+            if ($tokenCount >= self::RATE_LIMIT_MAX || $ipCount >= self::RATE_LIMIT_MAX) {
+                Logger::log('warning', 'download', 'Rate limit exceeded for token or IP', ['token' => $token, 'ip' => $clientIp]);
+                return $this->respond_error('rate_limited', 'Too many requests. Please try again later.', 429);
+            }
+
+            // Increment counters (set TTL to window)
+            set_transient($rateKeyToken, $tokenCount + 1, self::RATE_LIMIT_WINDOW);
+            set_transient($rateKeyIp, $ipCount + 1, self::RATE_LIMIT_WINDOW);
+
             // Check expiry
             $now = time();
             if (!empty($payload['expires_at']) && $now > (int) $payload['expires_at']) {
                 delete_transient($transientKey);
                 Logger::log('warning', 'download', 'Local file token expired', ['token' => $token]);
                 return $this->respond_error('expired_token', 'This link has expired.', 410);
+            }
+
+            // IP binding check
+            if (!empty($payload['bind_ip'])) {
+                $boundIp = $payload['ip'] ?? null;
+                if ($boundIp && $boundIp !== $clientIp) {
+                    Logger::log('warning', 'download', 'Token IP mismatch', ['token' => $token, 'expected_ip' => $boundIp, 'request_ip' => $clientIp]);
+                    return $this->respond_error('ip_mismatch', 'This link is not valid from your network.', 403);
+                }
             }
 
             $path = $payload['path'] ?? null;
@@ -113,13 +147,49 @@ class DownloadController extends BaseController
                 return $this->respond_error('file_missing', 'The requested file is no longer available.', 410);
             }
 
-            // Stream the file
             // Delete the transient to make token single-use
             delete_transient($transientKey);
 
-            // Send headers
-            $filename = basename($payload['key'] ?? $path);
-            $disposition = $inline ? 'inline' : 'attachment';
+            // Prepare streaming with support for Range header (basic single-range)
+            $filesize = filesize($path);
+            $start = 0;
+            $end = $filesize - 1;
+            $statusCode = 200;
+            $headers = [];
+
+            // Handle Range header for resumable downloads (basic single-range support)
+            $rangeHeader = $_SERVER['HTTP_RANGE'] ?? $_SERVER['REDIRECT_HTTP_RANGE'] ?? null;
+            if ($rangeHeader) {
+                // Example: "Range: bytes=0-1023"
+                if (preg_match('/bytes=(\d*)-(\d*)/', $rangeHeader, $matches)) {
+                    $rangeStart = $matches[1] !== '' ? intval($matches[1]) : null;
+                    $rangeEnd = $matches[2] !== '' ? intval($matches[2]) : null;
+
+                    if ($rangeStart !== null && $rangeEnd !== null) {
+                        $start = max(0, $rangeStart);
+                        $end = min($filesize - 1, $rangeEnd);
+                    } elseif ($rangeStart !== null) {
+                        $start = max(0, $rangeStart);
+                        $end = $filesize - 1;
+                    } elseif ($rangeEnd !== null) {
+                        // suffix-length: last N bytes
+                        $length = $rangeEnd;
+                        $start = max(0, $filesize - $length);
+                        $end = $filesize - 1;
+                    }
+
+                    if ($start > $end || $start >= $filesize) {
+                        // Invalid range
+                        Logger::log('warning', 'download', 'Invalid Range header', ['range' => $rangeHeader, 'path' => $path]);
+                        return $this->respond_error('invalid_range', 'Requested Range Not Satisfiable', 416);
+                    }
+
+                    $statusCode = 206; // Partial Content
+                    $headers['Content-Range'] = "bytes {$start}-{$end}/{$filesize}";
+                }
+            }
+
+            $length = ($end - $start) + 1;
 
             // Clear output buffers to avoid corrupting the stream
             while (ob_get_level()) {
@@ -129,12 +199,21 @@ class DownloadController extends BaseController
             // Set headers
             header('Content-Description: File Transfer');
             header('Content-Type: ' . $mime);
+            $filename = basename($payload['key'] ?? $path);
+            $disposition = $inline ? 'inline' : 'attachment';
             header('Content-Disposition: ' . $disposition . '; filename="' . rawurlencode($filename) . '"');
             header('Content-Transfer-Encoding: binary');
             header('Expires: 0');
             header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
             header('Pragma: public');
-            header('Content-Length: ' . filesize($path));
+            header('Accept-Ranges: bytes');
+            header('Content-Length: ' . $length);
+            if (!empty($headers['Content-Range'])) {
+                header('HTTP/1.1 206 Partial Content');
+                header('Content-Range: ' . $headers['Content-Range']);
+            } else {
+                header('HTTP/1.1 200 OK');
+            }
 
             // Stream file in chunks to avoid memory blowout
             $chunkSize = 1024 * 1024; // 1MB
@@ -144,13 +223,27 @@ class DownloadController extends BaseController
                 return $this->respond_error('stream_error', 'Unable to stream file.', 500);
             }
 
-            // Output the file
+            // Seek to start
+            if (fseek($handle, $start) === -1) {
+                Logger::log('error', 'download', 'Failed to seek file for streaming', ['path' => $path, 'start' => $start, 'notify_admin' => true]);
+                fclose($handle);
+                return $this->respond_error('stream_error', 'Unable to stream file.', 500);
+            }
+
+            $bytesRemaining = $length;
+
             try {
-                while (!feof($handle)) {
-                    echo fread($handle, $chunkSize);
+                while ($bytesRemaining > 0 && !feof($handle)) {
+                    $read = ($bytesRemaining > $chunkSize) ? $chunkSize : $bytesRemaining;
+                    $data = fread($handle, $read);
+                    if ($data === false) {
+                        throw new \RuntimeException('fread returned false');
+                    }
+                    echo $data;
+                    $bytesRemaining -= strlen($data);
+
                     // Flush buffers
                     if (function_exists('fastcgi_finish_request')) {
-                        // Let PHP finish request quickly if available
                         @flush();
                     } else {
                         @flush();
@@ -168,5 +261,25 @@ class DownloadController extends BaseController
             // After streaming, exit to prevent WP from appending HTML
             exit;
         }, ['endpoint' => 'download_local_file']);
+    }
+
+    /**
+     * Get client IP address, respecting common proxy headers.
+     */
+    protected function getClientIp(): string
+    {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+            $first = trim($parts[0]);
+            if (filter_var($first, FILTER_VALIDATE_IP)) {
+                $ip = $first;
+            }
+        } elseif (!empty($_SERVER['HTTP_CLIENT_IP']) && filter_var($_SERVER['HTTP_CLIENT_IP'], FILTER_VALIDATE_IP)) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        }
+
+        return $ip;
     }
 }
