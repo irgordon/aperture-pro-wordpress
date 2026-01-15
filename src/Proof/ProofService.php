@@ -28,6 +28,8 @@ class ProofService
     const DEFAULT_MAX_WIDTH = 1200;
     const DEFAULT_QUALITY = 60; // JPEG quality for low-res proofs
 
+    private static $_hasProofKeyColumn = null;
+
     /**
      * Ensure a proof derivative exists for the given image DB row and return a signed URL.
      *
@@ -162,8 +164,7 @@ class ProofService
             $proofKey = $uploadResult['key'] ?? $remoteKey;
 
             // 4) Persist proof_key in DB if column exists
-            $hasColumn = $wpdb->get_var("SHOW COLUMNS FROM {$imagesTable} LIKE 'proof_key'");
-            if ($hasColumn) {
+            if (self::hasProofKeyColumn()) {
                 $wpdb->update($imagesTable, ['proof_key' => $proofKey, 'updated_at' => current_time('mysql')], ['id' => $imageId], ['%s', '%s'], ['%d']);
             }
 
@@ -173,6 +174,25 @@ class ProofService
             Logger::log('error', 'proof', 'Exception generating proof: ' . $e->getMessage(), ['image_id' => $imageId, 'notify_admin' => true]);
             return null;
         }
+    }
+
+    /**
+     * Check if the ap_images table has a proof_key column, using a static cache.
+     *
+     * @return boolean
+     */
+    private static function hasProofKeyColumn(): bool
+    {
+        if (self::$_hasProofKeyColumn !== null) {
+            return self::$_hasProofKeyColumn;
+        }
+
+        global $wpdb;
+        $imagesTable = $wpdb->prefix . 'ap_images';
+
+        $hasColumn = $wpdb->get_var("SHOW COLUMNS FROM `{$imagesTable}` LIKE 'proof_key'");
+
+        return self::$_hasProofKeyColumn = !empty($hasColumn);
     }
 
     /**
