@@ -6,7 +6,14 @@ use WP_REST_Request;
 use AperturePro\Auth\MagicLinkService;
 use AperturePro\Auth\CookieService;
 use AperturePro\Workflow\Workflow;
+use AperturePro\Helpers\Logger;
 
+/**
+ * AuthController
+ *
+ * Handles magic link consumption and session retrieval.
+ * Integrates with CookieService and Workflow for project status.
+ */
 class AuthController extends BaseController
 {
     public function register_routes(): void
@@ -24,13 +31,16 @@ class AuthController extends BaseController
         ]);
     }
 
+    /**
+     * Consume a magic link token and set a client cookie session.
+     */
     public function consume_magic_link(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () use ($request) {
             $token = sanitize_text_field($request->get_param('token'));
 
             if (!$token) {
-                return $this->respond_error('missing_token', 'Magic link token missing.');
+                return $this->respond_error('missing_token', 'Magic link token missing.', 400);
             }
 
             $payload = MagicLinkService::consume($token);
@@ -43,18 +53,30 @@ class AuthController extends BaseController
                 );
             }
 
+            // payload expected to include client_id and project_id and optionally email
+            if (empty($payload['client_id']) || empty($payload['project_id'])) {
+                Logger::log('warning', 'auth', 'Magic link payload missing required fields', ['payload' => $payload]);
+                return $this->respond_error('invalid_token_payload', 'Invalid magic link payload.', 400);
+            }
+
             CookieService::setClientSession(
-                $payload['client_id'],
-                $payload['project_id']
+                (int) $payload['client_id'],
+                (int) $payload['project_id']
             );
 
+            Logger::log('info', 'auth', 'Magic link consumed and session created', ['client_id' => $payload['client_id'], 'project_id' => $payload['project_id']]);
+
             return $this->respond_success([
-                'project_id' => $payload['project_id'],
-                'client_id'  => $payload['client_id'],
+                'project_id' => (int) $payload['project_id'],
+                'client_id'  => (int) $payload['client_id'],
+                'email'      => $payload['email'] ?? null,
             ]);
         }, ['endpoint' => 'auth_magic_link_consume']);
     }
 
+    /**
+     * Return the current client session (if any) and project status.
+     */
     public function get_session(WP_REST_Request $request)
     {
         return $this->with_error_boundary(function () {
@@ -68,13 +90,13 @@ class AuthController extends BaseController
                 );
             }
 
-            $status = Workflow::getProjectStatus(
-                (int) $session['project_id']
-            );
+            $projectId = (int) $session['project_id'];
+
+            $status = Workflow::getProjectStatus($projectId);
 
             return $this->respond_success([
-                'client_id'  => $session['client_id'],
-                'project_id' => $session['project_id'],
+                'client_id'  => (int) $session['client_id'],
+                'project_id' => $projectId,
                 'status'     => $status,
             ]);
         }, ['endpoint' => 'auth_session']);
