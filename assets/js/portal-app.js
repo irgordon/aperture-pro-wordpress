@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { createRoot } from '@wordpress/element';
 
 const apiBase = window.AperturePortal.rest;
@@ -126,6 +126,66 @@ function useProofs(projectId) {
   return state;
 }
 
+/**
+ * Toast system
+ */
+
+function Toast({ toast, onDismiss }) {
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      onDismiss(toast.id);
+    }, toast.duration || 4000);
+    return () => clearTimeout(timer);
+  }, [toast, onDismiss]);
+
+  if (!toast) return null;
+
+  return (
+    <div className={`ap-toast ap-toast-${toast.type || 'info'}`}>
+      <div className="ap-toast-message">{toast.message}</div>
+      <button
+        type="button"
+        className="ap-toast-close"
+        onClick={() => onDismiss(toast.id)}
+        aria-label="Dismiss notification"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function ToastContainer({ toasts, onDismiss }) {
+  if (!toasts || toasts.length === 0) return null;
+  return (
+    <div className="ap-toast-container" aria-live="polite" aria-atomic="true">
+      {toasts.map((t) => (
+        <Toast key={t.id} toast={t} onDismiss={onDismiss} />
+      ))}
+    </div>
+  );
+}
+
+function useToasts() {
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = useCallback((message, type = 'info', duration = 4000) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setToasts((current) => [...current, { id, message, type, duration }]);
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    setToasts((current) => current.filter((t) => t.id !== id));
+  }, []);
+
+  return { toasts, addToast, dismissToast };
+}
+
+/**
+ * Skeleton components
+ */
+
 function SkeletonLine({ width = '100%' }) {
   return <div className="ap-skeleton-line" style={{ width }} />;
 }
@@ -176,6 +236,10 @@ function ProofGridSkeleton() {
   );
 }
 
+/**
+ * Status view
+ */
+
 function StatusView({ status }) {
   const messages = {
     booked: 'Your session is booked. Your photographer will upload proofs soon.',
@@ -199,7 +263,11 @@ function StatusView({ status }) {
   );
 }
 
-function ProofingView({ projectId }) {
+/**
+ * Proofing view
+ */
+
+function ProofingView({ projectId, addToast }) {
   const { loading, gallery, error } = useProofs(projectId);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -219,7 +287,7 @@ function ProofingView({ projectId }) {
     return (
       <div className="ap-portal-section">
         <h2>Your Proofs</h2>
-        <p>{error}</p>
+        <p className="ap-error">{error}</p>
       </div>
     );
   }
@@ -243,7 +311,9 @@ function ProofingView({ projectId }) {
     })
       .then((res) => {
         if (!res.success) {
-          setSaveError(res.message || 'We could not update your selection.');
+          const message = res.message || 'We could not update your selection.';
+          setSaveError(message);
+          addToast(message, 'error');
           setSaving(false);
           return;
         }
@@ -263,10 +333,13 @@ function ProofingView({ projectId }) {
           images: updatedImages,
         });
 
+        addToast('Your selection has been updated.', 'success');
         setSaving(false);
       })
       .catch(() => {
-        setSaveError('We could not update your selection. Please try again.');
+        const message = 'We could not update your selection. Please try again.';
+        setSaveError(message);
+        addToast(message, 'error');
         setSaving(false);
       });
   };
@@ -286,7 +359,9 @@ function ProofingView({ projectId }) {
     })
       .then((res) => {
         if (!res.success) {
-          setSaveError(res.message || 'We could not save your comment.');
+          const message = res.message || 'We could not save your comment.';
+          setSaveError(message);
+          addToast(message, 'error');
           setSaving(false);
           return;
         }
@@ -306,10 +381,13 @@ function ProofingView({ projectId }) {
           images: updatedImages,
         });
 
+        addToast('Your comment has been saved.', 'success');
         setSaving(false);
       })
       .catch(() => {
-        setSaveError('We could not save your comment. Please try again.');
+        const message = 'We could not save your comment. Please try again.';
+        setSaveError(message);
+        addToast(message, 'error');
         setSaving(false);
       });
   };
@@ -326,16 +404,20 @@ function ProofingView({ projectId }) {
     api('POST', `/proofs/${localGallery.gallery_id}/approve`)
       .then((res) => {
         if (!res.success) {
-          setSaveError(res.message || 'We could not finalize your proofs.');
+          const message = res.message || 'We could not finalize your proofs.';
+          setSaveError(message);
+          addToast(message, 'error');
           setSaving(false);
           return;
         }
 
-        window.alert('Thank you! Your photographer will begin editing your selected photos.');
-        window.location.reload();
+        addToast('Thank you! Your photographer will begin editing your selected photos.', 'success', 6000);
+        setSaving(false);
       })
       .catch(() => {
-        setSaveError('We could not finalize your proofs. Please try again.');
+        const message = 'We could not finalize your proofs. Please try again.';
+        setSaveError(message);
+        addToast(message, 'error');
         setSaving(false);
       });
   };
@@ -343,7 +425,7 @@ function ProofingView({ projectId }) {
   return (
     <div className="ap-portal-section">
       <h2>Your Proofs</h2>
-      <p>Select your favorites and leave comments. When you’re done, click “I’m done”.</p>
+      <p>Select your favorites and leave comments. When you’re done, tap “I’m done”.</p>
       {saving && <p className="ap-inline-status">Saving your changes…</p>}
       {saveError && <p className="ap-error">{saveError}</p>}
       <div className="ap-proof-grid">
@@ -380,8 +462,98 @@ function ProofingView({ projectId }) {
   );
 }
 
+/**
+ * Deep linking helpers
+ */
+
+function getInitialView(status) {
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get('view');
+
+  if (view === 'proofs') {
+    return 'proofs';
+  }
+
+  if (view === 'status') {
+    return 'status';
+  }
+
+  // Future: final gallery view could be "final"
+  if (view === 'final') {
+    return 'final';
+  }
+
+  // Default based on status
+  if (status === 'proofing') {
+    return 'proofs';
+  }
+
+  return 'status';
+}
+
+function updateViewInUrl(view) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('view', view);
+  window.history.replaceState({}, '', url.toString());
+}
+
+/**
+ * Tab navigation
+ */
+
+function ViewTabs({ currentView, onChange, status }) {
+  const tabs = [
+    { id: 'status', label: 'Status' },
+  ];
+
+  if (status === 'proofing') {
+    tabs.push({ id: 'proofs', label: 'Proofs' });
+  }
+
+  // Future: final gallery tab when implemented
+  // if (status === 'delivered') {
+  //   tabs.push({ id: 'final', label: 'Final Gallery' });
+  // }
+
+  return (
+    <div className="ap-tabs" role="tablist">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={currentView === tab.id}
+          className={`ap-tab ${currentView === tab.id ? 'active' : ''}`}
+          onClick={() => onChange(tab.id)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Root portal app
+ */
+
 function PortalApp() {
   const { loading, session, error } = useSession();
+  const { toasts, addToast, dismissToast } = useToasts();
+  const [view, setView] = useState('status');
+
+  useEffect(() => {
+    if (!loading && session) {
+      const initial = getInitialView(session.status);
+      setView(initial);
+      updateViewInUrl(initial);
+    }
+  }, [loading, session]);
+
+  const handleViewChange = (nextView) => {
+    setView(nextView);
+    updateViewInUrl(nextView);
+  };
 
   if (loading) {
     return (
@@ -389,6 +561,7 @@ function PortalApp() {
         <h1>Your Photo Session</h1>
         <SessionSkeleton />
         <StatusSkeleton />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </div>
     );
   }
@@ -400,6 +573,7 @@ function PortalApp() {
         <div className="ap-portal-section">
           <p className="ap-error">{error}</p>
         </div>
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </div>
     );
   }
@@ -411,6 +585,7 @@ function PortalApp() {
         <div className="ap-portal-section">
           <p>We could not find your session. Please use the link from your photographer’s email.</p>
         </div>
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </div>
     );
   }
@@ -420,13 +595,17 @@ function PortalApp() {
   return (
     <div className="ap-portal">
       <h1>Your Photo Session</h1>
-      <StatusView status={status} />
-      {status === 'proofing' && <ProofingView projectId={project_id} />}
-      {status !== 'proofing' && (
+      <ViewTabs currentView={view} onChange={handleViewChange} status={status} />
+      {view === 'status' && <StatusView status={status} />}
+      {view === 'proofs' && status === 'proofing' && (
+        <ProofingView projectId={project_id} addToast={addToast} />
+      )}
+      {view !== 'proofs' && status !== 'proofing' && (
         <div className="ap-portal-section">
           <p>If you have any questions, please contact your photographer.</p>
         </div>
       )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
