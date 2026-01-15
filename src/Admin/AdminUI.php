@@ -234,6 +234,134 @@ class AdminUI
      *
      * Security: requires manage_options and nonce.
      */
+    /**
+ * S3: Bucket
+ */
+public static function field_s3_bucket()
+{
+    $opts = get_option(self::OPTION_KEY, []);
+    $bucket = $opts['s3_bucket'] ?? '';
+    ?>
+    <input type="text"
+           id="s3_bucket"
+           name="<?php echo esc_attr(self::OPTION_KEY); ?>[s3_bucket]"
+           value="<?php echo esc_attr($bucket); ?>"
+           class="regular-text" />
+    <span class="ap-tooltip" title="Your S3 bucket name. Must already exist.">?</span>
+    <p class="description">Example: <code>my-studio-photos</code></p>
+    <?php
+}
+
+/**
+ * S3: Region
+ */
+public static function field_s3_region()
+{
+    $opts = get_option(self::OPTION_KEY, []);
+    $region = $opts['s3_region'] ?? '';
+    ?>
+    <input type="text"
+           id="s3_region"
+           name="<?php echo esc_attr(self::OPTION_KEY); ?>[s3_region]"
+           value="<?php echo esc_attr($region); ?>"
+           class="regular-text" />
+    <span class="ap-tooltip" title="AWS region where your bucket lives.">?</span>
+    <p class="description">Example: <code>us-east-1</code></p>
+    <?php
+}
+
+/**
+ * S3: Access Key (encrypted)
+ */
+public static function field_s3_access_key()
+{
+    $opts = get_option(self::OPTION_KEY, []);
+    $hasKey = !empty($opts['s3_access_key']);
+    ?>
+    <input type="password"
+           id="s3_access_key"
+           name="<?php echo esc_attr(self::OPTION_KEY); ?>[s3_access_key]"
+           value=""
+           class="regular-text"
+           placeholder="<?php echo $hasKey ? '••••••••' : ''; ?>"
+           autocomplete="new-password" />
+    <span class="ap-tooltip" title="AWS IAM Access Key with PutObject/GetObject permissions.">?</span>
+    <p class="description">Stored encrypted. Use a dedicated IAM user with minimal permissions.</p>
+    <?php
+}
+
+/**
+ * S3: Secret Key (encrypted)
+ */
+public static function field_s3_secret_key()
+{
+    $opts = get_option(self::OPTION_KEY, []);
+    $hasKey = !empty($opts['s3_secret_key']);
+    ?>
+    <input type="password"
+           id="s3_secret_key"
+           name="<?php echo esc_attr(self::OPTION_KEY); ?>[s3_secret_key]"
+           value=""
+           class="regular-text"
+           placeholder="<?php echo $hasKey ? '••••••••' : ''; ?>"
+           autocomplete="new-password" />
+    <span class="ap-tooltip" title="AWS IAM Secret Key. Stored encrypted.">?</span>
+    <?php
+}
+
+/**
+ * CloudFront: Domain
+ */
+public static function field_cloudfront_domain()
+{
+    $opts = get_option(self::OPTION_KEY, []);
+    $domain = $opts['cloudfront_domain'] ?? '';
+    ?>
+    <input type="text"
+           id="cloudfront_domain"
+           name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloudfront_domain]"
+           value="<?php echo esc_attr($domain); ?>"
+           class="regular-text" />
+    <span class="ap-tooltip" title="Your CloudFront distribution domain. Optional but recommended.">?</span>
+    <p class="description">Example: <code>https://d123abcd.cloudfront.net</code></p>
+    <?php
+}
+
+/**
+ * CloudFront: Key Pair ID
+ */
+public static function field_cloudfront_key_pair_id()
+{
+    $opts = get_option(self::OPTION_KEY, []);
+    $id = $opts['cloudfront_key_pair_id'] ?? '';
+    ?>
+    <input type="text"
+           id="cloudfront_key_pair_id"
+           name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloudfront_key_pair_id]"
+           value="<?php echo esc_attr($id); ?>"
+           class="regular-text" />
+    <span class="ap-tooltip" title="CloudFront Key Pair ID for signed URLs. Optional.">?</span>
+    <?php
+}
+
+/**
+ * CloudFront: Private Key (encrypted)
+ */
+public static function field_cloudfront_private_key()
+{
+    $opts = get_option(self::OPTION_KEY, []);
+    $hasKey = !empty($opts['cloudfront_private_key']);
+    ?>
+    <textarea id="cloudfront_private_key"
+              name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloudfront_private_key]"
+              class="large-text code"
+              rows="6"
+              placeholder="<?php echo $hasKey ? '•••••••• (stored encrypted)' : ''; ?>"></textarea>
+    <span class="ap-tooltip" title="Paste your CloudFront private key (PEM). Stored encrypted.">?</span>
+    <p class="description">Only required if you want signed CloudFront URLs.</p>
+    <?php
+}
+
     public static function ajax_test_api_key()
     {
         if (!current_user_can('manage_options')) {
