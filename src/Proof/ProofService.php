@@ -187,12 +187,22 @@ class ProofService
             return self::$_hasProofKeyColumn;
         }
 
+        // Check transient cache
+        $cached = get_transient('ap_has_proof_key_column');
+        if ($cached !== false) {
+            return self::$_hasProofKeyColumn = (bool) $cached;
+        }
+
         global $wpdb;
         $imagesTable = $wpdb->prefix . 'ap_images';
 
         $hasColumn = $wpdb->get_var("SHOW COLUMNS FROM `{$imagesTable}` LIKE 'proof_key'");
+        $exists = !empty($hasColumn);
 
-        return self::$_hasProofKeyColumn = !empty($hasColumn);
+        // Cache for 24 hours
+        set_transient('ap_has_proof_key_column', $exists ? 1 : 0, 86400);
+
+        return self::$_hasProofKeyColumn = $exists;
     }
 
     /**
