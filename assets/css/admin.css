@@ -1,0 +1,37 @@
+.ap-card {
+    background: #ffffff;
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.ap-health-status {
+    font-weight: bold;
+    margin-bottom: 12px;
+}
+
+.ap-health-status.ap-loading {
+    color: #6b7280;
+}
+
+.ap-status-ok {
+    color: #166534;
+}
+
+.ap-status-warning {
+    color: #92400e;
+}
+
+.ap-status-error {
+    color: #b91c1c;
+}
+
+.ap-health-list {
+    list-style: disc;
+    padding-left: 20px;
+}
+
+.ap-health-list li {
+    margin-bottom: 6px;
+}
