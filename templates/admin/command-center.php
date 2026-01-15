@@ -5,18 +5,19 @@ $projectId = intval($_GET['project_id'] ?? 0);
 <div class="wrap aperture-command-center" data-project-id="<?php echo esc_attr($projectId); ?>">
     <h1>Project Command Center</h1>
 
-    <div id="ap-health-card" class="ap-card">
-        <h2>System Health</h2>
-        <div class="ap-health-status ap-loading">Checking system health…</div>
-        <ul class="ap-health-list"></ul>
-    </div>
-
-    <div id="aperture-project-summary" class="ap-card">
+    <div id="aperture-project-summary" class="ap-section">
         <h2>Project Summary</h2>
         <div class="ap-loader">Loading…</div>
     </div>
 
-    <div id="aperture-logs" class="ap-card">
+    <div id="aperture-workflow" class="ap-section">
+        <h2>Workflow</h2>
+        <div class="ap-workflow-steps"></div>
+        <button id="ap-start-editing" class="button button-primary">Start Editing</button>
+        <button id="ap-generate-download" class="button">Generate Download Link</button>
+    </div>
+
+    <div id="aperture-logs" class="ap-section">
         <h2>Recent Activity</h2>
         <table class="widefat">
             <thead>
