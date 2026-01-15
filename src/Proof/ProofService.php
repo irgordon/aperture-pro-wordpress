@@ -27,6 +27,7 @@ class ProofService
     const PROOF_PREFIX = 'proofs/';
     const DEFAULT_MAX_WIDTH = 1200;
     const DEFAULT_QUALITY = 60; // JPEG quality for low-res proofs
+    const CACHE_KEY_HAS_PROOF_COLUMN = 'ap_has_proof_key_column';
 
     private static $_hasProofKeyColumn = null;
 
@@ -164,7 +165,7 @@ class ProofService
             $proofKey = $uploadResult['key'] ?? $remoteKey;
 
             // 4) Persist proof_key in DB if column exists
-            if (self::hasProofKeyColumn()) {
+            if (self::isProofKeyColumnAvailable()) {
                 $wpdb->update($imagesTable, ['proof_key' => $proofKey, 'updated_at' => current_time('mysql')], ['id' => $imageId], ['%s', '%s'], ['%d']);
             }
 
@@ -181,14 +182,14 @@ class ProofService
      *
      * @return boolean
      */
-    private static function hasProofKeyColumn(): bool
+    private static function isProofKeyColumnAvailable(): bool
     {
         if (self::$_hasProofKeyColumn !== null) {
             return self::$_hasProofKeyColumn;
         }
 
         // Check transient cache
-        $cached = get_transient('ap_has_proof_key_column');
+        $cached = get_transient(self::CACHE_KEY_HAS_PROOF_COLUMN);
         if ($cached !== false) {
             return self::$_hasProofKeyColumn = (bool) $cached;
         }
@@ -200,7 +201,7 @@ class ProofService
         $exists = !empty($hasColumn);
 
         // Cache for 24 hours
-        set_transient('ap_has_proof_key_column', $exists ? 1 : 0, 86400);
+        set_transient(self::CACHE_KEY_HAS_PROOF_COLUMN, $exists ? 1 : 0, 86400);
 
         return self::$_hasProofKeyColumn = $exists;
     }
