@@ -2,7 +2,7 @@
 A full Photography Studio SaaS with CLient Portal for Image Proofing and Gallery Delivery
 
 File Structure
-
+```
 aperture-pro/
 │
 ├── aperture-pro.php
@@ -55,4 +55,5 @@ aperture-pro/
     ├── css/
     ├── js/
     └── img/
+```
 
