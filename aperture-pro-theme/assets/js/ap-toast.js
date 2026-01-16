@@ -13,37 +13,43 @@
     }
 
     init() {
-      if (!document.getElementById(this.containerId)) {
-        this.container = document.createElement('div');
-        this.container.id = this.containerId;
-        this.container.className = 'ap-toast-container';
-        document.body.appendChild(this.container);
-      } else {
-        this.container = document.getElementById(this.containerId);
+      if (!this.container) {
+        let existing = document.getElementById(this.containerId);
+
+        if (existing) {
+          this.container = existing;
+        } else {
+          this.container = document.createElement('div');
+          this.container.id = this.containerId;
+          this.container.className = 'ap-toast-container';
+          document.body.appendChild(this.container);
+        }
       }
     }
 
-    show(message, type = 'info', duration = 3000) {
+    show(message, type = 'info', duration = this.defaults.duration) {
       if (!this.container) this.init();
 
       const toast = document.createElement('div');
       toast.className = `ap-toast ap-toast-${type}`;
       toast.setAttribute('role', 'alert');
+      toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
 
+      // Icon
       const icon = document.createElement('div');
       icon.className = 'ap-toast-icon';
 
+      // Message
       const msg = document.createElement('div');
       msg.className = 'ap-toast-message';
       msg.textContent = message;
 
+      // Close button
       const closeBtn = document.createElement('button');
       closeBtn.className = 'ap-toast-close';
-      closeBtn.setAttribute('aria-label', 'Close');
+      closeBtn.setAttribute('aria-label', 'Close notification');
       closeBtn.textContent = '×';
-      closeBtn.addEventListener('click', () => {
-        this.dismiss(toast);
-      });
+      closeBtn.addEventListener('click', () => this.dismiss(toast));
 
       toast.appendChild(icon);
       toast.appendChild(msg);
@@ -51,22 +57,30 @@
 
       this.container.appendChild(toast);
 
-      // Trigger enter animation
+      // Trigger enter animation on next frame
       requestAnimationFrame(() => {
         toast.classList.add('ap-toast-visible');
       });
 
-      // Auto dismiss
-      if (duration > 0) {
-        setTimeout(() => {
+      // Auto-dismiss
+      if (duration && duration > 0) {
+        toast._timeout = setTimeout(() => {
           this.dismiss(toast);
         }, duration);
       }
+
+      return toast;
     }
 
     dismiss(toast) {
-      if (toast.dataset.dismissing) return;
+      if (!toast || toast.dataset.dismissing) return;
+
       toast.dataset.dismissing = 'true';
+
+      // Cancel auto-dismiss timer if still pending
+      if (toast._timeout) {
+        clearTimeout(toast._timeout);
+      }
 
       toast.classList.remove('ap-toast-visible');
 
@@ -76,24 +90,24 @@
 
       toast.addEventListener('transitionend', remove, { once: true });
 
-      // Fallback
-      setTimeout(remove, 400);
+      // Fallback in case transitionend doesn't fire
+      setTimeout(remove, 500);
     }
 
     success(message, duration) {
-      this.show(message, 'success', duration);
+      return this.show(message, 'success', duration);
     }
 
     error(message, duration) {
-      this.show(message, 'error', duration);
+      return this.show(message, 'error', duration);
     }
 
     info(message, duration) {
-      this.show(message, 'info', duration);
+      return this.show(message, 'info', duration);
     }
   }
 
-  // Expose global
+  // Expose global singleton
   window.ApertureToast = new ToastManager();
 
 })();
