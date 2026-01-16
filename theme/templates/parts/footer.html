@@ -1,0 +1,22 @@
+<!-- wp:group {"tagName":"footer","align":"full","className":"site-footer","layout":{"type":"constrained"}} -->
+<footer class="wp-block-group alignfull site-footer">
+
+    <!-- wp:group {"layout":{"type":"flex","justifyContent":"space-between","verticalAlignment":"center"}} -->
+    <div class="wp-block-group site-footer__inner">
+
+        <!-- LEFT: COPYRIGHT -->
+        <!-- wp:paragraph -->
+        <p>© <?php echo esc_html( date('Y') ); ?> Aperture Pro. All rights reserved.</p>
+        <!-- /wp:paragraph -->
+
+        <!-- RIGHT: SOCIAL ICONS -->
+        <!-- wp:group {"layout":{"type":"flex","justifyContent":"right","verticalAlignment":"center"},"className":"site-footer__social"} -->
+        <div class="wp-block-group site-footer__social">
+
+            <!-- FACEBOOK -->
+            <!-- wp:html -->
+            <a href="<?php echo esc_url( get_option('aperture_brand_facebook', '#') ); ?>"
+               target="_blank" rel="noopener" aria-label="Facebook" class="footer-social-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22 12a10 10 0 1 0-11.5 9.9v-7h-2v-3h2v-2.3c0-2 1.2-3.1 3-3.1
+                             .9 0 1.8.1 1.8.1v2h-1c-1 0-1.3.
