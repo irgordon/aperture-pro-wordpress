@@ -3,7 +3,15 @@
    Path: assets/css/blocks.css
    --------------------------------------------------------- */
 
-/* Headings */
+/* ---------------------------------------------------------
+   Headings
+   --------------------------------------------------------- */
+
+/* Gutenberg outputs headings in two ways:
+   1. <h2 class="wp-block-heading">
+   2. <div class="wp-block-heading"><h2>...</h2></div>
+   These selectors cover both. */
+
 .wp-block-heading h1,
 h1.wp-block-heading {
   font-size: var(--font-size-4xl);
@@ -25,53 +33,75 @@ h3.wp-block-heading {
   margin-bottom: var(--space-3);
 }
 
-/* Paragraphs */
+/* ---------------------------------------------------------
+   Paragraphs
+   --------------------------------------------------------- */
+
 .wp-block-paragraph {
   font-size: var(--font-size-base);
   line-height: var(--line-relaxed);
   margin-bottom: var(--space-4);
-  color: var(--color-neutral-700);
+  color: var(--color-text-secondary);
 }
 
-/* Buttons */
+/* ---------------------------------------------------------
+   Buttons
+   --------------------------------------------------------- */
+
 .wp-block-button__link {
-  background: var(--color-primary);
-  color: var(--color-white);
-  border-radius: 6px;
-  padding: 0.75rem 1.5rem;
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
   font-weight: 600;
-  transition: background var(--duration-normal) var(--ease-standard),
-              transform var(--duration-fast) var(--ease-standard);
+  transition:
+    background var(--duration-normal) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
 }
 
 .wp-block-button__link:hover {
-  background: var(--color-secondary);
+  background: var(--button-primary-hover);
   transform: translateY(-1px);
 }
 
-/* Group block spacing */
+/* ---------------------------------------------------------
+   Group Block
+   --------------------------------------------------------- */
+
 .wp-block-group {
   margin-bottom: var(--space-7);
 }
 
-/* Columns */
+/* ---------------------------------------------------------
+   Columns
+   --------------------------------------------------------- */
+
 .wp-block-columns {
   gap: var(--space-6);
 }
 
-/* Images */
+/* ---------------------------------------------------------
+   Images
+   --------------------------------------------------------- */
+
 .wp-block-image img {
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   display: block;
 }
 
-/* Cover block */
+/* ---------------------------------------------------------
+   Cover Block
+   --------------------------------------------------------- */
+
 .wp-block-cover {
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
-/* Separator */
+/* ---------------------------------------------------------
+   Separator
+   --------------------------------------------------------- */
+
 .wp-block-separator {
   border-color: var(--color-neutral-200);
   margin: var(--space-6) 0;
