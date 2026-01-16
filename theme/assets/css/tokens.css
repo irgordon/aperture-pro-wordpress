@@ -1,0 +1,64 @@
+/* ---------------------------------------------------------
+   Aperture Pro Marketing Theme — Design Tokens
+   Path: assets/css/tokens.css
+   --------------------------------------------------------- */
+
+/* Color palette */
+:root {
+  --color-primary: var(--wp--preset--color--primary);
+  --color-secondary: var(--wp--preset--color--secondary);
+  --color-accent: var(--wp--preset--color--accent);
+
+  --color-neutral-900: var(--wp--preset--color--neutral-900);
+  --color-neutral-700: var(--wp--preset--color--neutral-700);
+  --color-neutral-500: var(--wp--preset--color--neutral-500);
+  --color-neutral-200: var(--wp--preset--color--neutral-200);
+  --color-white: var(--wp--preset--color--white);
+}
+
+/* Typography */
+:root {
+  --font-sans: var(--wp--preset--font-family--sans);
+
+  --font-size-xs: var(--wp--preset--font-size--xs);
+  --font-size-sm: var(--wp--preset--font-size--sm);
+  --font-size-base: var(--wp--preset--font-size--base);
+  --font-size-lg: var(--wp--preset--font-size--lg);
+  --font-size-xl: var(--wp--preset--font-size--xl);
+  --font-size-2xl: var(--wp--preset--font-size--2xl);
+  --font-size-3xl: var(--wp--preset--font-size--3xl);
+  --font-size-4xl: var(--wp--preset--font-size--4xl);
+
+  --line-tight: var(--wp--preset--line-height--tight);
+  --line-normal: var(--wp--preset--line-height--normal);
+  --line-relaxed: var(--wp--preset--line-height--relaxed);
+}
+
+/* Spacing scale */
+:root {
+  --space-0: var(--wp--preset--spacing--0);
+  --space-1: var(--wp--preset--spacing--1);
+  --space-2: var(--wp--preset--spacing--2);
+  --space-3: var(--wp--preset--spacing--3);
+  --space-4: var(--wp--preset--spacing--4);
+  --space-5: var(--wp--preset--spacing--5);
+  --space-6: var(--wp--preset--spacing--6);
+  --space-7: var(--wp--preset--spacing--7);
+  --space-8: var(--wp--preset--spacing--8);
+}
+
+/* Layout */
+:root {
+  --content-width: var(--wp--style--layout--content-size);
+  --wide-width: var(--wp--style--layout--wide-size);
+}
+
+/* Motion */
+:root {
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
+}
