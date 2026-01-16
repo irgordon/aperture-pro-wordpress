@@ -3,13 +3,15 @@
    Path: assets/css/animations.css
 
    Purpose:
-   - Provide a unified motion system for the marketing theme
-   - Keep animations subtle, performant, and accessible
-   - Respect prefers-reduced-motion
-   - Reuse timing + easing tokens from tokens.css
+   - Unified motion system for the marketing theme + SPA
+   - Subtle, performant, transform-based animations
+   - Full prefers-reduced-motion support
+   - Uses timing + easing tokens from tokens.css
    --------------------------------------------------------- */
 
-/* Disable animations for users who prefer reduced motion */
+/* ---------------------------------------------------------
+   Reduced Motion Support
+   --------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.001ms !important;
@@ -19,9 +21,9 @@
   }
 }
 
-/* ---------------------------------------------
+/* ---------------------------------------------------------
    Fade In
-   --------------------------------------------- */
+   --------------------------------------------------------- */
 .fade-in {
   opacity: 0;
   animation: fadeIn var(--duration-normal) var(--ease-standard) forwards;
@@ -32,9 +34,9 @@
   to   { opacity: 1; }
 }
 
-/* ---------------------------------------------
-   Slide Up (used for hero text, CTA blocks)
-   --------------------------------------------- */
+/* ---------------------------------------------------------
+   Slide Up
+   --------------------------------------------------------- */
 .slide-up {
   opacity: 0;
   transform: translateY(12px);
@@ -48,9 +50,9 @@
   }
 }
 
-/* ---------------------------------------------
-   Slide In (left/right)
-   --------------------------------------------- */
+/* ---------------------------------------------------------
+   Slide In (Left / Right)
+   --------------------------------------------------------- */
 .slide-in-left {
   opacity: 0;
   transform: translateX(-20px);
@@ -77,9 +79,9 @@
   }
 }
 
-/* ---------------------------------------------
-   Scale In (used for cards, testimonials)
-   --------------------------------------------- */
+/* ---------------------------------------------------------
+   Scale In (Cards, Testimonials)
+   --------------------------------------------------------- */
 .scale-in {
   opacity: 0;
   transform: scale(0.96);
@@ -93,11 +95,12 @@
   }
 }
 
-/* ---------------------------------------------
-   Pulse (used for CTA emphasis)
-   --------------------------------------------- */
+/* ---------------------------------------------------------
+   Pulse (CTA Emphasis)
+   --------------------------------------------------------- */
 .pulse {
   animation: pulse 2.2s var(--ease-standard) infinite;
+  will-change: transform;
 }
 
 @keyframes pulse {
@@ -105,9 +108,9 @@
   50%      { transform: scale(1.03); }
 }
 
-/* ---------------------------------------------
-   Fade + Slide Combo (hero, pricing)
-   --------------------------------------------- */
+/* ---------------------------------------------------------
+   Fade + Slide Up Combo
+   --------------------------------------------------------- */
 .fade-slide-up {
   opacity: 0;
   transform: translateY(16px);
@@ -121,9 +124,9 @@
   }
 }
 
-/* ---------------------------------------------
-   Stagger Utility (SPA components)
-   --------------------------------------------- */
+/* ---------------------------------------------------------
+   Stagger Utility (SPA Components)
+   --------------------------------------------------------- */
 .stagger > * {
   opacity: 0;
   animation: fadeIn var(--duration-normal) var(--ease-standard) forwards;
