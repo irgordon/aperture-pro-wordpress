@@ -233,29 +233,47 @@ class AdminUI
         $screen = get_current_screen();
         if (!$screen) return;
 
-        $isOurPage =
+        $pluginUrl = plugin_dir_url(__DIR__ . '/../../');
+
+        // Main Admin UI (Settings, etc.)
+        $isSettingsPage =
             $screen->id === 'toplevel_page_aperture-pro' ||
             $screen->id === 'aperture-pro_page_' . self::PAGE_SLUG;
 
-        if (!$isOurPage) return;
+        if ($isSettingsPage) {
+            wp_enqueue_style('ap-admin-ui-css', $pluginUrl . 'assets/css/admin-ui.css', [], '1.0.0');
+            wp_enqueue_script('ap-admin-ui-js', $pluginUrl . 'assets/js/admin-ui.js', ['jquery'], '1.0.0', true);
 
-        $pluginUrl = plugin_dir_url(__DIR__ . '/../../');
+            wp_localize_script('ap-admin-ui-js', 'ApertureAdmin', [
+                'ajaxUrl' => admin_url('admin-ajax.php'),
+                'nonce'   => wp_create_nonce(self::NONCE_ACTION),
+                'testApiKeyAction' => 'aperture_pro_test_api_key',
+                'validateWebhookAction' => 'aperture_pro_validate_webhook',
+                'strings' => [
+                    'testing' => 'Testing…',
+                    'test_success' => 'Test succeeded',
+                    'test_failed' => 'Test failed',
+                    'invalid_key' => 'Invalid API key format',
+                ],
+            ]);
+            return;
+        }
 
-        wp_enqueue_style('ap-admin-ui-css', $pluginUrl . 'assets/css/admin-ui.css', [], '1.0.0');
-        wp_enqueue_script('ap-admin-ui-js', $pluginUrl . 'assets/js/admin-ui.js', ['jquery'], '1.0.0', true);
+        // Setup Wizard
+        if (strpos($screen->id, 'aperture-pro-setup') !== false) {
+            // Modal System
+            wp_enqueue_style('ap-modal-css', $pluginUrl . 'assets/css/ap-modal.css', [], '1.0.0');
+            wp_enqueue_script('ap-modal-js', $pluginUrl . 'assets/js/ap-modal.js', [], '1.0.0', true);
 
-        wp_localize_script('ap-admin-ui-js', 'ApertureAdmin', [
-            'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce'   => wp_create_nonce(self::NONCE_ACTION),
-            'testApiKeyAction' => 'aperture_pro_test_api_key',
-            'validateWebhookAction' => 'aperture_pro_validate_webhook',
-            'strings' => [
-                'testing' => 'Testing…',
-                'test_success' => 'Test succeeded',
-                'test_failed' => 'Test failed',
-                'invalid_key' => 'Invalid API key format',
-            ],
-        ]);
+            // Wizard Assets
+            wp_enqueue_style('ap-setup-wizard-css', $pluginUrl . 'assets/css/setup-wizard.css', ['ap-modal-css'], '1.0.0');
+            wp_enqueue_script('ap-setup-wizard-js', $pluginUrl . 'assets/js/setup-wizard.js', ['ap-modal-js'], '1.0.0', true);
+
+            wp_localize_script('ap-setup-wizard-js', 'ApertureSetup', [
+                'ajaxUrl' => admin_url('admin-ajax.php'),
+                'nonce'   => wp_create_nonce(self::NONCE_ACTION),
+            ]);
+        }
     }
 
     /**
