@@ -40,10 +40,15 @@
 
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            // Path kept explicit to match prior implementation; use template-based registration if available.
-            navigator.serviceWorker.register('/wp-content/plugins/aperture-pro/assets/js/sw.js')
-                .catch(() => {
+            // Use localized URL if available, fallback to relative path if needed
+            const swUrl = (window.ApertureClient && window.ApertureClient.swUrl)
+                ? window.ApertureClient.swUrl
+                : '/wp-content/plugins/aperture-pro/assets/js/sw.js';
+
+            navigator.serviceWorker.register(swUrl)
+                .catch((err) => {
                     // Fail-soft: SW is an enhancement, not a requirement.
+                    console.error('SW registration failed', err);
                 });
         });
     }

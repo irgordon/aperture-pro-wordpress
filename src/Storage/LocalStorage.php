@@ -209,6 +209,16 @@ class LocalStorage implements StorageInterface
         return file_exists($path);
     }
 
+    /**
+     * Get the absolute local path for a key, if it exists.
+     * This allows services to bypass HTTP calls when working with local files.
+     */
+    public function getLocalPath(string $remoteKey): ?string
+    {
+        $path = $this->baseDir . ltrim($remoteKey, '/');
+        return file_exists($path) ? $path : null;
+    }
+
     public function list(string $prefix = '', array $options = []): array
     {
         $dir = $this->baseDir . ltrim($prefix, '/');

@@ -157,6 +157,17 @@ class ProofService
      */
     protected static function downloadToTemp(string $remotePath, StorageInterface $storage): ?string
     {
+        // OPTIMIZATION: If storage is local, copy directly to avoid HTTP self-fetch overhead/issues.
+        if ($storage instanceof \AperturePro\Storage\LocalStorage) {
+            $localPath = $storage->getLocalPath($remotePath);
+            if ($localPath && is_readable($localPath)) {
+                $tmp = wp_tempnam('ap-proof-');
+                if ($tmp && copy($localPath, $tmp)) {
+                    return $tmp;
+                }
+            }
+        }
+
         // For simplicity, assume StorageInterface has getSignedUrl() and we use file_get_contents().
         // In a hardened implementation, you might use driver-specific SDK calls instead.
         $url = $storage->getSignedUrl($remotePath, 600);

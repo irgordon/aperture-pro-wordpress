@@ -413,4 +413,134 @@ class AdminUI
                name="<?php echo esc_attr(self::OPTION_KEY); ?>[s3_bucket]"
                value="<?php echo esc_attr($value); ?>"
                class="regular-text" />
-        <span class="ap-tooltip" title="Your S3 bucket name. Must already
+        <span class="ap-tooltip" title="Your S3 bucket name. Must already exist.">?</span>
+        <?php
+    }
+
+    public static function field_s3_region()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $value = $opts['s3_region'] ?? '';
+        ?>
+        <input type="text" id="s3_region"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[s3_region]"
+               value="<?php echo esc_attr($value); ?>"
+               class="regular-text" />
+        <?php
+    }
+
+    public static function field_s3_access_key()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $hasKey = !empty($opts['s3_access_key']);
+        ?>
+        <input type="password" id="s3_access_key"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[s3_access_key]"
+               value=""
+               placeholder="<?php echo $hasKey ? '••••••••' : ''; ?>"
+               class="regular-text" />
+        <?php
+    }
+
+    public static function field_s3_secret_key()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $hasKey = !empty($opts['s3_secret_key']);
+        ?>
+        <input type="password" id="s3_secret_key"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[s3_secret_key]"
+               value=""
+               placeholder="<?php echo $hasKey ? '••••••••' : ''; ?>"
+               class="regular-text" />
+        <?php
+    }
+
+    public static function field_cloudfront_domain()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $value = $opts['cloudfront_domain'] ?? '';
+        ?>
+        <input type="text" id="cloudfront_domain"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloudfront_domain]"
+               value="<?php echo esc_attr($value); ?>"
+               class="regular-text" />
+        <?php
+    }
+
+    public static function field_cloudfront_key_pair_id()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $value = $opts['cloudfront_key_pair_id'] ?? '';
+        ?>
+        <input type="text" id="cloudfront_key_pair_id"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloudfront_key_pair_id]"
+               value="<?php echo esc_attr($value); ?>"
+               class="regular-text" />
+        <?php
+    }
+
+    public static function field_cloudfront_private_key()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $hasKey = !empty($opts['cloudfront_private_key']);
+        ?>
+        <textarea id="cloudfront_private_key"
+                  name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloudfront_private_key]"
+                  rows="5" cols="50"
+                  class="large-text code"
+                  placeholder="<?php echo $hasKey ? 'Stored encrypted.' : '-----BEGIN RSA PRIVATE KEY-----'; ?>"></textarea>
+        <?php
+    }
+
+    public static function field_email_sender()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $value = $opts['email_sender'] ?? get_option('admin_email');
+        ?>
+        <input type="email" id="email_sender"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[email_sender]"
+               value="<?php echo esc_attr($value); ?>"
+               class="regular-text" />
+        <?php
+    }
+
+    public static function field_webhook_secret()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $hasKey = !empty($opts['webhook_secret']);
+        ?>
+        <input type="password" id="webhook_secret"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[webhook_secret]"
+               value=""
+               placeholder="<?php echo $hasKey ? '••••••••' : ''; ?>"
+               class="regular-text" />
+        <button type="button" class="button" id="ap-validate-webhook">Validate</button>
+        <?php
+    }
+
+    public static function field_require_otp()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $value = !empty($opts['require_otp']);
+        ?>
+        <label>
+            <input type="checkbox" name="<?php echo esc_attr(self::OPTION_KEY); ?>[require_otp]"
+                   value="1" <?php checked($value); ?> />
+            Require email OTP for downloads
+        </label>
+        <?php
+    }
+
+    public static function field_theme_overrides()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $value = !empty($opts['theme_overrides']);
+        ?>
+        <label>
+            <input type="checkbox" name="<?php echo esc_attr(self::OPTION_KEY); ?>[theme_overrides]"
+                   value="1" <?php checked($value); ?> />
+            Enable theme overrides
+        </label>
+        <?php
+    }
+}

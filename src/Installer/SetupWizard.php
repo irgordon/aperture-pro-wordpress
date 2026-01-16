@@ -20,6 +20,32 @@ class SetupWizard
     public static function init(): void
     {
         add_action('admin_menu', [self::class, 'register_page']);
+        add_action('wp_ajax_aperture_pro_save_wizard', [self::class, 'save_wizard']);
+    }
+
+    /**
+     * AJAX handler to save wizard settings.
+     */
+    public static function save_wizard(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized'], 403);
+        }
+
+        check_ajax_referer('aperture_pro_admin_nonce', 'nonce');
+
+        // Reuse AdminUI logic for sanitization and encryption
+        $input = $_POST['settings'] ?? [];
+        $sanitized = \AperturePro\Admin\AdminUI::sanitize_options($input);
+
+        // Merge with existing
+        $existing = get_option(\AperturePro\Admin\AdminUI::OPTION_KEY, []);
+        $merged = array_merge($existing, $sanitized);
+
+        update_option(\AperturePro\Admin\AdminUI::OPTION_KEY, $merged);
+        self::mark_complete();
+
+        wp_send_json_success(['message' => 'Setup complete', 'redirect' => admin_url('admin.php?page=aperture-pro')]);
     }
 
     /**

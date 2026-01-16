@@ -12,8 +12,8 @@ const STATIC_CACHE = `ap-static-${CACHE_VERSION}`;
 const IMAGE_CACHE = `ap-images-${CACHE_VERSION}`;
 
 const STATIC_ASSETS = [
-    '/wp-content/plugins/aperture-pro/assets/js/portal-app.js',
-    '/wp-content/plugins/aperture-pro/assets/css/client-portal.css'
+    './portal-app.js',
+    '../css/client-portal.css'
 ];
 
 self.addEventListener('install', event => {
