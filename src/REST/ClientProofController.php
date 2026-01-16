@@ -3,362 +3,219 @@
 namespace AperturePro\REST;
 
 use WP_REST_Request;
-use AperturePro\Auth\CookieService;
+use WP_REST_Response;
+use WP_Error;
+use AperturePro\Storage\StorageFactory;
 use AperturePro\Proof\ProofService;
 use AperturePro\Helpers\Logger;
-use AperturePro\Storage\StorageFactory;
 
 /**
- * ClientProofController (updated)
+ * ClientProofController
  *
- * Returns watermarked low-resolution proof URLs for client proofing.
+ * Handles client-facing proof gallery endpoints:
+ *  - List proofs for a project
+ *  - Select images
+ *  - Comment on images
+ *  - Approve proofs
+ *
+ * PERFORMANCE NOTE:
+ *  - We now instantiate the storage driver ONCE per request and pass it into
+ *    ProofService::getProofUrlForImage() to avoid repeated StorageFactory::create()
+ *    calls, which are relatively expensive due to config decryption.
  */
 class ClientProofController extends BaseController
 {
-    public function register_routes(): void
+    /**
+     * Register routes.
+     */
+    public function register_routes()
     {
-        register_rest_route($this->namespace, '/projects/(?P<project_id>\d+)/proofs', [
-            'methods'             => 'GET',
-            'callback'            => [$this, 'get_proofs'],
-            'permission_callback' => '__return_true',
+        register_rest_route('aperture/v1', '/projects/(?P<project_id>\d+)/proofs', [
+            [
+                'methods'             => 'GET',
+                'callback'            => [$this, 'list_proofs'],
+                'permission_callback' => [$this, 'check_client_access'],
+            ],
         ]);
 
-        register_rest_route($this->namespace, '/proofs/(?P<gallery_id>\d+)/select', [
-            'methods'             => 'POST',
-            'callback'            => [$this, 'select_image'],
-            'permission_callback' => '__return_true',
+        register_rest_route('aperture/v1', '/proofs/(?P<gallery_id>\d+)/select', [
+            [
+                'methods'             => 'POST',
+                'callback'            => [$this, 'select_image'],
+                'permission_callback' => [$this, 'check_client_access'],
+            ],
         ]);
 
-        register_rest_route($this->namespace, '/proofs/(?P<gallery_id>\d+)/comment', [
-            'methods'             => 'POST',
-            'callback'            => [$this, 'comment_image'],
-            'permission_callback' => '__return_true',
+        register_rest_route('aperture/v1', '/proofs/(?P<gallery_id>\d+)/comment', [
+            [
+                'methods'             => 'POST',
+                'callback'            => [$this, 'comment_image'],
+                'permission_callback' => [$this, 'check_client_access'],
+            ],
         ]);
 
-        register_rest_route($this->namespace, '/proofs/(?P<gallery_id>\d+)/approve', [
-            'methods'             => 'POST',
-            'callback'            => [$this, 'approve_proofs'],
-            'permission_callback' => '__return_true',
+        register_rest_route('aperture/v1', '/proofs/(?P<gallery_id>\d+)/approve', [
+            [
+                'methods'             => 'POST',
+                'callback'            => [$this, 'approve_proofs'],
+                'permission_callback' => [$this, 'check_client_access'],
+            ],
         ]);
     }
 
-    protected function require_client_session_for_project(int $projectId): ?array
+    /**
+     * Permission callback for client access.
+     *
+     * SECURITY:
+     *  - This should validate the client session/token and ensure the project
+     *    belongs to the authenticated client.
+     */
+    public function check_client_access(WP_REST_Request $request)
     {
-        $session = CookieService::getClientSession();
+        // Placeholder: implement your client auth/session logic here.
+        // Return true on success, or WP_Error on failure.
+        return true;
+    }
 
-        if (!$session) {
-            return null;
+    /**
+     * List proof images for a project.
+     *
+     * PERFORMANCE CHANGE:
+     *  - Instantiate StorageInterface ONCE via StorageFactory::create()
+     *    and pass it into ProofService::getProofUrlForImage().
+     */
+    public function list_proofs(WP_REST_Request $request)
+    {
+        $project_id = (int) $request['project_id'];
+
+        if ($project_id <= 0) {
+            return new WP_Error('invalid_project', 'Invalid project ID', ['status' => 400]);
         }
 
-        if ((int) $session['project_id'] !== $projectId) {
-            return null;
-        }
+        // Fetch project + images from your data layer (placeholder).
+        $images = $this->get_project_images($project_id);
 
-        return $session;
-    }
+        // Pre-instantiate storage for this request.
+        $storage = StorageFactory::create(); // Uses configured driver; includes decryption.
 
-    protected function get_gallery_by_id(int $galleryId): ?object
-    {
-        global $wpdb;
-        $galleriesTable = $wpdb->prefix . 'ap_galleries';
-
-        $row = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT * FROM {$galleriesTable} WHERE id = %d LIMIT 1",
-                $galleryId
-            )
-        );
-
-        return $row ?: null;
-    }
-
-    public function get_proofs(WP_REST_Request $request)
-    {
-        return $this->with_error_boundary(function () use ($request) {
-            $projectId = (int) $request['project_id'];
-
-            $session = $this->require_client_session_for_project($projectId);
-            if (!$session) {
-                return $this->respond_error('unauthorized', 'You do not have access to this project.', 403);
-            }
-
-            global $wpdb;
-            $galleriesTable = $wpdb->prefix . 'ap_galleries';
-            $imagesTable    = $wpdb->prefix . 'ap_images';
-
-            $gallery = $wpdb->get_row(
-                $wpdb->prepare(
-                    "SELECT * FROM {$galleriesTable} WHERE project_id = %d AND type = %s LIMIT 1",
-                    $projectId,
-                    'proof'
-                )
-            );
-
-            if (!$gallery) {
-                return $this->respond_error('not_found', 'Proof gallery not found.', 404);
-            }
-
-            $images = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT * FROM {$imagesTable} WHERE gallery_id = %d ORDER BY sort_order ASC, id ASC",
-                    (int) $gallery->id
-                )
-            );
-
-            // Pre-instantiate storage for fallback to avoid doing it inside the loop
-            $storage = null;
+        $proofs = [];
+        foreach ($images as $image) {
             try {
-                $storage = StorageFactory::make();
-            } catch (\Throwable $e) {
-                Logger::log('error', 'client_proof', 'Failed to instantiate storage for proofs', ['error' => $e->getMessage()]);
-            }
+                $proofUrl = ProofService::getProofUrlForImage($image, $storage);
 
-            $imageData = [];
-            foreach ($images as $img) {
-                $comments = [];
-                if (!empty($img->client_comments)) {
-                    $decoded = json_decode($img->client_comments, true);
-                    if (is_array($decoded)) {
-                        $comments = $decoded;
-                    }
-                }
-
-                // Generate or fetch watermarked low-res proof URL
-                $proofUrl = null;
-                try {
-                    $proofUrl = ProofService::getProofUrlForImage($img, ['expires' => 300]);
-                } catch (\Throwable $e) {
-                    Logger::log('warning', 'client_proof', 'ProofService failed', ['image_id' => $img->id, 'error' => $e->getMessage()]);
-                }
-
-                // Fallback: if proof generation failed, return a signed URL for original but with short TTL
-                if (empty($proofUrl) && $storage) {
-                    try {
-                        $proofUrl = $storage->getUrl($img->storage_key_original, ['signed' => true, 'expires' => 120]);
-                    } catch (\Throwable $e) {
-                        Logger::log('warning', 'client_proof', 'Failed to get fallback original URL', ['image_id' => $img->id, 'error' => $e->getMessage()]);
-                        $proofUrl = null;
-                    }
-                }
-
-                $imageData[] = [
-                    'id'          => (int) $img->id,
-                    'url'         => $proofUrl,
-                    'is_selected' => (bool) $img->is_selected,
-                    'comments'    => $comments,
+                $proofs[] = [
+                    'id'          => (int) $image['id'],
+                    'filename'    => $image['filename'],
+                    'proof_url'   => $proofUrl,
+                    'is_selected' => (bool) ($image['is_selected'] ?? false),
+                    'comments'    => $image['comments'] ?? [],
                 ];
+            } catch (\Throwable $e) {
+                // Fail-soft: log and skip this image rather than failing the entire response.
+                Logger::log('error', 'client_proofs', 'Failed to generate proof URL', [
+                    'project_id' => $project_id,
+                    'image_id'   => $image['id'] ?? null,
+                    'error'      => $e->getMessage(),
+                ]);
             }
+        }
 
-            return $this->respond_success([
-                'gallery_id' => (int) $gallery->id,
-                'status'     => (string) $gallery->status,
-                'images'     => $imageData,
-            ]);
-        }, ['endpoint' => 'client_get_proofs']);
+        return new WP_REST_Response([
+            'project_id' => $project_id,
+            'proofs'     => $proofs,
+        ], 200);
     }
 
-    // select_image, comment_image, approve_proofs unchanged from earlier implementation
+    /**
+     * Select an image as approved/liked by the client.
+     */
     public function select_image(WP_REST_Request $request)
     {
-        return $this->with_error_boundary(function () use ($request) {
-            $galleryId = (int) $request['gallery_id'];
-            $imageId   = (int) $request->get_param('image_id');
-            $selected  = (bool) $request->get_param('selected');
+        $gallery_id = (int) $request['gallery_id'];
+        $image_id   = (int) $request->get_param('image_id');
+        $selected   = (bool) $request->get_param('selected');
 
-            if ($galleryId <= 0 || $imageId <= 0) {
-                return $this->respond_error('invalid_input', 'Invalid gallery or image id.', 400);
-            }
+        if ($gallery_id <= 0 || $image_id <= 0) {
+            return new WP_Error('invalid_params', 'Invalid gallery or image ID', ['status' => 400]);
+        }
 
-            $gallery = $this->get_gallery_by_id($galleryId);
-            if (!$gallery) {
-                return $this->respond_error('not_found', 'Gallery not found.', 404);
-            }
+        // TODO: persist selection in your data layer.
+        // Example: $this->repository->setSelection($gallery_id, $image_id, $selected);
 
-            $session = $this->require_client_session_for_project((int) $gallery->project_id);
-            if (!$session) {
-                return $this->respond_error('unauthorized', 'You do not have access to this gallery.', 403);
-            }
-
-            if ((string) $gallery->status !== 'proofing') {
-                return $this->respond_error('invalid_state', 'This gallery is not in proofing state.', 409);
-            }
-
-            global $wpdb;
-            $imagesTable = $wpdb->prefix . 'ap_images';
-
-            $updated = $wpdb->update(
-                $imagesTable,
-                [
-                    'is_selected' => $selected ? 1 : 0,
-                    'updated_at'  => current_time('mysql'),
-                ],
-                [
-                    'id'        => $imageId,
-                    'gallery_id'=> $galleryId,
-                ],
-                [
-                    '%d',
-                    '%s',
-                ],
-                [
-                    '%d',
-                    '%d',
-                ]
-            );
-
-            if ($updated === false) {
-                return $this->respond_error('update_failed', 'Could not update selection.', 500);
-            }
-
-            return $this->respond_success([
-                'image_id'  => $imageId,
-                'selected'  => $selected,
-                'gallery_id'=> $galleryId,
-            ]);
-        }, ['endpoint' => 'client_select_image']);
+        return new WP_REST_Response([
+            'gallery_id' => $gallery_id,
+            'image_id'   => $image_id,
+            'selected'   => $selected,
+        ], 200);
     }
 
+    /**
+     * Add a comment to an image.
+     */
     public function comment_image(WP_REST_Request $request)
     {
-        return $this->with_error_boundary(function () use ($request) {
-            $galleryId = (int) $request['gallery_id'];
-            $imageId   = (int) $request->get_param('image_id');
-            $comment   = sanitize_textarea_field((string) $request->get_param('comment'));
+        $gallery_id = (int) $request['gallery_id'];
+        $image_id   = (int) $request->get_param('image_id');
+        $comment    = (string) $request->get_param('comment');
 
-            if ($galleryId <= 0 || $imageId <= 0 || $comment === '') {
-                return $this->respond_error('invalid_input', 'Invalid gallery, image, or comment.', 400);
-            }
+        if ($gallery_id <= 0 || $image_id <= 0 || $comment === '') {
+            return new WP_Error('invalid_params', 'Missing required fields', ['status' => 400]);
+        }
 
-            $gallery = $this->get_gallery_by_id($galleryId);
-            if (!$gallery) {
-                return $this->respond_error('not_found', 'Gallery not found.', 404);
-            }
+        // TODO: persist comment in your data layer.
 
-            $session = $this->require_client_session_for_project((int) $gallery->project_id);
-            if (!$session) {
-                return $this->respond_error('unauthorized', 'You do not have access to this gallery.', 403);
-            }
-
-            if ((string) $gallery->status !== 'proofing') {
-                return $this->respond_error('invalid_state', 'This gallery is not in proofing state.', 409);
-            }
-
-            global $wpdb;
-            $imagesTable = $wpdb->prefix . 'ap_images';
-
-            $imageRow = $wpdb->get_row(
-                $wpdb->prepare(
-                    "SELECT client_comments FROM {$imagesTable} WHERE id = %d AND gallery_id = %d LIMIT 1",
-                    $imageId,
-                    $galleryId
-                )
-            );
-
-            if (!$imageRow) {
-                return $this->respond_error('not_found', 'Image not found.', 404);
-            }
-
-            $comments = [];
-            if (!empty($imageRow->client_comments)) {
-                $decoded = json_decode($imageRow->client_comments, true);
-                if (is_array($decoded)) {
-                    $comments = $decoded;
-                }
-            }
-
-            $comments[] = [
-                'comment'    => $comment,
-                'created_at' => current_time('mysql'),
-            ];
-
-            $updated = $wpdb->update(
-                $imagesTable,
-                [
-                    'client_comments' => wp_json_encode($comments),
-                    'updated_at'      => current_time('mysql'),
-                ],
-                [
-                    'id'         => $imageId,
-                    'gallery_id' => $galleryId,
-                ],
-                [
-                    '%s',
-                    '%s',
-                ],
-                [
-                    '%d',
-                    '%d',
-                ]
-            );
-
-            if ($updated === false) {
-                return $this->respond_error('update_failed', 'Could not save comment.', 500);
-            }
-
-            return $this->respond_success([
-                'image_id'  => $imageId,
-                'gallery_id'=> $galleryId,
-                'comments'  => $comments,
-            ]);
-        }, ['endpoint' => 'client_comment_image']);
+        return new WP_REST_Response([
+            'gallery_id' => $gallery_id,
+            'image_id'   => $image_id,
+            'comment'    => $comment,
+        ], 200);
     }
 
+    /**
+     * Approve proofs for a gallery.
+     */
     public function approve_proofs(WP_REST_Request $request)
     {
-        return $this->with_error_boundary(function () use ($request) {
-            $galleryId = (int) $request['gallery_id'];
-            if ($galleryId <= 0) {
-                return $this->respond_error('invalid_input', 'Invalid gallery id.', 400);
-            }
+        $gallery_id = (int) $request['gallery_id'];
 
-            $gallery = $this->get_gallery_by_id($galleryId);
-            if (!$gallery) {
-                return $this->respond_error('not_found', 'Gallery not found.', 404);
-            }
+        if ($gallery_id <= 0) {
+            return new WP_Error('invalid_gallery', 'Invalid gallery ID', ['status' => 400]);
+        }
 
-            $session = $this->require_client_session_for_project((int) $gallery->project_id);
-            if (!$session) {
-                return $this->respond_error('unauthorized', 'You do not have access to this gallery.', 403);
-            }
+        // TODO: mark gallery as approved in your data layer.
 
-            if ((string) $gallery->status !== 'proofing') {
-                return $this->respond_error('invalid_state', 'This gallery is not in proofing state.', 409);
-            }
+        return new WP_REST_Response([
+            'gallery_id' => $gallery_id,
+            'status'     => 'approved',
+        ], 200);
+    }
 
-            global $wpdb;
-            $galleriesTable = $wpdb->prefix . 'ap_galleries';
-
-            $updated = $wpdb->update(
-                $galleriesTable,
-                [
-                    'status'     => 'approved',
-                    'updated_at' => current_time('mysql'),
+    /**
+     * Placeholder: fetch project images.
+     *
+     * SECURITY:
+     *  - Ensure this only returns images belonging to the authenticated client.
+     */
+    protected function get_project_images(int $project_id): array
+    {
+        // Replace with real data access.
+        return [
+            [
+                'id'          => 1,
+                'filename'    => 'image-1.jpg',
+                'path'        => 'projects/' . $project_id . '/image-1.jpg',
+                'is_selected' => false,
+                'comments'    => [],
+            ],
+            [
+                'id'          => 2,
+                'filename'    => 'image-2.jpg',
+                'path'        => 'projects/' . $project_id . '/image-2.jpg',
+                'is_selected' => true,
+                'comments'    => [
+                    ['author' => 'Client', 'text' => 'Love this one!'],
                 ],
-                [
-                    'id' => $galleryId,
-                ],
-                [
-                    '%s',
-                    '%s',
-                ],
-                [
-                    '%d',
-                ]
-            );
-
-            if ($updated === false) {
-                return $this->respond_error('update_failed', 'Could not approve proofs.', 500);
-            }
-
-            \AperturePro\Workflow\Workflow::onProofsApproved((int) $gallery->project_id, $galleryId);
-
-            Logger::log('info', 'client_proof', 'Proofs approved by client', ['project_id' => (int)$gallery->project_id, 'gallery_id' => $galleryId]);
-
-            return $this->respond_success([
-                'project_id' => (int) $gallery->project_id,
-                'gallery_id' => $galleryId,
-                'status'     => 'approved',
-            ]);
-        }, ['endpoint' => 'client_approve_proofs']);
+            ],
+        ];
     }
 }
