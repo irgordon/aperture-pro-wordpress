@@ -1,32 +1,47 @@
 /**
- * Bootstrap SPA
- * Dynamically loads components based on data-spa-component attributes.
+ * Aperture Pro SPA Bootstrap
+ * Hydrates interactive islands based on data-spa-component attributes.
  */
 
 export function bootstrapSPA() {
-    const components = document.querySelectorAll('[data-spa-component]');
+  const components = document.querySelectorAll('[data-spa-component]');
 
-    // Config available via wp_localize_script: ApertureSPAConfig
-    // { themeUrl, ajaxUrl, nonce, social }
+  components.forEach((component) => {
+    const type = component.getAttribute('data-spa-component');
 
-    components.forEach(component => {
-        const type = component.getAttribute('data-spa-component');
-        const hydrated = component.getAttribute('data-spa-hydrated');
+    // Prevent double hydration
+    if (component.dataset.spaHydrated === 'true') return;
 
-        if (hydrated === 'true') return;
+    // Defensive: skip empty or malformed component names
+    if (!type || typeof type !== 'string') {
+      console.warn('[Aperture SPA] Invalid component type:', type, component);
+      return;
+    }
 
-        // Dynamic import
-        // Note: This relies on the browser resolving the relative path from this file.
-        // Since this file is in assets/js/spa/, components/ is a sibling directory.
-        import(`./components/${type}.js`)
-            .then(module => {
-                if (module.default) {
-                    module.default(component);
-                    component.setAttribute('data-spa-hydrated', 'true');
-                }
-            })
-            .catch(err => {
-                console.warn(`[Aperture SPA] Failed to load component: ${type}`, err);
-            });
-    });
+    // Mark as "hydrating" to avoid race conditions
+    component.dataset.spaHydrated = 'hydrating';
+
+    // Dynamic import of component module
+    import(`./components/${type}.js`)
+      .then((module) => {
+        if (module && typeof module.default === 'function') {
+          try {
+            module.default(component);
+            component.dataset.spaHydrated = 'true';
+          } catch (err) {
+            console.error(`[Aperture SPA] Error hydrating component: ${type}`, err);
+            component.dataset.spaHydrated = 'error';
+          }
+        } else {
+          console.warn(
+            `[Aperture SPA] Component "${type}" loaded but has no default export`
+          );
+          component.dataset.spaHydrated = 'error';
+        }
+      })
+      .catch((err) => {
+        console.error(`[Aperture SPA] Failed to load component: ${type}`, err);
+        component.dataset.spaHydrated = 'error';
+      });
+  });
 }
