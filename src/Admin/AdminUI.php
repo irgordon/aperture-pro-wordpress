@@ -241,6 +241,10 @@ class AdminUI
             $screen->id === 'aperture-pro_page_' . self::PAGE_SLUG;
 
         if ($isSettingsPage) {
+            // Toast System
+            wp_enqueue_style('ap-toast-css', $pluginUrl . 'assets/css/ap-toast.css', [], '1.0.0');
+            wp_enqueue_script('ap-toast-js', $pluginUrl . 'assets/js/ap-toast.js', [], '1.0.0', true);
+
             wp_enqueue_style('ap-admin-ui-css', $pluginUrl . 'assets/css/admin-ui.css', [], '1.0.0');
             wp_enqueue_script('ap-admin-ui-js', $pluginUrl . 'assets/js/admin-ui.js', ['jquery'], '1.0.0', true);
 
@@ -261,6 +265,10 @@ class AdminUI
 
         // Setup Wizard
         if (strpos($screen->id, 'aperture-pro-setup') !== false) {
+            // Toast System
+            wp_enqueue_style('ap-toast-css', $pluginUrl . 'assets/css/ap-toast.css', [], '1.0.0');
+            wp_enqueue_script('ap-toast-js', $pluginUrl . 'assets/js/ap-toast.js', [], '1.0.0', true);
+
             // Modal System
             wp_enqueue_style('ap-modal-css', $pluginUrl . 'assets/css/ap-modal.css', [], '1.0.0');
             wp_enqueue_script('ap-modal-js', $pluginUrl . 'assets/js/ap-modal.js', [], '1.0.0', true);
