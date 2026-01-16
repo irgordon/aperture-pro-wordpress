@@ -5,9 +5,13 @@
  *  - Stepper navigation
  *  - Conditional storage credential sections
  *  - Health check summary before launch
+ *  - Modal integration for alerts and confirmations
  */
 
 (function () {
+    const Modal = window.ApertureModal;
+    const Config = window.ApertureSetup || { ajaxUrl: window.apAjaxUrl };
+
     let step = 1;
     const steps = document.querySelectorAll('.ap-step');
     const progress = document.querySelector('.ap-progress-fill');
@@ -45,6 +49,25 @@
         }
     }
 
+    function validateStep(currentStep) {
+        if (currentStep === 2) {
+             const nameField = document.querySelector('[name="studio_name"]');
+             if (nameField && !nameField.value.trim()) return 'Please enter a Studio Name.';
+        }
+        if (currentStep === 3) {
+            // Check if visible required fields are filled
+            const driver = driverSelect.value;
+            if (driver === 's3') {
+                if (!document.querySelector('[name="s3_bucket"]').value) return 'S3 Bucket is required.';
+                if (!document.querySelector('[name="s3_region"]').value) return 'S3 Region is required.';
+            }
+            if (driver === 'cloudinary' || driver === 'imagekit') {
+                 if (!document.querySelector('[name="cloud_api_key"]').value) return 'API Key is required.';
+            }
+        }
+        return null; // OK
+    }
+
     function runHealthCheck() {
         const issues = [];
         const driver = driverSelect.value;
@@ -80,6 +103,12 @@
     }
 
     document.getElementById('ap-next').onclick = () => {
+        const error = validateStep(step);
+        if (error) {
+             Modal.alert(error, 'Validation Error');
+             return;
+        }
+
         if (step < steps.length) step++;
         updateStepper();
     };
@@ -89,13 +118,17 @@
         updateStepper();
     };
 
-    document.getElementById('ap-finish').onclick = () => {
+    document.getElementById('ap-finish').onclick = async () => {
+        const confirmed = await Modal.confirm('Are you sure you want to finish setup and launch?');
+        if (!confirmed) return;
+
         const form = document.getElementById('ap-setup-form');
         const formData = new FormData(form);
 
         const postData = new FormData();
         postData.append('action', 'aperture_pro_save_wizard');
-        postData.append('nonce', formData.get('nonce'));
+        const nonce = Config.nonce || formData.get('nonce');
+        postData.append('nonce', nonce);
 
         formData.forEach((value, key) => {
             if (key !== 'nonce') {
@@ -107,7 +140,7 @@
         finishBtn.disabled = true;
         finishBtn.textContent = 'Saving...';
 
-        fetch(window.apAjaxUrl, {
+        fetch(Config.ajaxUrl, {
             method: 'POST',
             body: postData
         })
@@ -116,19 +149,26 @@
             if (res.success) {
                 window.location.href = res.data.redirect;
             } else {
-                alert('Setup failed: ' + (res.data.message || 'Unknown error'));
+                Modal.alert('Setup failed: ' + (res.data.message || 'Unknown error'), 'Error');
                 finishBtn.disabled = false;
                 finishBtn.textContent = 'Finish & Launch';
             }
         })
         .catch(err => {
-            alert('Setup failed: Network error');
+            Modal.alert('Setup failed: Network error', 'Error');
             finishBtn.disabled = false;
             finishBtn.textContent = 'Finish & Launch';
         });
     };
 
-    driverSelect.addEventListener('change', updateConditionalStorage);
+    driverSelect.addEventListener('change', (e) => {
+        const driver = e.target.value;
+        if (driver !== 'local') {
+             // Non-blocking info
+             Modal.alert(`You selected ${driver}. Please ensure you have your API credentials ready.`, 'Storage Driver');
+        }
+        updateConditionalStorage();
+    });
 
     updateConditionalStorage();
     updateStepper();

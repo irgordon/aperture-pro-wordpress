@@ -62,12 +62,17 @@ class PortalController
         }
 
         $pluginUrl = plugin_dir_url(__DIR__ . '/../../'); // adjust as needed
+
+        // Modal Assets
+        wp_enqueue_style('ap-modal-css', $pluginUrl . 'assets/css/ap-modal.css', [], '1.0.0');
+        wp_enqueue_script('ap-modal-js', $pluginUrl . 'assets/js/ap-modal.js', [], '1.0.0', true);
+
         $cssUrl = $pluginUrl . 'assets/css/client-portal.css';
         $jsUrl = $pluginUrl . 'assets/js/client-portal.js';
         $appJsUrl = $pluginUrl . 'assets/js/portal-app.js';
 
-        wp_enqueue_style('aperture-portal-css', $cssUrl, [], '1.0.0');
-        wp_enqueue_script('aperture-portal-js', $jsUrl, ['jquery'], '1.0.0', true);
+        wp_enqueue_style('aperture-portal-css', $cssUrl, ['ap-modal-css'], '1.0.0');
+        wp_enqueue_script('aperture-portal-js', $jsUrl, ['jquery', 'ap-modal-js'], '1.0.0', true);
         wp_enqueue_script('aperture-portal-app-js', $appJsUrl, ['aperture-portal-js'], '1.0.0', true);
 
         // Localize script with REST base, nonce, and initial session info

@@ -11,7 +11,7 @@ use AperturePro\Admin\AdminUI;
 
 $nonce = wp_create_nonce(AdminUI::NONCE_ACTION);
 ?>
-<div class="wrap ap-setup-wrap">
+<div class="wrap ap-setup-wrap" id="ap-setup-wizard-wrapper">
     <h1>Aperture Pro Setup</h1>
 
     <!-- Stepper Header -->
@@ -118,8 +118,9 @@ $nonce = wp_create_nonce(AdminUI::NONCE_ACTION);
             <button type="button" class="button button-primary" id="ap-finish" style="display:none;">Finish & Launch</button>
         </div>
     </form>
+
+    <!-- Modal Root -->
+    <div id="ap-modal-root"></div>
+    <!-- Accessibility Announcer -->
+    <div aria-live="polite" id="ap-a11y-announcer" class="screen-reader-text"></div>
 </div>
-<script>
-    // Inline simplified logic or rely on external JS (we'll fix external JS)
-    window.apAjaxUrl = '<?php echo admin_url('admin-ajax.php'); ?>';
-</script>
