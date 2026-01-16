@@ -2,11 +2,11 @@
  * Aperture Pro – Client Portal App
  *
  * PERFORMANCE ENHANCEMENTS:
- *  - Skeleton loaders for perceived speed
- *  - AVIF / WebP detection with graceful fallback
- *  - Native lazy loading + async decoding
- *  - IntersectionObserver progressive reveal
- *  - Event delegation + debounced network calls
+ *  - Service Worker registration
+ *  - Responsive image sizes attribute
+ *  - AVIF / WebP detection + fallback
+ *  - Skeleton loaders
+ *  - Lazy loading + async decoding
  */
 
 (function () {
@@ -20,13 +20,32 @@
     const nonce = portal.dataset.nonce || '';
 
     /* ---------------------------------------------------------
+     * Service Worker Registration
+     * --------------------------------------------------------- */
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/wp-content/plugins/aperture-pro/assets/js/sw.js')
+                .catch(() => {
+                    // Fail-soft: SW is an enhancement, not a requirement
+                });
+        });
+    }
+
+    /* ---------------------------------------------------------
      * Feature Detection (cached)
      * --------------------------------------------------------- */
 
-    const supports = {
-        avif: false,
-        webp: false
-    };
+    const supports = { avif: false, webp: false };
+
+    function testImageFormat(dataUri) {
+        return new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => resolve(img.width > 0);
+            img.onerror = () => resolve(false);
+            img.src = dataUri;
+        });
+    }
 
     function detectImageFormats() {
         return Promise.all([
@@ -39,34 +58,9 @@
         ]);
     }
 
-    function testImageFormat(dataUri) {
-        return new Promise(resolve => {
-            const img = new Image();
-            img.onload = () => resolve(img.width > 0);
-            img.onerror = () => resolve(false);
-            img.src = dataUri;
-        });
-    }
-
     /* ---------------------------------------------------------
      * Utilities
      * --------------------------------------------------------- */
-
-    function debounce(fn, delay) {
-        let timer;
-        return function (...args) {
-            clearTimeout(timer);
-            timer = setTimeout(() => fn.apply(this, args), delay);
-        };
-    }
-
-    function requestIdle(fn) {
-        if ('requestIdleCallback' in window) {
-            requestIdleCallback(fn, { timeout: 500 });
-        } else {
-            setTimeout(fn, 0);
-        }
-    }
 
     function apiFetch(endpoint, options = {}) {
         return fetch(apiBase + endpoint, {
@@ -88,21 +82,17 @@
 
     function renderSkeletons(count = 12) {
         gallery.innerHTML = '';
-
         const fragment = document.createDocumentFragment();
 
         for (let i = 0; i < count; i++) {
             const card = document.createElement('div');
             card.className = 'ap-proof-card ap-skeleton';
 
-            const img = document.createElement('div');
-            img.className = 'ap-skeleton-image';
+            card.innerHTML = `
+                <div class="ap-skeleton-image"></div>
+                <div class="ap-skeleton-meta"></div>
+            `;
 
-            const meta = document.createElement('div');
-            meta.className = 'ap-skeleton-meta';
-
-            card.appendChild(img);
-            card.appendChild(meta);
             fragment.appendChild(card);
         }
 
@@ -110,36 +100,29 @@
     }
 
     /* ---------------------------------------------------------
-     * Image Creation with Format Fallback
+     * Image Creation (Responsive + Fallback)
      * --------------------------------------------------------- */
 
-    const imageObserver = 'IntersectionObserver' in window
-        ? new IntersectionObserver(entries => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('is-visible');
-                    imageObserver.unobserve(entry.target);
-                }
-            });
-        }, { rootMargin: '100px' })
-        : null;
-
     function getOptimizedUrl(originalUrl) {
-        if (supports.avif) {
-            return originalUrl + '?format=avif';
-        }
-        if (supports.webp) {
-            return originalUrl + '?format=webp';
-        }
+        if (supports.avif) return originalUrl + '?format=avif';
+        if (supports.webp) return originalUrl + '?format=webp';
         return originalUrl;
     }
 
     function createImage(originalUrl, alt) {
         const img = document.createElement('img');
+
         img.alt = alt || '';
         img.loading = 'lazy';
         img.decoding = 'async';
         img.className = 'ap-proof-image';
+
+        // Responsive sizing based on grid layout
+        img.sizes = `
+            (max-width: 600px) 100vw,
+            (max-width: 1024px) 50vw,
+            33vw
+        `.trim();
 
         const optimizedUrl = getOptimizedUrl(originalUrl);
         let triedFallback = false;
@@ -152,27 +135,18 @@
                 img.src = originalUrl;
                 return;
             }
-
             img.classList.add('is-error');
-            img.alt = 'Image unavailable';
         });
-
-        if (imageObserver) {
-            imageObserver.observe(img);
-        } else {
-            img.classList.add('is-visible');
-        }
 
         return img;
     }
 
     /* ---------------------------------------------------------
-     * Render Proof Gallery
+     * Render Gallery
      * --------------------------------------------------------- */
 
     function renderGallery(proofs) {
         gallery.innerHTML = '';
-
         const fragment = document.createDocumentFragment();
 
         proofs.forEach(proof => {
@@ -191,11 +165,8 @@
             checkbox.checked = proof.is_selected;
             checkbox.className = 'ap-proof-select';
 
-            const label = document.createElement('label');
-            label.textContent = 'Select';
-
             meta.appendChild(checkbox);
-            meta.appendChild(label);
+            meta.appendChild(document.createTextNode(' Select'));
 
             card.appendChild(meta);
             fragment.appendChild(card);
@@ -203,31 +174,6 @@
 
         gallery.appendChild(fragment);
     }
-
-    /* ---------------------------------------------------------
-     * Event Delegation
-     * --------------------------------------------------------- */
-
-    gallery.addEventListener('change', debounce(event => {
-        const checkbox = event.target.closest('.ap-proof-select');
-        if (!checkbox) return;
-
-        const card = checkbox.closest('.ap-proof-card');
-        if (!card) return;
-
-        const imageId = card.dataset.imageId;
-        const selected = checkbox.checked;
-
-        apiFetch('/proofs/select', {
-            method: 'POST',
-            body: JSON.stringify({
-                image_id: imageId,
-                selected: selected
-            })
-        }).catch(() => {
-            checkbox.checked = !selected;
-        });
-    }, 250));
 
     /* ---------------------------------------------------------
      * Initial Load
@@ -238,9 +184,7 @@
 
         detectImageFormats().finally(() => {
             apiFetch('/projects/current/proofs')
-                .then(data => {
-                    requestIdle(() => renderGallery(data.proofs || []));
-                })
+                .then(data => renderGallery(data.proofs || []))
                 .catch(() => {
                     gallery.innerHTML = '<p class="ap-error">Failed to load proofs.</p>';
                 });
