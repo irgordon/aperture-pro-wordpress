@@ -151,14 +151,18 @@ SQL;
         $tables[] = <<<SQL
 CREATE TABLE {$prefix}ap_download_tokens (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    project_id BIGINT UNSIGNED NOT NULL,
     gallery_id BIGINT UNSIGNED NOT NULL,
+    email VARCHAR(255) NULL,
     token VARCHAR(64) NOT NULL,
     expires_at DATETIME NOT NULL,
     used_at DATETIME NULL,
     zip_ref VARCHAR(500) NULL,
+    require_otp TINYINT(1) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY token (token)
+    UNIQUE KEY token (token),
+    KEY project_id (project_id)
 ) ENGINE=InnoDB {$charset};
 SQL;
 
