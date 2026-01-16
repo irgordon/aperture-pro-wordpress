@@ -12,13 +12,13 @@
         <div class="ap-proofs-grid">
             <?php foreach ($images as $img): ?>
                 <div class="ap-proof-item" data-image-id="<?php echo (int)$img['id']; ?>">
-                    <img src="<?php echo esc_url($img['url']); ?>" alt="Proof <?php echo (int)$img['id']; ?>" />
+                    <img src="<?php echo esc_url($img['url']); ?>" alt="Proof image ID <?php echo (int)$img['id']; ?>" />
                     <div class="ap-proof-meta">
                         <label>
-                            <input type="checkbox" class="ap-select-checkbox" <?php echo $img['is_selected'] ? 'checked' : ''; ?> />
+                            <input type="checkbox" class="ap-select-checkbox" <?php echo $img['is_selected'] ? 'checked' : ''; ?> aria-label="Select proof <?php echo (int)$img['id']; ?>" />
                             Select
                         </label>
-                        <button class="ap-btn ap-btn-small ap-comment-btn">Comment</button>
+                        <button class="ap-btn ap-btn-small ap-comment-btn" aria-label="Comment on proof <?php echo (int)$img['id']; ?>">Comment</button>
                     </div>
                     <div class="ap-proof-comments">
                         <?php if (!empty($img['comments'])): ?>
@@ -32,7 +32,7 @@
         </div>
 
         <div class="ap-proofs-actions">
-            <button id="ap-approve-proofs" class="ap-btn ap-btn-success">Approve Selected Proofs</button>
+            <button id="ap-approve-proofs" class="ap-btn ap-btn-success" aria-label="Approve currently selected proofs">Approve Selected Proofs</button>
         </div>
     <?php endif; ?>
 </div>
