@@ -3,6 +3,7 @@
 namespace AperturePro\Storage;
 
 use AperturePro\Helpers\Logger;
+use AperturePro\Storage\Traits\Retryable;
 
 /**
  * LocalStorage
@@ -24,6 +25,8 @@ use AperturePro\Helpers\Logger;
  */
 class LocalStorage implements StorageInterface
 {
+    use Retryable;
+
     protected array $config;
     protected string $baseDir;
     protected string $baseUrl;
@@ -61,47 +64,66 @@ class LocalStorage implements StorageInterface
      */
     public function upload(string $localPath, string $remoteKey, array $options = []): array
     {
-        $dest = $this->baseDir . ltrim($remoteKey, '/');
+        try {
+            return $this->executeWithRetry(function() use ($localPath, $remoteKey, $options) {
+                $dest = $this->baseDir . ltrim($remoteKey, '/');
 
-        $destDir = dirname($dest);
-        if (!file_exists($destDir)) {
-            $created = wp_mkdir_p($destDir);
-            if (!$created) {
-                Logger::log('error', 'local_storage', 'Failed to create destination directory', ['destDir' => $destDir, 'notify_admin' => true]);
-                return ['success' => false, 'key' => $remoteKey, 'url' => null, 'meta' => []];
-            }
-        }
+                $destDir = dirname($dest);
+                if (!file_exists($destDir)) {
+                    $created = wp_mkdir_p($destDir);
+                    if (!$created) {
+                        throw new \RuntimeException("Failed to create destination directory: $destDir");
+                    }
+                }
 
-        $success = @copy($localPath, $dest);
-        if (!$success) {
-            Logger::log('error', 'local_storage', 'Failed to copy file to local storage', ['src' => $localPath, 'dest' => $dest, 'notify_admin' => true]);
+                $success = @copy($localPath, $dest);
+                if (!$success) {
+                    throw new \RuntimeException("Failed to copy file to local storage: $localPath -> $dest");
+                }
+
+                @chmod($dest, 0644);
+
+                // Create a signed URL for immediate access if requested, otherwise return key and meta.
+                $signed = $options['signed'] ?? true;
+                $url = null;
+                if ($signed) {
+                    $token = $this->createSignedTokenForPath($dest, $remoteKey, $options);
+                    if ($token) {
+                        $url = $this->buildSignedUrl($token);
+                    } else {
+                        // Token creation failed; trigger retry
+                        throw new \RuntimeException("Signed token creation failed after upload");
+                    }
+                }
+
+                return [
+                    'success' => true,
+                    'key'     => $remoteKey,
+                    'url'     => $url,
+                    'meta'    => [
+                        'path' => $dest,
+                        'size' => filesize($dest),
+                    ],
+                ];
+            });
+        } catch (\Throwable $e) {
+            Logger::log('error', 'local_storage', 'Upload failed: ' . $e->getMessage(), ['src' => $localPath, 'notify_admin' => true]);
             return ['success' => false, 'key' => $remoteKey, 'url' => null, 'meta' => []];
         }
+    }
 
-        @chmod($dest, 0644);
-
-        // Create a signed URL for immediate access if requested, otherwise return key and meta.
-        $signed = $options['signed'] ?? true;
-        $url = null;
-        if ($signed) {
-            $token = $this->createSignedTokenForPath($dest, $remoteKey, $options);
-            if ($token) {
-                $url = $this->buildSignedUrl($token);
-            } else {
-                // Token creation failed; log and return success but without URL.
-                Logger::log('warning', 'local_storage', 'Signed token creation failed after upload', ['dest' => $dest, 'key' => $remoteKey]);
-            }
-        }
-
-        return [
-            'success' => true,
-            'key'     => $remoteKey,
-            'url'     => $url,
-            'meta'    => [
-                'path' => $dest,
-                'size' => filesize($dest),
-            ],
-        ];
+    /**
+     * Store a file from a local path (Alias/Compat).
+     *
+     * @param string $localPath
+     * @param string $remotePath
+     * @param array  $options
+     * @return bool
+     */
+    public function putFile(string $localPath, string $remotePath, array $options = []): bool
+    {
+        $result = $this->upload($localPath, $remotePath, $options);
+        return $result['success'];
     }
 
     /**
@@ -110,20 +132,25 @@ class LocalStorage implements StorageInterface
      */
     public function getUrl(string $remoteKey, array $options = []): ?string
     {
-        $path = $this->baseDir . ltrim($remoteKey, '/');
+        try {
+            return $this->executeWithRetry(function() use ($remoteKey, $options) {
+                $path = $this->baseDir . ltrim($remoteKey, '/');
 
-        if (!file_exists($path)) {
-            Logger::log('warning', 'local_storage', 'getUrl requested for missing file', ['path' => $path]);
+                if (!file_exists($path)) {
+                    return null;
+                }
+
+                $token = $this->createSignedTokenForPath($path, $remoteKey, $options);
+                if (!$token) {
+                    throw new \RuntimeException("Failed to create signed token for getUrl");
+                }
+
+                return $this->buildSignedUrl($token);
+            });
+        } catch (\Throwable $e) {
+            Logger::log('error', 'local_storage', 'getUrl failed: ' . $e->getMessage(), ['key' => $remoteKey]);
             return null;
         }
-
-        $token = $this->createSignedTokenForPath($path, $remoteKey, $options);
-        if (!$token) {
-            Logger::log('error', 'local_storage', 'Failed to create signed token for getUrl', ['path' => $path, 'notify_admin' => true]);
-            return null;
-        }
-
-        return $this->buildSignedUrl($token);
     }
 
     /**
@@ -190,23 +217,37 @@ class LocalStorage implements StorageInterface
      */
     public function delete(string $remoteKey): bool
     {
-        $path = $this->baseDir . ltrim($remoteKey, '/');
-        if (!file_exists($path)) {
-            return true;
-        }
+        try {
+            return $this->executeWithRetry(function() use ($remoteKey) {
+                $path = $this->baseDir . ltrim($remoteKey, '/');
+                if (!file_exists($path)) {
+                    return true;
+                }
 
-        $deleted = @unlink($path);
-        if (!$deleted) {
-            Logger::log('warning', 'local_storage', 'Failed to delete file', ['path' => $path, 'notify_admin' => true]);
-        }
+                $deleted = @unlink($path);
+                if (!$deleted) {
+                     // Retryable
+                    throw new \RuntimeException("Failed to delete file: $path");
+                }
 
-        return (bool) $deleted;
+                return true;
+            });
+        } catch (\Throwable $e) {
+            Logger::log('warning', 'local_storage', 'Delete failed: ' . $e->getMessage(), ['path' => $remoteKey, 'notify_admin' => true]);
+            return false;
+        }
     }
 
     public function exists(string $remoteKey): bool
     {
-        $path = $this->baseDir . ltrim($remoteKey, '/');
-        return file_exists($path);
+        try {
+             return $this->executeWithRetry(function() use ($remoteKey) {
+                 $path = $this->baseDir . ltrim($remoteKey, '/');
+                 return file_exists($path);
+             });
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     /**
@@ -221,26 +262,33 @@ class LocalStorage implements StorageInterface
 
     public function list(string $prefix = '', array $options = []): array
     {
-        $dir = $this->baseDir . ltrim($prefix, '/');
-        $results = [];
+        try {
+            return $this->executeWithRetry(function() use ($prefix) {
+                $dir = $this->baseDir . ltrim($prefix, '/');
+                $results = [];
 
-        if (!is_dir($dir)) {
-            return $results;
+                if (!is_dir($dir)) {
+                    return $results;
+                }
+
+                $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir));
+                foreach ($iterator as $file) {
+                    if ($file->isFile()) {
+                        $relative = str_replace($this->baseDir, '', $file->getPathname());
+                        $results[] = [
+                            'key'  => ltrim($relative, '/'),
+                            'size' => $file->getSize(),
+                            'mtime'=> date('c', $file->getMTime()),
+                        ];
+                    }
+                }
+
+                return $results;
+            });
+        } catch (\Throwable $e) {
+            Logger::log('warning', 'local_storage', 'List failed: ' . $e->getMessage(), ['prefix' => $prefix]);
+            return [];
         }
-
-        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir));
-        foreach ($iterator as $file) {
-            if ($file->isFile()) {
-                $relative = str_replace($this->baseDir, '', $file->getPathname());
-                $results[] = [
-                    'key'  => ltrim($relative, '/'),
-                    'size' => $file->getSize(),
-                    'mtime'=> date('c', $file->getMTime()),
-                ];
-            }
-        }
-
-        return $results;
     }
 
     /**
