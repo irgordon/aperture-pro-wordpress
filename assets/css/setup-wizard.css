@@ -1,0 +1,30 @@
+.ap-setup-progress {
+    margin-bottom: 20px;
+}
+
+.ap-setup-steps span {
+    margin-right: 10px;
+    font-weight: 600;
+}
+
+.ap-progress-bar {
+    height: 6px;
+    background: #e5e5e5;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.ap-progress-fill {
+    height: 100%;
+    width: 0;
+    background: #2271b1;
+    transition: width 0.3s ease;
+}
+
+.ap-step {
+    display: none;
+}
+
+.ap-setup-actions {
+    margin-top: 20px;
+}
