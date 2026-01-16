@@ -28,8 +28,7 @@ $autoload = APERTURE_PRO_DIR . 'vendor/autoload.php';
 if (file_exists($autoload)) {
     require_once $autoload;
 } else {
-    require_once APERTURE_PRO_DIR . 'src/Installer/SetupWizard.php';
-    require_once APERTURE_PRO_DIR . 'src/Admin/AdminUI.php';
+    require_once APERTURE_PRO_DIR . 'inc/autoloader.php';
 }
 
 /* -------------------------------------------------------------------------
@@ -89,5 +88,9 @@ add_action('init', function () {
 
     if (class_exists('\AperturePro\Admin\AdminUI')) {
         \AperturePro\Admin\AdminUI::init();
+    }
+
+    if (class_exists('\AperturePro\Admin\HealthCard')) {
+        \AperturePro\Admin\HealthCard::init();
     }
 }, 5);

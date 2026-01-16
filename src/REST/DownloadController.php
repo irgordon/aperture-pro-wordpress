@@ -5,6 +5,7 @@ namespace AperturePro\REST;
 use WP_REST_Request;
 use AperturePro\Download\ZipStreamService;
 use AperturePro\Helpers\Logger;
+use AperturePro\Helpers\RateLimiter;
 use AperturePro\Auth\CookieService;
 use AperturePro\Auth\OTPService;
 use AperturePro\Email\EmailService;
@@ -62,16 +63,11 @@ class DownloadController extends BaseController
             $rateKeyToken = "ap_download_rate_token_{$token}";
             $rateKeyIp = "ap_download_rate_ip_" . md5($clientIp);
 
-            $tokenCount = (int) get_transient($rateKeyToken);
-            $ipCount = (int) get_transient($rateKeyIp);
-
-            if ($tokenCount >= self::RATE_LIMIT_MAX || $ipCount >= self::RATE_LIMIT_MAX) {
+            if (!RateLimiter::check($rateKeyToken, self::RATE_LIMIT_MAX, self::RATE_LIMIT_WINDOW) ||
+                !RateLimiter::check($rateKeyIp, self::RATE_LIMIT_MAX, self::RATE_LIMIT_WINDOW)) {
                 Logger::log('warning', 'download', 'Rate limit exceeded for token or IP', ['token' => $token, 'ip' => $clientIp]);
                 return $this->respond_error('rate_limited', 'Too many requests. Please try again later.', 429);
             }
-
-            set_transient($rateKeyToken, $tokenCount + 1, self::RATE_LIMIT_WINDOW);
-            set_transient($rateKeyIp, $ipCount + 1, self::RATE_LIMIT_WINDOW);
 
             // Resolve token payload
             $transientKey = 'ap_download_' . $token;
