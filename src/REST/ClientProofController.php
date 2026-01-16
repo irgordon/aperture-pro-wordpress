@@ -105,6 +105,14 @@ class ClientProofController extends BaseController
                 )
             );
 
+            // Pre-instantiate storage for fallback to avoid doing it inside the loop
+            $storage = null;
+            try {
+                $storage = StorageFactory::make();
+            } catch (\Throwable $e) {
+                Logger::log('error', 'client_proof', 'Failed to instantiate storage for proofs', ['error' => $e->getMessage()]);
+            }
+
             $imageData = [];
             foreach ($images as $img) {
                 $comments = [];
@@ -124,9 +132,8 @@ class ClientProofController extends BaseController
                 }
 
                 // Fallback: if proof generation failed, return a signed URL for original but with short TTL
-                if (empty($proofUrl)) {
+                if (empty($proofUrl) && $storage) {
                     try {
-                        $storage = StorageFactory::make();
                         $proofUrl = $storage->getUrl($img->storage_key_original, ['signed' => true, 'expires' => 120]);
                     } catch (\Throwable $e) {
                         Logger::log('warning', 'client_proof', 'Failed to get fallback original URL', ['image_id' => $img->id, 'error' => $e->getMessage()]);

@@ -19,6 +19,17 @@ class StorageFactory
      * @param string|null $driver
      * @return StorageInterface
      */
+    public static function make(?string $driver = null): StorageInterface
+    {
+        return self::create($driver);
+    }
+
+    /**
+     * Create a storage driver instance.
+     *
+     * @param string|null $driver
+     * @return StorageInterface
+     */
     public static function create(?string $driver = null): StorageInterface
     {
         $config = Config::all();
