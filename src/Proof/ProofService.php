@@ -3,6 +3,7 @@
 namespace AperturePro\Proof;
 
 use AperturePro\Storage\StorageFactory;
+use AperturePro\Storage\StorageInterface;
 use AperturePro\Helpers\Logger;
 
 /**
@@ -36,9 +37,10 @@ class ProofService
      *
      * @param array|object $imageRow DB row or associative array with at least id, storage_key_original
      * @param array $options
+     * @param StorageInterface|null $storage (optional) Pre-instantiated storage driver to avoid overhead
      * @return string|null signed URL or null on failure
      */
-    public static function getProofUrlForImage($imageRow, array $options = []): ?string
+    public static function getProofUrlForImage($imageRow, array $options = [], ?StorageInterface $storage = null): ?string
     {
         if (is_object($imageRow)) {
             $image = (array) $imageRow;
@@ -68,7 +70,10 @@ class ProofService
             }
         }
 
-        $storage = StorageFactory::make();
+        // Use passed storage or instantiate new one
+        if (!$storage) {
+            $storage = StorageFactory::make();
+        }
 
         if (!empty($proofKey)) {
             // Return signed URL for existing proof

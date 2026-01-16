@@ -126,7 +126,7 @@ class ClientProofController extends BaseController
                 // Generate or fetch watermarked low-res proof URL
                 $proofUrl = null;
                 try {
-                    $proofUrl = ProofService::getProofUrlForImage($img, ['expires' => 300]);
+                    $proofUrl = ProofService::getProofUrlForImage($img, ['expires' => 300], $storage);
                 } catch (\Throwable $e) {
                     Logger::log('warning', 'client_proof', 'ProofService failed', ['image_id' => $img->id, 'error' => $e->getMessage()]);
                 }
