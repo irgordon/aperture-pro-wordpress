@@ -16,6 +16,10 @@ use AperturePro\Helpers\Logger;
  */
 class CloudinaryStorage implements StorageInterface
 {
+    private const MAX_RETRIES = 3;
+    private const CHUNK_SIZE = 6 * 1024 * 1024; // 6MB
+    private const LARGE_FILE_THRESHOLD = 20 * 1024 * 1024; // 20MB
+
     protected array $config;
     protected $client;
 
@@ -71,7 +75,14 @@ class CloudinaryStorage implements StorageInterface
                 $uploadOptions['resource_type'] = $options['resource_type'];
             }
 
-            $response = $this->client->uploadApi()->upload($localPath, $uploadOptions);
+            // Handle large uploads
+            if (file_exists($localPath) && filesize($localPath) > self::LARGE_FILE_THRESHOLD) {
+                $uploadOptions['chunk_size'] = self::CHUNK_SIZE;
+            }
+
+            $response = $this->executeWithRetry(function () use ($localPath, $uploadOptions) {
+                return $this->client->uploadApi()->upload($localPath, $uploadOptions);
+            }, 'upload', ['remoteKey' => $remoteKey]);
 
             $url = $response['secure_url'] ?? ($response['url'] ?? null);
             $key = $response['public_id'] ?? $remoteKey;
@@ -127,7 +138,10 @@ class CloudinaryStorage implements StorageInterface
     public function delete(string $remoteKey): bool
     {
         try {
-            $response = $this->client->uploadApi()->destroy($remoteKey);
+            $response = $this->executeWithRetry(function () use ($remoteKey) {
+                return $this->client->uploadApi()->destroy($remoteKey);
+            }, 'delete', ['remoteKey' => $remoteKey]);
+
             return isset($response['result']) && in_array($response['result'], ['ok', 'deleted'], true);
         } catch (\Throwable $e) {
             Logger::log('warning', 'cloudinary', 'Delete failed: ' . $e->getMessage(), ['remoteKey' => $remoteKey]);
@@ -138,7 +152,10 @@ class CloudinaryStorage implements StorageInterface
     public function exists(string $remoteKey): bool
     {
         try {
-            $response = $this->client->adminApi()->asset($remoteKey);
+            $response = $this->executeWithRetry(function () use ($remoteKey) {
+                return $this->client->adminApi()->asset($remoteKey);
+            }, 'exists', ['remoteKey' => $remoteKey]);
+
             return !empty($response);
         } catch (\Throwable $e) {
             return false;
@@ -154,7 +171,10 @@ class CloudinaryStorage implements StorageInterface
                 'max_results' => $options['max_results'] ?? 100,
             ];
 
-            $response = $this->client->adminApi()->assets($params);
+            $response = $this->executeWithRetry(function () use ($params) {
+                return $this->client->adminApi()->assets($params);
+            }, 'list', ['prefix' => $prefix]);
+
             $results = [];
 
             if (!empty($response['resources'])) {
@@ -174,5 +194,41 @@ class CloudinaryStorage implements StorageInterface
             Logger::log('warning', 'cloudinary', 'List failed: ' . $e->getMessage(), ['prefix' => $prefix]);
             return [];
         }
+    }
+
+    /**
+     * Execute a callable with retry logic.
+     *
+     * @param callable $callback The operation to execute.
+     * @param string   $action   Action name for logging.
+     * @param array    $context  Context for logging.
+     * @return mixed
+     * @throws \Throwable
+     */
+    private function executeWithRetry(callable $callback, string $action, array $context = [])
+    {
+        $attempts = 0;
+        $lastException = null;
+
+        while ($attempts < self::MAX_RETRIES) {
+            try {
+                return $callback();
+            } catch (\Throwable $e) {
+                $lastException = $e;
+                $attempts++;
+
+                // If max retries reached, don't sleep, just exit loop to throw
+                if ($attempts >= self::MAX_RETRIES) {
+                    break;
+                }
+
+                Logger::log('warning', 'cloudinary', "Retry {$attempts}/" . self::MAX_RETRIES . " for {$action}: " . $e->getMessage(), $context);
+
+                // Exponential backoff: 1s, 2s, 4s...
+                sleep(pow(2, $attempts - 1));
+            }
+        }
+
+        throw $lastException;
     }
 }
