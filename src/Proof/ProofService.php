@@ -13,10 +13,19 @@ use AperturePro\Helpers\Logger;
  *  - Watermarked, low-resolution variants of originals
  *  - URLs clearly labeled as "proof copies"
  *
- * PERFORMANCE CHANGE:
- *  - getProofUrlForImage() now accepts an optional StorageInterface instance.
+ * PERFORMANCE:
+ *  - getProofUrlForImage() accepts an optional StorageInterface instance.
  *    If provided, we reuse it instead of calling StorageFactory::create()
  *    internally, avoiding repeated config decryption in tight loops.
+ *
+ * CONFIGURABLE QUALITY / SIZE:
+ *  - Max proof dimension and JPEG quality are configurable via filters:
+ *      - aperture_pro_proof_max_size   (int)
+ *      - aperture_pro_proof_quality   (int)
+ *  - Values are clamped to safe bounds:
+ *      - max_size:  800–2400 px
+ *      - quality:   40–85
+ *  - This keeps proofs clearly “proof-only” while allowing tuning.
  */
 class ProofService
 {
@@ -69,7 +78,6 @@ class ProofService
      */
     protected static function getProofPath(string $originalPath): string
     {
-        // Simple example: prefix with "proofs/" and add "_proof" before extension.
         $parts = pathinfo($originalPath);
         $dir   = $parts['dirname'] !== '.' ? $parts['dirname'] : '';
         $name  = $parts['filename'] ?? 'image';
@@ -91,6 +99,8 @@ class ProofService
      *  - Proofs are intentionally lower resolution and watermarked to deter
      *    unauthorized use.
      *  - Overlay text clearly indicates "PROOF COPY - NOT FINAL QUALITY".
+     *  - Max size and quality are configurable via filters but clamped to safe
+     *    bounds so proofs remain clearly non-final.
      *
      * @param string           $originalPath
      * @param string           $proofPath
@@ -168,15 +178,22 @@ class ProofService
     /**
      * Create a watermarked, low-resolution proof image from a local original.
      *
-     * - Resizes to a max width/height (e.g., 1600px).
+     * - Resizes to a configurable max width/height (default 1600px).
      * - Adds a semi-transparent "PROOF COPY" text overlay.
-     * - Intentionally reduces quality to discourage reuse.
+     * - Intentionally reduces quality (configurable) to discourage reuse.
+     *
+     * CONFIG:
+     *  - aperture_pro_proof_max_size (int)   default 1600, clamped 800–2400
+     *  - aperture_pro_proof_quality (int)    default 65,   clamped 40–85
      *
      * @param string $localOriginal
      * @return string|null Path to the generated proof file
      */
     protected static function createWatermarkedLowRes(string $localOriginal): ?string
     {
+        $maxSize = self::getConfiguredMaxSize();
+        $quality = self::getConfiguredQuality();
+
         if (!extension_loaded('imagick') && !extension_loaded('gd')) {
             // As a fallback, just copy the file (not ideal, but avoids hard failure).
             $tmp = wp_tempnam('ap-proof-');
@@ -198,8 +215,8 @@ class ProofService
                 $img = new \Imagick($localOriginal);
                 $img->setImageFormat('jpeg');
 
-                // Resize to max 1600px on the longest side.
-                $img->thumbnailImage(1600, 1600, true);
+                // Resize to max dimension.
+                $img->thumbnailImage($maxSize, $maxSize, true);
 
                 // Add watermark text.
                 $draw = new \ImagickDraw();
@@ -208,8 +225,8 @@ class ProofService
                 $draw->setGravity(\Imagick::GRAVITY_SOUTHEAST);
                 $img->annotateImage($draw, 10, 10, 0, 'PROOF COPY - NOT FINAL QUALITY');
 
-                // Lower quality intentionally.
-                $img->setImageCompressionQuality(65);
+                // Lower quality intentionally (configurable, clamped).
+                $img->setImageCompressionQuality($quality);
 
                 $img->writeImage($tmp);
                 $img->clear();
@@ -225,7 +242,13 @@ class ProofService
 
         // GD fallback.
         try {
-            $src = imagecreatefromstring(file_get_contents($localOriginal));
+            $srcData = file_get_contents($localOriginal);
+            if ($srcData === false) {
+                @unlink($tmp);
+                return null;
+            }
+
+            $src = imagecreatefromstring($srcData);
             if (!$src) {
                 @unlink($tmp);
                 return null;
@@ -233,9 +256,8 @@ class ProofService
 
             $width  = imagesx($src);
             $height = imagesy($src);
-            $max    = 1600;
 
-            $scale = min($max / max($width, 1), $max / max($height, 1), 1);
+            $scale = min($maxSize / max($width, 1), $maxSize / max($height, 1), 1);
             $newW  = (int) ($width * $scale);
             $newH  = (int) ($height * $scale);
 
@@ -254,7 +276,7 @@ class ProofService
 
             imagestring($dst, $fontSize, $x, $y, $text, $color);
 
-            imagejpeg($dst, $tmp, 65);
+            imagejpeg($dst, $tmp, $quality);
 
             imagedestroy($src);
             imagedestroy($dst);
@@ -265,5 +287,55 @@ class ProofService
             @unlink($tmp);
             return null;
         }
+    }
+
+    /**
+     * Get configured max proof size with safe bounds.
+     *
+     * - Default: 1600
+     * - Clamped: 800–2400
+     *
+     * @return int
+     */
+    protected static function getConfiguredMaxSize(): int
+    {
+        $default = 1600;
+        $min = 800;
+        $max = 2400;
+
+        $value = (int) apply_filters('aperture_pro_proof_max_size', $default);
+
+        if ($value < $min) {
+            $value = $min;
+        } elseif ($value > $max) {
+            $value = $max;
+        }
+
+        return $value;
+    }
+
+    /**
+     * Get configured JPEG quality with safe bounds.
+     *
+     * - Default: 65
+     * - Clamped: 40–85
+     *
+     * @return int
+     */
+    protected static function getConfiguredQuality(): int
+    {
+        $default = 65;
+        $min = 40;
+        $max = 85;
+
+        $value = (int) apply_filters('aperture_pro_proof_quality', $default);
+
+        if ($value < $min) {
+            $value = $min;
+        } elseif ($value > $max) {
+            $value = $max;
+        }
+
+        return $value;
     }
 }
