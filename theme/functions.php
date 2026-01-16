@@ -35,13 +35,14 @@ add_action('after_setup_theme', function () {
  * ---------------------------------------------------------
  * 2. LOAD DEPENDENCIES
  * ---------------------------------------------------------
- * Modular includes for enqueue, blocks, SPA, SEO, etc.
+ * Modular includes for enqueue, blocks, SPA, SEO, branding, etc.
  */
 $ap_theme_includes = [
-    'inc/enqueue.php',   // Frontend + SPA asset loading
-    'inc/blocks.php',    // Block pattern registration
-    'inc/spa.php',       // SPA hydration mapping
-    'inc/seo.php',       // SEO plugin compatibility
+    'inc/enqueue.php',    // Frontend + SPA asset loading
+    'inc/blocks.php',     // Block pattern registration
+    'inc/spa.php',        // SPA hydration mapping
+    'inc/seo.php',        // SEO plugin compatibility
+    'inc/branding.php',   // Social media branding settings (NEW)
 ];
 
 foreach ($ap_theme_includes as $file) {
@@ -62,8 +63,8 @@ foreach ($ap_theme_includes as $file) {
  */
 add_action('init', function () {
     register_nav_menus([
-        'primary'   => __('Primary Navigation', 'aperture-pro'),
-        'footer'    => __('Footer Navigation', 'aperture-pro'),
+        'primary'   => __('Primary Navigation', 'aperture-pro-theme'),
+        'footer'    => __('Footer Navigation', 'aperture-pro-theme'),
     ]);
 });
 
