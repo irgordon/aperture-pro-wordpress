@@ -1,0 +1,146 @@
+/* ---------------------------------------------------------
+   Aperture Pro Marketing SPA — Enhancement Styles
+   Path: assets/css/spa.css
+   --------------------------------------------------------- */
+
+/* Pricing Toggle */
+.pricing-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    cursor: pointer;
+}
+
+.toggle-label {
+    font-weight: 600;
+    color: var(--wp--preset--color--neutral-500);
+    transition: color 0.3s;
+}
+
+.toggle-label.active {
+    color: var(--wp--preset--color--neutral-900);
+}
+
+.toggle-switch {
+    width: 50px;
+    height: 26px;
+    background: var(--wp--preset--color--neutral-200);
+    border-radius: 13px;
+    position: relative;
+    transition: background 0.3s;
+}
+
+.pricing-toggle.is-yearly .toggle-switch {
+    background: var(--wp--preset--color--primary);
+}
+
+.toggle-slider {
+    width: 22px;
+    height: 22px;
+    background: white;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.pricing-toggle.is-yearly .toggle-slider {
+    transform: translateX(24px);
+}
+
+/* FAQ */
+.faq-list {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.faq-item {
+    border-bottom: 1px solid var(--wp--preset--color--neutral-200);
+}
+
+.faq-question {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 1.5rem 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.faq-icon {
+    width: 12px;
+    height: 12px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+    transition: transform 0.3s;
+}
+
+.faq-question[aria-expanded="true"] .faq-icon {
+    transform: rotate(-135deg);
+}
+
+.faq-answer {
+    padding-bottom: 1.5rem;
+    color: var(--wp--preset--color--neutral-700);
+}
+
+/* Testimonials */
+.testimonials-section {
+    overflow: hidden;
+    padding: 4rem 0;
+}
+
+.testimonials-slider {
+    position: relative;
+    max-width: 100%;
+}
+
+.testimonials-track {
+    display: flex;
+    transition: transform 0.5s ease;
+}
+
+.testimonial-slide {
+    min-width: 100%;
+    box-sizing: border-box;
+    padding: 0 1rem;
+    text-align: center;
+}
+
+.testimonial-slide blockquote {
+    font-size: 1.5rem;
+    font-style: italic;
+    margin-bottom: 1rem;
+}
+
+.slider-controls {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+.slider-controls button {
+    background: none;
+    border: 1px solid var(--wp--preset--color--neutral-900);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.slider-controls button:hover {
+    background: var(--wp--preset--color--neutral-900);
+    color: white;
+}

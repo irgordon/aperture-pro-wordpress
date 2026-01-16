@@ -4,6 +4,7 @@
  * - Social icon hover animations
  * - Scroll-to-top button
  * - Reveal-on-scroll animation
+ * - Dynamic data hydration (Year, Social Links)
  *
  * Loaded dynamically by bootstrap.js when it detects:
  * <footer data-spa-component="footer">…</footer>
@@ -11,6 +12,33 @@
 
 export default function initFooter(root) {
     if (!root) return;
+
+    // -----------------------------------------------------
+    // 0. Dynamic Hydration
+    // -----------------------------------------------------
+    // Update Year
+    const copyrightP = root.querySelector('.site-footer__inner p');
+    if (copyrightP) {
+        copyrightP.innerHTML = `© ${new Date().getFullYear()} Aperture Pro. All rights reserved.`;
+    }
+
+    // Update Social Links from ApertureSPAConfig
+    if (typeof ApertureSPAConfig !== 'undefined' && ApertureSPAConfig.social) {
+        const socialMap = {
+            facebook: ApertureSPAConfig.social.facebook,
+            twitter: ApertureSPAConfig.social.twitter,
+            instagram: ApertureSPAConfig.social.instagram
+        };
+
+        for (const [network, url] of Object.entries(socialMap)) {
+            const link = root.querySelector(`[data-social="${network}"]`);
+            if (link && url) {
+                link.href = url;
+            } else if (link && !url) {
+                link.style.display = 'none'; // Hide if no URL configured
+            }
+        }
+    }
 
     // -----------------------------------------------------
     // 1. Social Icon Micro-Interactions
