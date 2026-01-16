@@ -1,37 +1,24 @@
-/* Aperture Pro Modal CSS */
+/* ---------------------------------------------------------
+   Aperture Pro — Modal System
+   Path: assets/css/ap-modal.css
+   --------------------------------------------------------- */
 
-:root {
-  --ap-bg: #ffffff;
-  --ap-surface: #f8f9fb;
-  --ap-card-bg: #ffffff;
-  --ap-border: #e6e9ee;
-  --ap-text: #1f2933;
-  --ap-muted: #6b7280;
-  --ap-primary: #0b74de;
-  --ap-primary-contrast: #ffffff;
-  --ap-success: #16a34a;
-  --ap-warning: #f59e0b;
-  --ap-danger: #ef4444;
-  --ap-shadow: 0 6px 18px rgba(31,41,51,0.06);
-  --ap-radius: 8px;
-  --ap-transition: 180ms cubic-bezier(.2,.9,.2,1);
-}
+/* ---------------------------------------------------------
+   Modal Overlay
+   --------------------------------------------------------- */
 
-/* =========================
-   Modals
-   ========================= */
 .ap-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.5);
+  background: rgba(0, 0, 0, 0.45);
   z-index: 1400;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease;
-  backdrop-filter: blur(2px);
+  transition: opacity var(--duration-normal) var(--ease-standard);
+  backdrop-filter: blur(3px);
 }
 
 .ap-modal-overlay.is-visible {
@@ -39,94 +26,136 @@
   pointer-events: auto;
 }
 
+/* ---------------------------------------------------------
+   Modal Container
+   --------------------------------------------------------- */
+
 .ap-modal {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   width: 90%;
-  max-width: 400px;
+  max-width: 420px;
   overflow: hidden;
-  transform: translateY(10px);
-  transition: transform 0.2s ease;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color: var(--ap-text);
+  transform: translateY(12px);
+  transition: transform var(--duration-normal) var(--ease-decelerate);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
 }
 
-.ap-modal-overlay.is-visible .ap-modal { transform: translateY(0); }
+.ap-modal-overlay.is-visible .ap-modal {
+  transform: translateY(0);
+}
+
+/* ---------------------------------------------------------
+   Header
+   --------------------------------------------------------- */
 
 .ap-modal-header {
-  padding: 16px;
-  border-bottom: 1px solid var(--ap-border);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
 }
 
+/* ---------------------------------------------------------
+   Body
+   --------------------------------------------------------- */
+
 .ap-modal-body {
-  padding: 20px 16px;
-  font-size: 1rem;
-  color: var(--ap-text);
+  padding: var(--space-5) var(--space-4);
+  font-size: var(--font-size-base);
+  color: var(--color-text-primary);
+  line-height: var(--line-normal);
 }
+
+/* ---------------------------------------------------------
+   Inputs
+   --------------------------------------------------------- */
 
 .ap-modal-input {
   width: 100%;
-  padding: 10px;
-  border: 1px solid var(--ap-border);
-  border-radius: 6px;
-  margin-top: 10px;
-  font-size: 1rem;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-top: var(--space-3);
+  font-size: var(--font-size-base);
   box-sizing: border-box;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
 }
 
 .ap-modal-input:focus {
-  border-color: var(--ap-primary);
+  border-color: var(--color-secondary);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(11,116,222,0.1);
+  box-shadow: 0 0 0 3px rgba(46, 196, 182, 0.25); /* teal focus ring */
 }
+
+/* ---------------------------------------------------------
+   Footer
+   --------------------------------------------------------- */
 
 .ap-modal-footer {
-  padding: 12px 16px;
-  background: var(--ap-surface);
+  padding: var(--space-4);
+  background: var(--color-surface-alt);
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  border-top: 1px solid var(--ap-border);
+  gap: var(--space-3);
+  border-top: 1px solid var(--color-border);
 }
 
-/* =========================
-   Buttons (re-defined for modal self-containment)
-   ========================= */
+/* ---------------------------------------------------------
+   Buttons (Modal-Scoped)
+   --------------------------------------------------------- */
+
 .ap-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 6px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
-  background: var(--ap-surface);
-  color: var(--ap-text);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
   cursor: pointer;
   font-weight: 600;
-  transition: transform var(--ap-transition), box-shadow var(--ap-transition), background var(--ap-transition);
+  transition:
+    transform var(--duration-normal) var(--ease-standard),
+    box-shadow var(--duration-normal) var(--ease-standard),
+    background var(--duration-normal) var(--ease-standard);
   text-decoration: none;
   user-select: none;
-  font-size: 1rem;
+  font-size: var(--font-size-base);
 }
 
 .ap-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(11,116,222,0.08);
+  box-shadow: var(--shadow-md);
 }
 
-.ap-btn:active { transform: translateY(0); }
+.ap-btn:active {
+  transform: translateY(0);
+}
 
+/* Primary */
 .ap-btn-primary {
-  background: var(--ap-primary);
-  color: var(--ap-primary-contrast);
-  border-color: rgba(11,116,222,0.12);
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-color: rgba(231, 29, 54, 0.2); /* red accent border */
 }
 
+.ap-btn-primary:hover {
+  background: var(--color-primary-hover);
+}
+
+/* Success */
 .ap-btn-success {
-  background: var(--ap-success);
-  color: #fff;
+  background: var(--color-secondary);
+  color: var(--color-text-primary);
+}
+
+.ap-btn-success:hover {
+  background: var(--color-secondary-hover);
 }
