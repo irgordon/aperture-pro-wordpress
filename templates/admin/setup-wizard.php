@@ -6,6 +6,10 @@
  *  - Storage credentials shown only when relevant driver is selected
  *  - Health check summary before launch
  */
+
+use AperturePro\Admin\AdminUI;
+
+$nonce = wp_create_nonce(AdminUI::NONCE_ACTION);
 ?>
 <div class="wrap ap-setup-wrap">
     <h1>Aperture Pro Setup</h1>
@@ -26,6 +30,7 @@
     </div>
 
     <form id="ap-setup-form">
+        <input type="hidden" name="nonce" value="<?php echo esc_attr($nonce); ?>">
 
         <!-- STEP 1 -->
         <section class="ap-step" data-step="1">
@@ -69,14 +74,14 @@
             <div class="ap-conditional ap-storage-cloudinary">
                 <h3>Cloudinary</h3>
                 <label>API Key</label>
-                <input type="text" name="cloudinary_api_key">
+                <input type="text" name="cloud_api_key">
             </div>
 
             <!-- ImageKit -->
             <div class="ap-conditional ap-storage-imagekit">
                 <h3>ImageKit</h3>
                 <label>Public Key</label>
-                <input type="text" name="imagekit_public_key">
+                <input type="text" name="cloud_api_key"> <!-- Reusing cloud_api_key as per AdminUI limit -->
             </div>
         </section>
 
@@ -104,4 +109,17 @@
         <section class="ap-step" data-step="6">
             <h2>Health Check & Launch</h2>
             <div id="ap-health-summary"></div>
-            <p>If everything looks good, click
+            <p>If everything looks good, click Finish to complete setup.</p>
+        </section>
+
+        <div class="ap-actions">
+            <button type="button" class="button" id="ap-prev">Previous</button>
+            <button type="button" class="button button-primary" id="ap-next">Next</button>
+            <button type="button" class="button button-primary" id="ap-finish" style="display:none;">Finish & Launch</button>
+        </div>
+    </form>
+</div>
+<script>
+    // Inline simplified logic or rely on external JS (we'll fix external JS)
+    window.apAjaxUrl = '<?php echo admin_url('admin-ajax.php'); ?>';
+</script>

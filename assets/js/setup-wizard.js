@@ -89,6 +89,45 @@
         updateStepper();
     };
 
+    document.getElementById('ap-finish').onclick = () => {
+        const form = document.getElementById('ap-setup-form');
+        const formData = new FormData(form);
+
+        const postData = new FormData();
+        postData.append('action', 'aperture_pro_save_wizard');
+        postData.append('nonce', formData.get('nonce'));
+
+        formData.forEach((value, key) => {
+            if (key !== 'nonce') {
+                postData.append(`settings[${key}]`, value);
+            }
+        });
+
+        const finishBtn = document.getElementById('ap-finish');
+        finishBtn.disabled = true;
+        finishBtn.textContent = 'Saving...';
+
+        fetch(window.apAjaxUrl, {
+            method: 'POST',
+            body: postData
+        })
+        .then(res => res.json())
+        .then(res => {
+            if (res.success) {
+                window.location.href = res.data.redirect;
+            } else {
+                alert('Setup failed: ' + (res.data.message || 'Unknown error'));
+                finishBtn.disabled = false;
+                finishBtn.textContent = 'Finish & Launch';
+            }
+        })
+        .catch(err => {
+            alert('Setup failed: Network error');
+            finishBtn.disabled = false;
+            finishBtn.textContent = 'Finish & Launch';
+        });
+    };
+
     driverSelect.addEventListener('change', updateConditionalStorage);
 
     updateConditionalStorage();

@@ -8,6 +8,7 @@ use WP_Error;
 use AperturePro\Storage\StorageFactory;
 use AperturePro\Proof\ProofService;
 use AperturePro\Helpers\Logger;
+use AperturePro\Auth\CookieService;
 
 /**
  * ClientProofController
@@ -72,8 +73,29 @@ class ClientProofController extends BaseController
      */
     public function check_client_access(WP_REST_Request $request)
     {
-        // Placeholder: implement your client auth/session logic here.
-        // Return true on success, or WP_Error on failure.
+        $session = CookieService::getClientSession();
+
+        if (!$session) {
+            return new WP_Error('unauthorized', 'Client session not found', ['status' => 401]);
+        }
+
+        $session_project_id = (int)$session['project_id'];
+
+        // If route has project_id
+        $project_id = (int) $request->get_param('project_id');
+        if ($project_id > 0 && $session_project_id !== $project_id) {
+             return new WP_Error('forbidden', 'Access denied to this project', ['status' => 403]);
+        }
+
+        // If route has gallery_id
+        $gallery_id = (int) $request->get_param('gallery_id');
+        if ($gallery_id > 0) {
+             $gallery_project_id = $this->get_project_id_for_gallery($gallery_id);
+             if (!$gallery_project_id || $session_project_id !== $gallery_project_id) {
+                 return new WP_Error('forbidden', 'Access denied to this gallery', ['status' => 403]);
+             }
+        }
+
         return true;
     }
 
@@ -217,5 +239,13 @@ class ClientProofController extends BaseController
                 ],
             ],
         ];
+    }
+
+    protected function get_project_id_for_gallery(int $gallery_id): ?int
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_galleries';
+        $pid = $wpdb->get_var($wpdb->prepare("SELECT project_id FROM $table WHERE id = %d", $gallery_id));
+        return $pid ? (int)$pid : null;
     }
 }

@@ -27,6 +27,7 @@ class PortalController
         add_shortcode('aperture_portal', [self::class, 'shortcodePortal']);
         add_action('wp_enqueue_scripts', [self::class, 'enqueueAssets']);
         add_action('rest_api_init', [self::class, 'register_server_render_route']);
+        add_action('init', [self::class, 'serve_service_worker']);
     }
 
     /**
@@ -63,9 +64,11 @@ class PortalController
         $pluginUrl = plugin_dir_url(__DIR__ . '/../../'); // adjust as needed
         $cssUrl = $pluginUrl . 'assets/css/client-portal.css';
         $jsUrl = $pluginUrl . 'assets/js/client-portal.js';
+        $appJsUrl = $pluginUrl . 'assets/js/portal-app.js';
 
         wp_enqueue_style('aperture-portal-css', $cssUrl, [], '1.0.0');
         wp_enqueue_script('aperture-portal-js', $jsUrl, ['jquery'], '1.0.0', true);
+        wp_enqueue_script('aperture-portal-app-js', $appJsUrl, ['aperture-portal-js'], '1.0.0', true);
 
         // Localize script with REST base, nonce, and initial session info
         $nonce = Nonce::create('aperture_pro');
@@ -75,6 +78,7 @@ class PortalController
             'restBase' => rest_url('aperture/v1'),
             'nonce' => $nonce,
             'session' => $session ?: null,
+            'swUrl' => site_url('?aperture_sw=1'),
             'strings' => [
                 'loading' => 'Loading…',
                 'no_project' => 'No project selected. If you were given a link, please open it again or contact your photographer.',
@@ -83,6 +87,9 @@ class PortalController
         ];
 
         wp_localize_script('aperture-portal-js', 'ApertureClient', $initial);
+        // Also localize for app js if needed, or it can access ApertureClient global since it depends on it (implicitly order-wise).
+        // Since we didn't set dependency in wp_enqueue_script above, we should ensure order or add dependency.
+        // Let's add dependency to be safe.
     }
 
     /**
@@ -111,6 +118,37 @@ class PortalController
         } catch (\Throwable $e) {
             Logger::log('error', 'client_portal', 'REST portal render failed: ' . $e->getMessage(), ['notify_admin' => true]);
             return rest_ensure_response(['success' => false, 'message' => 'Unable to render portal.']);
+        }
+    }
+
+    /**
+     * Serve the Service Worker with the correct Service-Worker-Allowed header to broaden its scope.
+     * Also dynamically replaces asset paths with absolute URLs.
+     */
+    public static function serve_service_worker(): void
+    {
+        if (isset($_GET['aperture_sw'])) {
+            header('Content-Type: application/javascript');
+            header('Service-Worker-Allowed: /');
+
+            $pluginDir = plugin_dir_path(__DIR__ . '/../../');
+            $swPath = $pluginDir . 'assets/js/sw.js';
+
+            if (file_exists($swPath)) {
+                $content = file_get_contents($swPath);
+                $pluginUrl = plugin_dir_url(__DIR__ . '/../../');
+
+                // Replace relative paths with absolute URLs
+                // sw.js has: './portal-app.js' and '../css/client-portal.css'
+                $content = str_replace("'./portal-app.js'", "'" . $pluginUrl . "assets/js/portal-app.js'", $content);
+                $content = str_replace("'../css/client-portal.css'", "'" . $pluginUrl . "assets/css/client-portal.css'", $content);
+                // Handle double quotes fallback
+                $content = str_replace('"./portal-app.js"', '"' . $pluginUrl . 'assets/js/portal-app.js"', $content);
+                $content = str_replace('"../css/client-portal.css"', '"' . $pluginUrl . 'assets/css/client-portal.css"', $content);
+
+                echo $content;
+            }
+            exit;
         }
     }
 }
