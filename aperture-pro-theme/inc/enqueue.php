@@ -69,6 +69,13 @@ add_action('wp_enqueue_scripts', function () {
         $version
     );
 
+    wp_enqueue_style(
+        'aperture-theme-footer',
+        get_theme_file_uri('/assets/css/footer.css'),
+        ['aperture-theme-tokens'],
+        $version
+    );
+
     /**
      * ---------------------------------------------------------
      * JS: SHARED UI COMPONENTS
@@ -146,3 +153,13 @@ add_action('wp_enqueue_scripts', function () {
         ],
     ]);
 });
+
+/**
+ * Add type="module" to SPA scripts
+ */
+add_filter('script_loader_tag', function ($tag, $handle, $src) {
+    if (in_array($handle, ['aperture-spa-index', 'aperture-spa-bootstrap'])) {
+        return '<script type="module" src="' . esc_url($src) . '"></script>';
+    }
+    return $tag;
+}, 10, 3);

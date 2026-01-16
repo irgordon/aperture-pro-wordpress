@@ -1,0 +1,72 @@
+/* ---------------------------------------------------------
+   Aperture Pro Marketing Theme — Footer Styling Pack
+   Path: assets/css/footer.css
+   --------------------------------------------------------- */
+
+/* Footer container */
+.site-footer {
+  padding: var(--space-6) 0;
+  background: var(--color-neutral-900);
+  color: var(--color-white);
+  font-size: var(--font-size-sm);
+}
+
+.site-footer__inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Copyright */
+.site-footer p {
+  margin: 0;
+  color: var(--color-neutral-200);
+}
+
+/* Social icon container */
+.site-footer__social {
+  display: flex;
+  gap: var(--space-4);
+}
+
+/* Social icon links */
+.footer-social-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-neutral-700);
+  color: var(--color-white);
+  transition: background var(--duration-normal) var(--ease-standard),
+              transform var(--duration-fast) var(--ease-standard);
+}
+
+.footer-social-icon:hover {
+  background: var(--color-primary);
+  transform: translateY(-2px);
+}
+
+/* SVG icons */
+.footer-social-icon svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* Mobile layout */
+@media (max-width: 640px) {
+  .site-footer__inner {
+    flex-direction: column;
+    gap: var(--space-4);
+    text-align: center;
+  }
+
+  .site-footer__social {
+    justify-content: center;
+  }
+}

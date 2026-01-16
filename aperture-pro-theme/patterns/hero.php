@@ -37,7 +37,7 @@
 
                 <!-- wp:button {"backgroundColor":"primary","textColor":"white"} -->
                 <div class="wp-block-button">
-                    <a class="wp-block-button__link has-white-color has-primary-background-color has-text-color has-background">
+                    <a class="wp-block-button__link has-white-color has-primary-background-color has-text-color has-background" href="/client/register">
                         Get Started
                     </a>
                 </div>
@@ -45,7 +45,7 @@
 
                 <!-- wp:button {"backgroundColor":"neutral-200","textColor":"neutral-900"} -->
                 <div class="wp-block-button">
-                    <a class="wp-block-button__link has-neutral-900-color has-neutral-200-background-color has-text-color has-background">
+                    <a class="wp-block-button__link has-neutral-900-color has-neutral-200-background-color has-text-color has-background" href="/demo">
                         View Demo
                     </a>
                 </div>
