@@ -52,14 +52,20 @@ $nonce = wp_create_nonce(AdminUI::NONCE_ACTION);
                             </th>
                             <td><?php AdminUI::field_storage_driver(); ?></td>
                         </tr>
+                    </table>
 
-                        <tr class="ap-local-path-row" <?php if ($storage_driver !== 'local') echo 'style="display:none"'; ?>>
+                    <!-- LOCAL SETTINGS -->
+                    <table class="form-table ap-form-table" id="ap-local-settings">
+                        <tr class="ap-local-path-row">
                             <th scope="row">
                                 <label for="local_storage_path">Local Storage Path</label>
                             </th>
                             <td><?php AdminUI::field_local_storage_path(); ?></td>
                         </tr>
+                    </table>
 
+                    <!-- CLOUD PROVIDER SETTINGS (Cloudinary / ImageKit) -->
+                    <table class="form-table ap-form-table" id="ap-cloud-settings">
                         <tr>
                             <th scope="row">
                                 <label for="cloud_provider">Cloud Provider</label>
@@ -73,14 +79,13 @@ $nonce = wp_create_nonce(AdminUI::NONCE_ACTION);
                             </th>
                             <td><?php AdminUI::field_cloud_api_key(); ?></td>
                         </tr>
-
                     </table>
                 </div>
 
                 <!-- ===========================
                      AWS S3 + CLOUDFRONT
                 ============================ -->
-                <div class="ap-card">
+                <div class="ap-card" id="ap-s3-settings">
                     <h2>AWS S3 & CloudFront</h2>
                     <p class="ap-muted">Configure Amazon S3 for storage and CloudFront for fast global delivery.</p>
 

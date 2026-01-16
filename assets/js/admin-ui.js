@@ -32,13 +32,27 @@
   function bindStorageDriver() {
     const driver = $('#storage_driver');
     if (!driver) return;
-    driver.addEventListener('change', (e) => {
-      const val = e.target.value;
-      const localRow = document.querySelector('.ap-local-path-row');
-      if (localRow) {
-        localRow.style.display = val === 'local' ? '' : 'none';
+
+    const updateVisibility = () => {
+      const val = driver.value;
+      const localSettings = $('#ap-local-settings');
+      const cloudSettings = $('#ap-cloud-settings');
+      const s3Settings = $('#ap-s3-settings');
+
+      if (localSettings) {
+        localSettings.style.display = val === 'local' ? '' : 'none';
       }
-    });
+      if (cloudSettings) {
+        cloudSettings.style.display = (val === 'cloudinary' || val === 'imagekit') ? '' : 'none';
+      }
+      if (s3Settings) {
+        s3Settings.style.display = val === 's3' ? '' : 'none';
+      }
+    };
+
+    driver.addEventListener('change', updateVisibility);
+    // Initial state
+    updateVisibility();
   }
 
   function bindTestApiKey() {

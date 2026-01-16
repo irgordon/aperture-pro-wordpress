@@ -375,6 +375,233 @@
     }
   }
 
+  // Modal System
+  class Modal {
+    static _create(title, bodyHtml, buttons = []) {
+      const overlay = document.createElement('div');
+      overlay.className = 'ap-modal-overlay';
+
+      const modal = document.createElement('div');
+      modal.className = 'ap-modal';
+
+      const header = document.createElement('div');
+      header.className = 'ap-modal-header';
+      header.textContent = title;
+
+      const body = document.createElement('div');
+      body.className = 'ap-modal-body';
+      body.innerHTML = bodyHtml;
+
+      const footer = document.createElement('div');
+      footer.className = 'ap-modal-footer';
+
+      buttons.forEach(btn => {
+        const b = document.createElement('button');
+        b.className = `ap-btn ${btn.className || ''}`;
+        b.textContent = btn.text;
+        b.addEventListener('click', () => btn.onClick(overlay));
+        footer.appendChild(b);
+      });
+
+      modal.appendChild(header);
+      modal.appendChild(body);
+      modal.appendChild(footer);
+      overlay.appendChild(modal);
+
+      document.body.appendChild(overlay);
+      // Trigger reflow
+      void overlay.offsetWidth;
+      overlay.classList.add('is-visible');
+
+      // Focus first input or button
+      const focusable = overlay.querySelector('input, button');
+      if(focusable) focusable.focus();
+
+      return overlay;
+    }
+
+    static alert(message, title = 'Alert') {
+      return new Promise(resolve => {
+        this._create(title, `<p>${message}</p>`, [{
+          text: 'OK',
+          className: 'ap-btn-primary',
+          onClick: (overlay) => {
+            this.close(overlay);
+            resolve();
+          }
+        }]);
+      });
+    }
+
+    static confirm(message, title = 'Confirm') {
+      return new Promise(resolve => {
+        this._create(title, `<p>${message}</p>`, [
+          {
+            text: 'Cancel',
+            onClick: (overlay) => {
+              this.close(overlay);
+              resolve(false);
+            }
+          },
+          {
+            text: 'Confirm',
+            className: 'ap-btn-primary',
+            onClick: (overlay) => {
+              this.close(overlay);
+              resolve(true);
+            }
+          }
+        ]);
+      });
+    }
+
+    static prompt(message, placeholder = '', title = 'Input') {
+      return new Promise(resolve => {
+        const id = 'ap-prompt-input-' + Date.now();
+        const html = `<p><label for="${id}">${message}</label></p>
+                      <input id="${id}" type="text" class="ap-modal-input" placeholder="${placeholder}" />`;
+
+        const overlay = this._create(title, html, [
+          {
+            text: 'Cancel',
+            onClick: (ov) => {
+              this.close(ov);
+              resolve(null);
+            }
+          },
+          {
+            text: 'OK',
+            className: 'ap-btn-primary',
+            onClick: (ov) => {
+              const val = ov.querySelector('input').value;
+              this.close(ov);
+              resolve(val);
+            }
+          }
+        ]);
+
+        // Enter key support
+        const input = overlay.querySelector('input');
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            const val = input.value;
+            this.close(overlay);
+            resolve(val);
+          }
+        });
+      });
+    }
+
+    static close(overlay) {
+      overlay.classList.remove('is-visible');
+      setTimeout(() => overlay.remove(), 250);
+    }
+  }
+
+  // Lightbox System
+  class Lightbox {
+    constructor(images) {
+      this.images = images; // Array of { src, alt, id }
+      this.currentIndex = 0;
+      this.overlay = null;
+    }
+
+    open(index = 0) {
+      this.currentIndex = index;
+      this._render();
+      this._bindEvents();
+    }
+
+    _render() {
+      if (this.overlay) this.overlay.remove();
+
+      this.overlay = document.createElement('div');
+      this.overlay.className = 'ap-lightbox-overlay';
+      this.overlay.innerHTML = `
+        <div class="ap-lightbox-header">
+          <span class="ap-lightbox-counter">${this.currentIndex + 1} / ${this.images.length}</span>
+          <button class="ap-lightbox-close" aria-label="Close">×</button>
+        </div>
+        <div class="ap-lightbox-content">
+          <button class="ap-lightbox-nav ap-lightbox-prev" aria-label="Previous">❮</button>
+          <img class="ap-lightbox-image" src="" alt="" />
+          <button class="ap-lightbox-nav ap-lightbox-next" aria-label="Next">❯</button>
+        </div>
+      `;
+
+      document.body.appendChild(this.overlay);
+
+      // Trigger reflow for transition
+      void this.overlay.offsetWidth;
+      this.overlay.classList.add('is-visible');
+
+      this._loadImage();
+    }
+
+    _loadImage() {
+      const imgData = this.images[this.currentIndex];
+      const imgEl = this.overlay.querySelector('.ap-lightbox-image');
+      const counter = this.overlay.querySelector('.ap-lightbox-counter');
+
+      // Simple loading state
+      imgEl.style.opacity = '0.5';
+
+      const temp = new Image();
+      temp.onload = () => {
+        imgEl.src = imgData.src;
+        imgEl.alt = imgData.alt || 'Proof';
+        imgEl.style.opacity = '1';
+      };
+      temp.src = imgData.src;
+
+      counter.textContent = `${this.currentIndex + 1} / ${this.images.length}`;
+    }
+
+    _bindEvents() {
+      const closeBtn = this.overlay.querySelector('.ap-lightbox-close');
+      const prevBtn = this.overlay.querySelector('.ap-lightbox-prev');
+      const nextBtn = this.overlay.querySelector('.ap-lightbox-next');
+
+      closeBtn.addEventListener('click', () => this.close());
+      prevBtn.addEventListener('click', (e) => { e.stopPropagation(); this.prev(); });
+      nextBtn.addEventListener('click', (e) => { e.stopPropagation(); this.next(); });
+
+      // Close on background click
+      this.overlay.addEventListener('click', (e) => {
+        if (e.target === this.overlay || e.target.classList.contains('ap-lightbox-content')) {
+          this.close();
+        }
+      });
+
+      // Keyboard support
+      this._onKeyDown = (e) => {
+        if (e.key === 'Escape') this.close();
+        if (e.key === 'ArrowLeft') this.prev();
+        if (e.key === 'ArrowRight') this.next();
+      };
+      document.addEventListener('keydown', this._onKeyDown);
+    }
+
+    next() {
+      this.currentIndex = (this.currentIndex + 1) % this.images.length;
+      this._loadImage();
+    }
+
+    prev() {
+      this.currentIndex = (this.currentIndex - 1 + this.images.length) % this.images.length;
+      this._loadImage();
+    }
+
+    close() {
+      if (this.overlay) {
+        this.overlay.classList.remove('is-visible');
+        setTimeout(() => this.overlay.remove(), 250);
+        document.removeEventListener('keydown', this._onKeyDown);
+        this.overlay = null;
+      }
+    }
+  }
+
   // UI wiring: progress bars, upload list, proof interactions, OTP flows
   const UI = {
     init() {
@@ -452,7 +679,7 @@
     async handleStartUpload() {
       const files = this.uploadInput.files;
       if (!files || files.length === 0) {
-        alert('Please choose files to upload.');
+        Modal.alert('Please choose files to upload.');
         return;
       }
       for (let i = 0; i < files.length; i++) {
@@ -465,7 +692,7 @@
     async startUploadForItem(item, file) {
       const projectId = ApertureClient.session ? ApertureClient.session.project_id : null;
       if (!projectId) {
-        alert('No project session found. Please open the portal from your link.');
+        Modal.alert('No project session found. Please open the portal from your link.');
         return;
       }
 
@@ -503,9 +730,7 @@
       if (uploader) {
         uploader.start();
       } else {
-        // Try to find upload_id in localStorage by filename and resume
-        // Not implemented: requires mapping; user can re-add file and resume if server session exists
-        alert('Resume not available for this item. Please re-select the file to resume.');
+        Modal.alert('Resume not available for this item. Please re-select the file to resume.');
       }
     },
 
@@ -534,9 +759,7 @@
       const imageId = item ? item.dataset.imageId : null;
       const galleryEl = item ? item.closest('.ap-proofs') : null;
       const galleryId = galleryEl ? galleryEl.datasetGalleryId || null : null;
-      if (!imageId || !galleryId) {
-        // Try to infer gallery id from page context
-      }
+
       const selected = checkbox.checked ? 1 : 0;
       try {
         const url = `${ApertureClient.restBase}/proofs/${galleryId}/select`;
@@ -547,73 +770,75 @@
         });
         // update UI
       } catch (e) {
-        alert('Failed to update selection. Please try again.');
+        Modal.alert('Failed to update selection. Please try again.');
         checkbox.checked = !checkbox.checked;
       }
     },
 
-    handleCommentButton(button) {
+    async handleCommentButton(button) {
       const item = button.closest('.ap-proof-item');
       const imageId = item ? item.dataset.imageId : null;
-      const comment = prompt('Add a comment for this image:');
+
+      const comment = await Modal.prompt('Add a comment for this image:', '', 'Add Comment');
       if (!comment) return;
+
       const galleryEl = item ? item.closest('.ap-proofs') : null;
       const galleryId = galleryEl ? galleryEl.datasetGalleryId || null : null;
       const url = `${ApertureClient.restBase}/proofs/${galleryId}/comment`;
-      fetchJson(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_id: imageId, comment }),
-      }).then((res) => {
-        alert('Comment saved.');
+
+      try {
+        await fetchJson(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_id: imageId, comment }),
+        });
+        Modal.alert('Comment saved.');
         this.refreshProofs();
-      }).catch((err) => {
-        alert('Failed to save comment.');
-      });
+      } catch (err) {
+        Modal.alert('Failed to save comment.');
+      }
     },
 
     handleProofClick(imgEl) {
-      // Open proof in lightbox; proofs are watermarked low-res images
-      const src = imgEl.getAttribute('src');
-      const modal = document.createElement('div');
-      modal.className = 'ap-lightbox';
-      modal.innerHTML = `<div class="ap-lightbox-inner"><img src="${src}" alt="Proof" /><button class="ap-lightbox-close">Close</button></div>`;
-      document.body.appendChild(modal);
-      modal.querySelector('.ap-lightbox-close').addEventListener('click', () => modal.remove());
-      modal.addEventListener('click', (ev) => {
-        if (ev.target === modal) modal.remove();
-      });
+      const allImages = Array.from(document.querySelectorAll('.ap-proof-item img'));
+      const imagesData = allImages.map(img => ({
+        src: img.getAttribute('src'),
+        alt: img.getAttribute('alt'),
+        id: img.closest('.ap-proof-item').dataset.imageId
+      }));
+      const index = allImages.indexOf(imgEl);
+      if (index >= 0) {
+        new Lightbox(imagesData).open(index);
+      }
     },
 
     async handleApproveProofs() {
-      if (!confirm('Approve selected proofs? This will notify your photographer and begin editing.')) return;
-      // Determine gallery id from page context
+      const confirmed = await Modal.confirm('Approve selected proofs? This will notify your photographer and begin editing.');
+      if (!confirmed) return;
+
       const galleryEl = document.querySelector('.ap-proofs');
       const galleryId = galleryEl ? galleryEl.datasetGalleryId || null : null;
       if (!galleryId) {
-        alert('Gallery not found.');
+        Modal.alert('Gallery not found.');
         return;
       }
       const url = `${ApertureClient.restBase}/proofs/${galleryId}/approve`;
       try {
         await fetchJson(url, { method: 'POST' });
-        alert('Proofs approved. Thank you.');
-        // Optionally refresh page
+        await Modal.alert('Proofs approved. Thank you.');
         window.location.reload();
       } catch (e) {
-        alert('Failed to approve proofs. Please try again.');
+        Modal.alert('Failed to approve proofs. Please try again.');
       }
     },
 
     // Download flow: regenerate token, request OTP, verify OTP, then open download link
     initDownloadFlow() {
-      // Bind regenerate button if present
       const regenBtn = document.querySelector('[data-action="regenerate-download"]');
       if (regenBtn) {
         regenBtn.addEventListener('click', () => this.handleRegenerateDownload(regenBtn));
       }
 
-      // Bind OTP request/verify UI if present
       const otpRequestBtn = document.querySelector('[data-action="request-otp"]');
       if (otpRequestBtn) {
         otpRequestBtn.addEventListener('click', () => this.handleRequestOtp(otpRequestBtn));
@@ -628,7 +853,7 @@
     async handleRegenerateDownload(button) {
       const projectId = ApertureClient.session ? ApertureClient.session.project_id : null;
       if (!projectId) {
-        alert('No project session found.');
+        Modal.alert('No project session found.');
         return;
       }
       const url = `${ApertureClient.restBase}/projects/${projectId}/regenerate-download-token`;
@@ -636,48 +861,51 @@
         const res = await fetchJson(url, { method: 'POST' });
         if (res && res.data) {
           const data = res.data;
-          // Show download URL and OTP requirement
           if (data.otp_required) {
-            alert('A secure download link was created. You will be asked to verify via email (OTP) before downloading.');
-            // Show OTP request UI or auto-request OTP
+            Modal.alert('A secure download link was created. You will be asked to verify via email (OTP) before downloading.');
           } else {
             window.open(data.download_url, '_blank');
           }
         }
       } catch (e) {
-        alert('Failed to regenerate download link.');
+        Modal.alert('Failed to regenerate download link.');
       }
     },
 
     async handleRequestOtp(button) {
       const token = button.dataset.token;
       if (!token) {
-        alert('Download token not found.');
+        Modal.alert('Download token not found.');
         return;
       }
       const url = `${ApertureClient.restBase}/download/${token}/request-otp`;
       try {
         const res = await fetchJson(url, { method: 'POST' });
         if (res && res.data) {
-          alert('OTP sent to your email. Please check your inbox.');
-          // Store otp_key for verification
+          Modal.alert('OTP sent to your email. Please check your inbox.');
           const otpKey = res.data.otp_key;
           if (otpKey) {
             localStorage.setItem('ap_last_otp_key', otpKey);
           }
         }
       } catch (e) {
-        alert('Failed to request OTP.');
+        Modal.alert('Failed to request OTP.');
       }
     },
 
     async handleVerifyOtp(button) {
-      const otpKey = localStorage.getItem('ap_last_otp_key') || prompt('Enter OTP key (if provided):');
-      const code = prompt('Enter the code you received by email:');
-      if (!otpKey || !code) {
-        alert('OTP key and code required.');
-        return;
+      let otpKey = localStorage.getItem('ap_last_otp_key');
+      if (!otpKey) {
+        otpKey = await Modal.prompt('Enter OTP key (if provided):', '', 'Verify OTP');
       }
+      if (!otpKey) {
+         Modal.alert('OTP Key is missing.');
+         return;
+      }
+
+      const code = await Modal.prompt('Enter the code you received by email:', '', 'Verify OTP');
+      if (!code) return;
+
       const url = `${ApertureClient.restBase}/download/verify-otp`;
       try {
         const res = await fetchJson(url, {
@@ -686,11 +914,10 @@
           body: JSON.stringify({ otp_key: otpKey, code }),
         });
         if (res && res.data) {
-          alert('OTP verified. You may now download the files.');
-          // Optionally open download link if token known
+          Modal.alert('OTP verified. You may now download the files.');
         }
       } catch (e) {
-        alert('OTP verification failed.');
+        Modal.alert('OTP verification failed.');
       }
     },
 
