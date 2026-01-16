@@ -5,15 +5,39 @@
 
 /* Color palette */
 :root {
-  --color-primary: var(--wp--preset--color--primary);
-  --color-secondary: var(--wp--preset--color--secondary);
-  --color-accent: var(--wp--preset--color--accent);
+  /* Brand Colors */
+  --color-primary: #e71d36;     /* Accent Red */
+  --color-secondary: #2ec4b6;   /* Accent Teal */
+  --color-tertiary: #ff9f1c;    /* Accent Orange */
 
-  --color-neutral-900: var(--wp--preset--color--neutral-900);
-  --color-neutral-700: var(--wp--preset--color--neutral-700);
-  --color-neutral-500: var(--wp--preset--color--neutral-500);
-  --color-neutral-200: var(--wp--preset--color--neutral-200);
-  --color-white: var(--wp--preset--color--white);
+  /* Text and Background */
+  --color-text: #011627;
+  --color-background: #ffffff;
+  --color-offwhite: #fdfffc;
+
+  /* Neutrals */
+  --color-neutral-900: #011627;
+  --color-neutral-700: #334;
+  --color-neutral-500: #667;
+  --color-neutral-200: #ccd;
+  --color-white: #ffffff;
+
+  /* Semantic Text */
+  --color-text-primary: var(--color-text);
+  --color-text-secondary: rgba(1, 22, 39, 0.75);
+  --color-text-muted: rgba(1, 22, 39, 0.55);
+
+  /* Semantic Backgrounds */
+  --color-surface: var(--color-background);
+  --color-surface-alt: var(--color-offwhite);
+
+  /* Borders and UI */
+  --color-border: rgba(1, 22, 39, 0.12);
+
+  /* Hover States */
+  --color-primary-hover: #c4162c;
+  --color-secondary-hover: #25a89c;
+  --color-tertiary-hover: #e68f19;
 }
 
 /* Typography */
