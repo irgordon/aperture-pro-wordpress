@@ -2,11 +2,17 @@
  * Aperture Pro – Client Portal App
  *
  * PERFORMANCE ENHANCEMENTS:
- *  - Service Worker registration
+ *  - IndexedDB metadata caching (proof list) for instant repeat visits
+ *  - Service Worker registration (if present)
  *  - Responsive image sizes attribute
  *  - AVIF / WebP detection + fallback
  *  - Skeleton loaders
  *  - Lazy loading + async decoding
+ *
+ * INDEXEDDB STRATEGY:
+ *  - Cache proof metadata per project (stale-while-revalidate)
+ *  - TTL-based expiration to avoid stale data lingering
+ *  - Schema versioning for forward compatibility
  */
 
 (function () {
@@ -16,21 +22,102 @@
     if (!portal) return;
 
     const gallery = portal.querySelector('.ap-proof-gallery');
+    if (!gallery) return;
+
     const apiBase = portal.dataset.apiBase || '';
     const nonce = portal.dataset.nonce || '';
 
+    // If your portal can provide a stable project identifier, use it.
+    // Fallback keeps cache scoped but may reduce reuse if your endpoint is "current".
+    const projectCacheKey =
+        portal.dataset.projectId ||
+        portal.dataset.projectKey ||
+        'current';
+
     /* ---------------------------------------------------------
-     * Service Worker Registration
+     * Service Worker Registration (best-effort)
      * --------------------------------------------------------- */
 
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
+            // Path kept explicit to match prior implementation; use template-based registration if available.
             navigator.serviceWorker.register('/wp-content/plugins/aperture-pro/assets/js/sw.js')
                 .catch(() => {
-                    // Fail-soft: SW is an enhancement, not a requirement
+                    // Fail-soft: SW is an enhancement, not a requirement.
                 });
         });
     }
+
+    /* ---------------------------------------------------------
+     * IndexedDB helper (minimal, dependency-free)
+     * --------------------------------------------------------- */
+
+    const IDB = (function () {
+        const DB_NAME = 'aperture_pro_portal';
+        const DB_VERSION = 1;
+
+        // Store for proof list metadata
+        const STORE_PROOFS = 'proofs';
+
+        function open() {
+            return new Promise((resolve, reject) => {
+                if (!('indexedDB' in window)) {
+                    reject(new Error('IndexedDB not supported'));
+                    return;
+                }
+
+                const req = indexedDB.open(DB_NAME, DB_VERSION);
+
+                req.onupgradeneeded = function (event) {
+                    const db = event.target.result;
+
+                    if (!db.objectStoreNames.contains(STORE_PROOFS)) {
+                        const store = db.createObjectStore(STORE_PROOFS, { keyPath: 'key' });
+                        store.createIndex('updatedAt', 'updatedAt', { unique: false });
+                    }
+                };
+
+                req.onsuccess = function () {
+                    resolve(req.result);
+                };
+
+                req.onerror = function () {
+                    reject(req.error || new Error('Failed to open IndexedDB'));
+                };
+            });
+        }
+
+        function get(db, storeName, key) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const req = store.get(key);
+
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error || new Error('IDB get failed'));
+            });
+        }
+
+        function put(db, storeName, value) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const req = store.put(value);
+
+                req.onsuccess = () => resolve(true);
+                req.onerror = () => reject(req.error || new Error('IDB put failed'));
+            });
+        }
+
+        return {
+            DB_NAME,
+            DB_VERSION,
+            STORE_PROOFS,
+            open,
+            get,
+            put
+        };
+    })();
 
     /* ---------------------------------------------------------
      * Feature Detection (cached)
@@ -76,6 +163,20 @@
         });
     }
 
+    function safeJsonStringify(obj) {
+        try {
+            return JSON.stringify(obj);
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function hashPayload(payload) {
+        // Lightweight hash: stable string compare is good enough for our use here.
+        // Avoids crypto overhead and keeps logic simple.
+        return safeJsonStringify(payload);
+    }
+
     /* ---------------------------------------------------------
      * Skeleton Loaders
      * --------------------------------------------------------- */
@@ -100,7 +201,7 @@
     }
 
     /* ---------------------------------------------------------
-     * Image Creation (Responsive + Fallback)
+     * Image Creation (Responsive + Format Fallback)
      * --------------------------------------------------------- */
 
     function getOptimizedUrl(originalUrl) {
@@ -117,7 +218,8 @@
         img.decoding = 'async';
         img.className = 'ap-proof-image';
 
-        // Responsive sizing based on grid layout
+        // Responsive sizing based on typical masonry/grid behavior.
+        // Adjust if your CSS uses a different column system.
         img.sizes = `
             (max-width: 600px) 100vw,
             (max-width: 1024px) 50vw,
@@ -136,13 +238,14 @@
                 return;
             }
             img.classList.add('is-error');
+            img.alt = 'Image unavailable';
         });
 
         return img;
     }
 
     /* ---------------------------------------------------------
-     * Render Gallery
+     * Render Proof Gallery
      * --------------------------------------------------------- */
 
     function renderGallery(proofs) {
@@ -162,7 +265,7 @@
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.checked = proof.is_selected;
+            checkbox.checked = !!proof.is_selected;
             checkbox.className = 'ap-proof-select';
 
             meta.appendChild(checkbox);
@@ -176,19 +279,107 @@
     }
 
     /* ---------------------------------------------------------
-     * Initial Load
+     * IndexedDB cache: proofs list (stale-while-revalidate)
      * --------------------------------------------------------- */
 
-    function loadProofs() {
+    const PROOFS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+    const PROOFS_CACHE_SCHEMA = 'v1';
+
+    function buildProofsCacheKey() {
+        // Scope by apiBase + project key + schema so environments and versions don’t collide.
+        return [
+            'proofs',
+            PROOFS_CACHE_SCHEMA,
+            apiBase || 'no-api-base',
+            projectCacheKey
+        ].join('|');
+    }
+
+    async function loadProofsFromCache() {
+        const key = buildProofsCacheKey();
+
+        try {
+            const db = await IDB.open();
+            const cached = await IDB.get(db, IDB.STORE_PROOFS, key);
+
+            if (!cached || !cached.payload || !cached.updatedAt) {
+                return null;
+            }
+
+            const age = Date.now() - cached.updatedAt;
+            if (age > PROOFS_CACHE_TTL_MS) {
+                return null;
+            }
+
+            return cached.payload;
+        } catch (e) {
+            // Fail-soft: no cache if IDB is unavailable or errors.
+            return null;
+        }
+    }
+
+    async function saveProofsToCache(payload) {
+        const key = buildProofsCacheKey();
+
+        try {
+            const db = await IDB.open();
+            await IDB.put(db, IDB.STORE_PROOFS, {
+                key,
+                updatedAt: Date.now(),
+                payload
+            });
+        } catch (e) {
+            // Fail-soft: caching is an enhancement only.
+        }
+    }
+
+    /* ---------------------------------------------------------
+     * Initial Load (cache-first render, then refresh)
+     * --------------------------------------------------------- */
+
+    async function loadProofs() {
         renderSkeletons();
 
-        detectImageFormats().finally(() => {
-            apiFetch('/projects/current/proofs')
-                .then(data => renderGallery(data.proofs || []))
-                .catch(() => {
+        // Detect formats in parallel with cache load.
+        const detectPromise = detectImageFormats();
+
+        // Try to render cached proofs ASAP for perceived speed.
+        const cachedPayload = await loadProofsFromCache();
+        if (cachedPayload && Array.isArray(cachedPayload.proofs)) {
+            // Render from cache immediately (stale).
+            renderGallery(cachedPayload.proofs);
+        }
+
+        // Ensure format detection completes before we render any *fresh* response.
+        // Cached render may have already happened; that's OK. Fresh render will replace it.
+        await Promise.race([
+            detectPromise,
+            new Promise(resolve => setTimeout(resolve, 600))
+        ]);
+
+        // Fetch fresh proofs. If it matches cached, avoid unnecessary re-render.
+        apiFetch('/projects/current/proofs')
+            .then(async data => {
+                const proofs = (data && data.proofs) ? data.proofs : [];
+                const freshPayload = { proofs };
+
+                const freshHash = hashPayload(freshPayload);
+                const cachedHash = cachedPayload ? hashPayload(cachedPayload) : '';
+
+                // If we didn't render cache, or the content changed, render fresh.
+                if (!cachedPayload || freshHash !== cachedHash) {
+                    renderGallery(proofs);
+                }
+
+                // Persist fresh payload for next visit.
+                await saveProofsToCache(freshPayload);
+            })
+            .catch(() => {
+                // If cache rendered, keep it; otherwise show error.
+                if (!cachedPayload) {
                     gallery.innerHTML = '<p class="ap-error">Failed to load proofs.</p>';
-                });
-        });
+                }
+            });
     }
 
     loadProofs();
