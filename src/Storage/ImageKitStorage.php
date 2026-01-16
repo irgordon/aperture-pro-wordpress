@@ -3,6 +3,7 @@
 namespace AperturePro\Storage;
 
 use AperturePro\Helpers\Logger;
+use AperturePro\Storage\Traits\Retryable;
 
 /**
  * ImageKitStorage
@@ -17,6 +18,8 @@ use AperturePro\Helpers\Logger;
  */
 class ImageKitStorage implements StorageInterface
 {
+    use Retryable;
+
     protected array $config;
     protected $client;
 
@@ -44,44 +47,65 @@ class ImageKitStorage implements StorageInterface
     public function upload(string $localPath, string $remoteKey, array $options = []): array
     {
         try {
-            $fileName = basename($remoteKey);
-            $folder = dirname($remoteKey);
-            if ($folder === '.' || $folder === '/') {
-                $folder = '';
-            }
+            return $this->executeWithRetry(function() use ($localPath, $remoteKey, $options) {
+                $fileName = basename($remoteKey);
+                $folder = dirname($remoteKey);
+                if ($folder === '.' || $folder === '/') {
+                    $folder = '';
+                }
 
-            $params = [
-                'file' => base64_encode(file_get_contents($localPath)),
-                'fileName' => $fileName,
-            ];
+                $fileContent = @file_get_contents($localPath);
+                if ($fileContent === false) {
+                    throw new \RuntimeException("Failed to read local file: $localPath");
+                }
 
-            if (!empty($folder)) {
-                $params['folder'] = $folder;
-            }
+                $params = [
+                    'file' => base64_encode($fileContent),
+                    'fileName' => $fileName,
+                ];
 
-            if (!empty($options['tags'])) {
-                $params['tags'] = $options['tags'];
-            }
+                if (!empty($folder)) {
+                    $params['folder'] = $folder;
+                }
 
-            $response = $this->client->upload($params);
+                if (!empty($options['tags'])) {
+                    $params['tags'] = $options['tags'];
+                }
 
-            if (empty($response) || empty($response->filePath)) {
-                Logger::log('error', 'imagekit', 'ImageKit upload returned unexpected response', ['remoteKey' => $remoteKey]);
-                return ['success' => false, 'key' => $remoteKey, 'url' => null, 'meta' => []];
-            }
+                $response = $this->client->upload($params);
 
-            $url = $response->url ?? ($this->client->getUrlEndpoint() . $response->filePath);
+                if (empty($response) || empty($response->filePath)) {
+                    Logger::log('error', 'imagekit', 'ImageKit upload returned unexpected response', ['remoteKey' => $remoteKey]);
+                    throw new \RuntimeException('ImageKit upload returned unexpected response');
+                }
 
-            return [
-                'success' => true,
-                'key'     => ltrim($response->filePath, '/'),
-                'url'     => $url,
-                'meta'    => (array) $response,
-            ];
+                $url = $response->url ?? ($this->client->getUrlEndpoint() . $response->filePath);
+
+                return [
+                    'success' => true,
+                    'key'     => ltrim($response->filePath, '/'),
+                    'url'     => $url,
+                    'meta'    => (array) $response,
+                ];
+            });
         } catch (\Throwable $e) {
             Logger::log('error', 'imagekit', 'Upload failed: ' . $e->getMessage(), ['remoteKey' => $remoteKey]);
             return ['success' => false, 'key' => $remoteKey, 'url' => null, 'meta' => []];
         }
+    }
+
+    /**
+     * Store a file from a local path (Alias/Compat).
+     *
+     * @param string $localPath
+     * @param string $remotePath
+     * @param array  $options
+     * @return bool
+     */
+    public function putFile(string $localPath, string $remotePath, array $options = []): bool
+    {
+        $result = $this->upload($localPath, $remotePath, $options);
+        return $result['success'];
     }
 
     public function getUrl(string $remoteKey, array $options = []): ?string
@@ -110,9 +134,11 @@ class ImageKitStorage implements StorageInterface
     public function delete(string $remoteKey): bool
     {
         try {
-            $fileId = $remoteKey;
-            $response = $this->client->deleteFile($fileId);
-            return true;
+            return $this->executeWithRetry(function() use ($remoteKey) {
+                $fileId = $remoteKey;
+                $this->client->deleteFile($fileId);
+                return true;
+            });
         } catch (\Throwable $e) {
             Logger::log('warning', 'imagekit', 'Delete failed: ' . $e->getMessage(), ['remoteKey' => $remoteKey]);
             return false;
@@ -122,9 +148,11 @@ class ImageKitStorage implements StorageInterface
     public function exists(string $remoteKey): bool
     {
         try {
-            $fileId = $remoteKey;
-            $response = $this->client->getFileDetails($fileId);
-            return !empty($response);
+            return $this->executeWithRetry(function() use ($remoteKey) {
+                $fileId = $remoteKey;
+                $response = $this->client->getFileDetails($fileId);
+                return !empty($response);
+            });
         } catch (\Throwable $e) {
             return false;
         }
@@ -132,9 +160,13 @@ class ImageKitStorage implements StorageInterface
 
     public function list(string $prefix = '', array $options = []): array
     {
-        // ImageKit does not provide a simple list API in all plans; implement a best-effort approach.
-        // For now, return empty and log that listing is not implemented.
-        Logger::log('info', 'imagekit', 'List operation not implemented for ImageKit driver', ['prefix' => $prefix]);
-        return [];
+        try {
+            return $this->executeWithRetry(function() use ($prefix) {
+                Logger::log('info', 'imagekit', 'List operation not implemented for ImageKit driver', ['prefix' => $prefix]);
+                return [];
+            });
+        } catch (\Throwable $e) {
+             return [];
+        }
     }
 }
