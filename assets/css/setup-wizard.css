@@ -28,3 +28,20 @@
 .ap-setup-actions {
     margin-top: 20px;
 }
+.ap-conditional {
+    display: none;
+    margin-top: 15px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-left: 4px solid #2271b1;
+}
+
+.ap-health-ok {
+    color: #2e7d32;
+    font-weight: 600;
+}
+
+.ap-health-warn {
+    color: #b26a00;
+    font-weight: 600;
+}
