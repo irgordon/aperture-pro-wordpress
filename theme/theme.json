@@ -1,0 +1,92 @@
+{
+  "version": 2,
+  "settings": {
+    "custom": {
+      "spa": {
+        "interactiveAttribute": "data-spa-component"
+      }
+    },
+    "color": {
+      "palette": [
+        { "slug": "primary", "color": "#1A73E8", "name": "Primary" },
+        { "slug": "secondary", "color": "#185ABC", "name": "Secondary" },
+        { "slug": "accent", "color": "#FFB300", "name": "Accent" },
+        { "slug": "neutral-900", "color": "#111111", "name": "Neutral 900" },
+        { "slug": "neutral-700", "color": "#333333", "name": "Neutral 700" },
+        { "slug": "neutral-500", "color": "#777777", "name": "Neutral 500" },
+        { "slug": "neutral-200", "color": "#E5E5E5", "name": "Neutral 200" },
+        { "slug": "white", "color": "#FFFFFF", "name": "White" }
+      ]
+    },
+    "spacing": {
+      "scale": {
+        "0": "0",
+        "1": "4px",
+        "2": "8px",
+        "3": "12px",
+        "4": "16px",
+        "5": "24px",
+        "6": "32px",
+        "7": "48px",
+        "8": "64px"
+      }
+    },
+    "typography": {
+      "fontFamilies": [
+        {
+          "slug": "sans",
+          "name": "Inter",
+          "fontFamily": "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif"
+        }
+      ],
+      "fontSizes": [
+        { "slug": "xs", "size": "12px" },
+        { "slug": "sm", "size": "14px" },
+        { "slug": "base", "size": "16px" },
+        { "slug": "lg", "size": "20px" },
+        { "slug": "xl", "size": "24px" },
+        { "slug": "2xl", "size": "32px" },
+        { "slug": "3xl", "size": "40px" },
+        { "slug": "4xl", "size": "56px" }
+      ],
+      "lineHeights": [
+        { "slug": "tight", "lineHeight": "1.1" },
+        { "slug": "normal", "lineHeight": "1.4" },
+        { "slug": "relaxed", "lineHeight": "1.6" }
+      ]
+    },
+    "layout": {
+      "contentSize": "720px",
+      "wideSize": "1200px"
+    },
+    "blocks": {
+      "core/heading": {
+        "typography": {
+          "fontFamily": "var(--wp--preset--font-family--sans)"
+        }
+      },
+      "core/paragraph": {
+        "typography": {
+          "fontFamily": "var(--wp--preset--font-family--sans)"
+        }
+      },
+      "core/button": {
+        "border": {
+          "radius": "6px"
+        },
+        "typography": {
+          "fontSize": "var(--wp--preset--font-size--base)"
+        }
+      }
+    }
+  },
+  "styles": {
+    "typography": {
+      "fontFamily": "var(--wp--preset--font-family--sans)"
+    },
+    "color": {
+      "background": "var(--wp--preset--color--white)",
+      "text": "var(--wp--preset--color--neutral-900)"
+    }
+  }
+}
