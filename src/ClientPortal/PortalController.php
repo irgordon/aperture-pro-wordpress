@@ -63,6 +63,10 @@ class PortalController
 
         $pluginUrl = plugin_dir_url(__DIR__ . '/../../'); // adjust as needed
 
+        // Toast System
+        wp_enqueue_style('ap-toast-css', $pluginUrl . 'assets/css/ap-toast.css', [], '1.0.0');
+        wp_enqueue_script('ap-toast-js', $pluginUrl . 'assets/js/ap-toast.js', [], '1.0.0', true);
+
         // Modal Assets
         wp_enqueue_style('ap-modal-css', $pluginUrl . 'assets/css/ap-modal.css', [], '1.0.0');
         wp_enqueue_script('ap-modal-js', $pluginUrl . 'assets/js/ap-modal.js', [], '1.0.0', true);

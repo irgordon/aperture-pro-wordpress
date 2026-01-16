@@ -672,10 +672,10 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_id: imageId, comment }),
         });
-        Modal.alert('Comment saved.');
+        ApertureToast.success('Comment saved.');
         this.refreshProofs();
       } catch (err) {
-        Modal.alert('Failed to save comment.');
+        ApertureToast.error('Failed to save comment.');
       }
     },
 
@@ -762,14 +762,14 @@
       try {
         const res = await fetchJson(url, { method: 'POST' });
         if (res && res.data) {
-          Modal.alert('OTP sent to your email. Please check your inbox.');
+          ApertureToast.info('OTP sent to your email. Please check your inbox.');
           const otpKey = res.data.otp_key;
           if (otpKey) {
             localStorage.setItem('ap_last_otp_key', otpKey);
           }
         }
       } catch (e) {
-        Modal.alert('Failed to request OTP.');
+        ApertureToast.error('Failed to request OTP.');
       }
     },
 
@@ -794,10 +794,10 @@
           body: JSON.stringify({ otp_key: otpKey, code }),
         });
         if (res && res.data) {
-          Modal.alert('OTP verified. You may now download the files.');
+          ApertureToast.success('OTP verified. You may now download the files.');
         }
       } catch (e) {
-        Modal.alert('OTP verification failed.');
+        ApertureToast.error('OTP verification failed.');
       }
     },
 

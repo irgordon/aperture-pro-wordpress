@@ -165,7 +165,7 @@
         const driver = e.target.value;
         if (driver !== 'local') {
              // Non-blocking info
-             Modal.alert(`You selected ${driver}. Please ensure you have your API credentials ready.`, 'Storage Driver');
+             ApertureToast.info(`You selected ${driver}. Please ensure you have your API credentials ready.`);
         }
         updateConditionalStorage();
     });
