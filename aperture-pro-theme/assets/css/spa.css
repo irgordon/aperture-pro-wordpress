@@ -3,144 +3,162 @@
    Path: assets/css/spa.css
    --------------------------------------------------------- */
 
-/* Pricing Toggle */
+/* ---------------------------------------------------------
+   Pricing Toggle
+   --------------------------------------------------------- */
+
 .pricing-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    margin-bottom: 2rem;
-    cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  cursor: pointer;
 }
 
 .toggle-label {
-    font-weight: 600;
-    color: var(--wp--preset--color--neutral-500);
-    transition: color 0.3s;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  transition: color var(--duration-normal) var(--ease-standard);
 }
 
 .toggle-label.active {
-    color: var(--wp--preset--color--neutral-900);
+  color: var(--color-text-primary);
 }
 
 .toggle-switch {
-    width: 50px;
-    height: 26px;
-    background: var(--wp--preset--color--neutral-200);
-    border-radius: 13px;
-    position: relative;
-    transition: background 0.3s;
+  width: 50px;
+  height: 26px;
+  background: var(--color-neutral-200);
+  border-radius: 13px;
+  position: relative;
+  transition: background var(--duration-normal) var(--ease-standard);
 }
 
 .pricing-toggle.is-yearly .toggle-switch {
-    background: var(--wp--preset--color--primary);
+  background: var(--color-primary);
 }
 
 .toggle-slider {
-    width: 22px;
-    height: 22px;
-    background: white;
-    border-radius: 50%;
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    transition: transform 0.3s;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  width: 22px;
+  height: 22px;
+  background: var(--color-white);
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform var(--duration-normal) var(--ease-standard);
+  box-shadow: var(--shadow-sm);
 }
 
 .pricing-toggle.is-yearly .toggle-slider {
-    transform: translateX(24px);
+  transform: translateX(24px);
 }
 
-/* FAQ */
+/* ---------------------------------------------------------
+   FAQ
+   --------------------------------------------------------- */
+
 .faq-list {
-    max-width: 800px;
-    margin: 0 auto;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .faq-item {
-    border-bottom: 1px solid var(--wp--preset--color--neutral-200);
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .faq-question {
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    padding: 1.5rem 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: var(--space-6) 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--color-text-primary);
+  transition: color var(--duration-normal) var(--ease-standard);
+}
+
+.faq-question:hover {
+  color: var(--color-primary);
 }
 
 .faq-icon {
-    width: 12px;
-    height: 12px;
-    border-right: 2px solid currentColor;
-    border-bottom: 2px solid currentColor;
-    transform: rotate(45deg);
-    transition: transform 0.3s;
+  width: 12px;
+  height: 12px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--duration-normal) var(--ease-standard);
 }
 
 .faq-question[aria-expanded="true"] .faq-icon {
-    transform: rotate(-135deg);
+  transform: rotate(-135deg);
 }
 
 .faq-answer {
-    padding-bottom: 1.5rem;
-    color: var(--wp--preset--color--neutral-700);
+  padding-bottom: var(--space-6);
+  color: var(--color-text-secondary);
+  line-height: var(--line-relaxed);
 }
 
-/* Testimonials */
+/* ---------------------------------------------------------
+   Testimonials Slider
+   --------------------------------------------------------- */
+
 .testimonials-section {
-    overflow: hidden;
-    padding: 4rem 0;
+  overflow: hidden;
+  padding: var(--space-8) 0;
 }
 
 .testimonials-slider {
-    position: relative;
-    max-width: 100%;
+  position: relative;
+  max-width: 100%;
 }
 
 .testimonials-track {
-    display: flex;
-    transition: transform 0.5s ease;
+  display: flex;
+  transition: transform 0.5s var(--ease-standard);
 }
 
 .testimonial-slide {
-    min-width: 100%;
-    box-sizing: border-box;
-    padding: 0 1rem;
-    text-align: center;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 0 var(--space-4);
+  text-align: center;
 }
 
 .testimonial-slide blockquote {
-    font-size: 1.5rem;
-    font-style: italic;
-    margin-bottom: 1rem;
+  font-size: var(--font-size-2xl);
+  font-style: italic;
+  margin-bottom: var(--space-4);
+  color: var(--color-text-primary);
 }
 
 .slider-controls {
-    display: flex;
-    justify-content: center;
-    gap: 1rem;
-    margin-top: 2rem;
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
 }
 
 .slider-controls button {
-    background: none;
-    border: 1px solid var(--wp--preset--color--neutral-900);
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    cursor: pointer;
-    transition: all 0.2s;
+  background: none;
+  border: 1px solid var(--color-neutral-900);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  transition: var(--transition-base);
+  color: var(--color-neutral-900);
 }
 
 .slider-controls button:hover {
-    background: var(--wp--preset--color--neutral-900);
-    color: white;
+  background: var(--color-neutral-900);
+  color: var(--color-white);
 }
