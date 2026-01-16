@@ -1,0 +1,60 @@
+/* ---------------------------------------------------------
+   Aperture Pro Marketing Theme — Global Frontend Styles
+   Path: assets/css/frontend.css
+   --------------------------------------------------------- */
+
+/* Layout helpers */
+.section {
+  padding: var(--wp--preset--spacing--7) 0;
+}
+
+.section--tight {
+  padding: var(--wp--preset--spacing--5) 0;
+}
+
+/* Typography refinements */
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.01em;
+  margin-top: 0;
+  color: var(--wp--preset--color--neutral-900);
+}
+
+p {
+  margin-bottom: var(--wp--preset--spacing--4);
+  color: var(--wp--preset--color--neutral-700);
+}
+
+/* Buttons */
+.wp-block-button__link {
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.wp-block-button__link:hover {
+  transform: translateY(-1px);
+}
+
+/* Utility classes */
+.text-center {
+  text-align: center;
+}
+
+.max-w-content {
+  max-width: var(--wp--style--layout--content-size);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Smooth fade-in for static content */
+.fade-in {
+  opacity: 0;
+  animation: fadeIn 0.6s ease forwards;
+}
+
+@keyframes fadeIn {
+  to {
+    opacity: 1;
+  }
+}
