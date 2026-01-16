@@ -1,0 +1,78 @@
+/* ---------------------------------------------------------
+   Aperture Pro Marketing Theme — Block Overrides
+   Path: assets/css/blocks.css
+   --------------------------------------------------------- */
+
+/* Headings */
+.wp-block-heading h1,
+h1.wp-block-heading {
+  font-size: var(--font-size-4xl);
+  line-height: var(--line-tight);
+  margin-bottom: var(--space-4);
+}
+
+.wp-block-heading h2,
+h2.wp-block-heading {
+  font-size: var(--font-size-3xl);
+  line-height: var(--line-tight);
+  margin-bottom: var(--space-3);
+}
+
+.wp-block-heading h3,
+h3.wp-block-heading {
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-normal);
+  margin-bottom: var(--space-3);
+}
+
+/* Paragraphs */
+.wp-block-paragraph {
+  font-size: var(--font-size-base);
+  line-height: var(--line-relaxed);
+  margin-bottom: var(--space-4);
+  color: var(--color-neutral-700);
+}
+
+/* Buttons */
+.wp-block-button__link {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-radius: 6px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  transition: background var(--duration-normal) var(--ease-standard),
+              transform var(--duration-fast) var(--ease-standard);
+}
+
+.wp-block-button__link:hover {
+  background: var(--color-secondary);
+  transform: translateY(-1px);
+}
+
+/* Group block spacing */
+.wp-block-group {
+  margin-bottom: var(--space-7);
+}
+
+/* Columns */
+.wp-block-columns {
+  gap: var(--space-6);
+}
+
+/* Images */
+.wp-block-image img {
+  border-radius: 8px;
+  display: block;
+}
+
+/* Cover block */
+.wp-block-cover {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Separator */
+.wp-block-separator {
+  border-color: var(--color-neutral-200);
+  margin: var(--space-6) 0;
+}
