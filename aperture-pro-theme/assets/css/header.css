@@ -1,0 +1,158 @@
+/* ---------------------------------------------------------
+   Aperture Pro — Header Styles
+   Path: assets/css/header.css
+   --------------------------------------------------------- */
+
+/* ---------------------------------------------------------
+   Header Container
+   --------------------------------------------------------- */
+
+.site-header {
+  width: 100%;
+  padding: var(--space-4) 0;
+  background: var(--color-background);
+  transition:
+    background var(--duration-normal) var(--ease-standard),
+    box-shadow var(--duration-normal) var(--ease-standard),
+    transform var(--duration-normal) var(--ease-standard);
+  position: relative;
+  z-index: 50;
+}
+
+/* Sticky state applied by header.js */
+.site-header.is-sticky {
+  position: sticky;
+  top: 0;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 12px rgba(1, 22, 39, 0.06);
+}
+
+/* Reveal animation on first scroll */
+.site-header.header-revealed {
+  animation: headerReveal 0.4s var(--ease-decelerate) forwards;
+}
+
+@keyframes headerReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------------------------------------------------------
+   Header Layout
+   --------------------------------------------------------- */
+
+.site-header__inner {
+  max-width: var(--wide-width);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.site-header__left,
+.site-header__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* ---------------------------------------------------------
+   Logo
+   --------------------------------------------------------- */
+
+.site-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+  color: var(--color-text-primary);
+  font-weight: 700;
+  font-size: var(--font-size-lg);
+}
+
+.site-logo svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* ---------------------------------------------------------
+   Navigation
+   --------------------------------------------------------- */
+
+.wp-block-navigation {
+  transition: opacity var(--duration-normal) var(--ease-standard);
+}
+
+.wp-block-navigation a {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  transition: var(--transition-base);
+  color: var(--color-text-primary);
+}
+
+.wp-block-navigation a:hover {
+  background: var(--color-offwhite);
+  color: var(--color-primary);
+}
+
+/* Mobile menu animation */
+.wp-block-navigation__responsive-container.is-menu-open {
+  animation: navSlideDown 0.25s var(--ease-decelerate);
+}
+
+@keyframes navSlideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------------------------------------------------------
+   Client Portal Login Icon
+   --------------------------------------------------------- */
+
+.client-portal-login {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  border-radius: 50%;
+  transition:
+    background var(--duration-normal) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+
+.client-portal-login:hover {
+  background: var(--color-neutral-200);
+  transform: translateY(-1px);
+}
+
+.client-portal-login__icon {
+  width: 22px;
+  height: 22px;
+  color: var(--color-text-primary);
+}
+
+/* ---------------------------------------------------------
+   Mobile Adjustments
+   --------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .site-header {
+    padding: var(--space-3) 0;
+  }
+
+  .site-header__inner {
+    padding: 0 var(--space-3);
+  }
+
+  .site-header__right {
+    gap: var(--space-3);
+  }
+}
