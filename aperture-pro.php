@@ -1,10 +1,28 @@
 <?php
+
 /**
- * Plugin Name: Aperture Pro
- * Description: Photography Studio SaaS for Image Proofing, Download and Gallery Management powered by WordPress
- * Version: 1.0.0
- * Author: Aperture Pro
- * Text Domain: aperture-pro
+ * The plugin bootstrap file
+ *
+ * This file is read by WordPress to generate the plugin information in the plugin
+ * admin area. This file also includes all of the dependencies used by the plugin,
+ * registers the activation and deactivation functions, and defines a function
+ * that starts the plugin.
+ *
+ * @link              https://github.com/irgordon/aperture-pro-wordpress
+ * @since             1.0.0
+ * @package           Aperture_Pro
+ *
+ * @wordpress-plugin
+ * Plugin Name:       Aperture Pro
+ * Plugin URI:        https://iangordon.app/aperturepro
+ * Description:       Aperture Pro is a modern, production‑grade WordPress plugin built for photography studios that need a secure, elegant, and scalable way to deliver proofs, collect approvals, and provide final downloads. It blends a polished client experience with a robust operational backend designed for reliability, observability, and long‑term maintainability.
+ * Version:           1.0.0
+ * Author:            Ian Gordon
+ * Author URI:        https://iangordon.app/
+ * License:           MIT License
+ * License URI:       https://mit-license.org/
+ * Text Domain:       aperture-pro
+ * Domain Path:       /languages
  */
 
 if (!defined('ABSPATH')) {
