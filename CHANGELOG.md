@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `getStats` method to all storage drivers for uniform health reporting.
 
 ### Changed
+- Optimized `Watchdog` maintenance task by instantiating storage driver once instead of per-session.
 - Refactored `LocalStorage`, `S3Storage`, and `ImageKitStorage` to adhere to the strict `StorageInterface` contract.
 - Refactored `ProofService` to use standardized storage methods (`upload`, `getUrl`) and handle exceptions robustly.
 - Updated `HealthService` to use `StorageInterface::getStats()` for retrieving storage metrics, removing driver-specific logic.
