@@ -204,7 +204,28 @@ class ClientProofController extends BaseController
             return new WP_Error('invalid_gallery', 'Invalid gallery ID', ['status' => 400]);
         }
 
-        // TODO: mark gallery as approved in your data layer.
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_galleries';
+
+        $result = $wpdb->update(
+            $table,
+            [
+                'status'     => 'approved',
+                'updated_at' => current_time('mysql', 1),
+            ],
+            [
+                'id' => $gallery_id
+            ]
+        );
+
+        if ($result === false) {
+            Logger::log('error', 'approve_proofs', 'Failed to update gallery status in DB', [
+                'gallery_id' => $gallery_id,
+                'error_code' => $wpdb->last_error,
+            ]);
+
+            return new WP_Error('db_error', 'Could not update gallery status', ['status' => 500]);
+        }
 
         return new WP_REST_Response([
             'gallery_id' => $gallery_id,
