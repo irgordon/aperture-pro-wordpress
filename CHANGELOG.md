@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Persisted client image comments in `ClientProofController`.
 - Added transactional email queue system to handle failed email sends in the background without blocking user requests.
 - Implemented `CloudinaryStorage` driver with chunked upload support (64MB).
 - Formalized `StorageInterface` contract with `upload`, `delete`, `getUrl`, `getStats`, `getName`.
@@ -23,3 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Deleted `inc/ajax-health-endpoint.php` as it is now superseded by the REST API implementation.
+
+### Fixed
+- Fixed `register_routes` return type signature in `ClientProofController`.
