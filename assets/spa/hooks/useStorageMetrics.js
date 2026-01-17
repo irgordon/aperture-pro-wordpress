@@ -1,4 +1,4 @@
-export function usePerformanceMetrics() {
+export function useStorageMetrics() {
   const [metrics, setMetrics] = React.useState(null);
 
   React.useEffect(() => {
@@ -14,12 +14,12 @@ export function usePerformanceMetrics() {
     })
       .then((res) => res.json())
       .then((json) => {
-        if (json.success && json.data && json.data.performance) {
-          setMetrics(json.data.performance);
+        if (json.success && json.data && json.data.storage) {
+          setMetrics(json.data.storage);
         }
       })
       .catch((err) => {
-        console.warn('[Aperture Pro] Failed to load performance metrics', err);
+        console.warn('[Aperture Pro] Failed to load storage metrics', err);
       });
   }, []);
 

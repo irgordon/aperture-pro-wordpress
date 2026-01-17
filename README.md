@@ -64,26 +64,24 @@ aperture-pro/
 ├── inc/
 │   ├── autoloader.php
 │   ├── helpers.php
-│   ├── ajax-health-endpoint.php        # NEW — unified health metrics endpoint
 │
 ├── src/
-│   ├── Loader.php
-│   ├── Contracts/
-│   │   └── ServiceInterface.php
-│   └── Services/
-│       ├── Assets.php
-│       ├── SPA.php
-│       ├── REST_API.php
-│       ├── Admin_UI.php
-│       ├── SetupWizard.php
-│       ├── Database.php
-│       ├── Security.php
-│       ├── Upgrades.php
-│       ├── Health_Card.php
-│       ├── Client_Portal.php
-│       ├── Logger.php
-│       ├── Jobs.php
-│       └── Storage.php                 # Storage metrics provider
+│   ├── Admin/
+│   ├── Auth/
+│   ├── ClientPortal/
+│   ├── Config/
+│   ├── Download/
+│   ├── Email/
+│   ├── Health/
+│   ├── Helpers/
+│   ├── Installer/
+│   ├── Proof/
+│   ├── REST/
+│   ├── Services/
+│   ├── Storage/
+│   ├── Upload/
+│   ├── Workflow/
+│   └── Loader.php
 │
 ├── assets/
 │   ├── css/
