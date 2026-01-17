@@ -5,6 +5,8 @@ namespace AperturePro\Storage;
 use Aws\S3\S3Client;
 use Aws\CloudFront\CloudFrontClient;
 use Aws\CloudFront\UrlSigner;
+use Aws\CommandPool;
+use Aws\Exception\AwsException;
 use AperturePro\Helpers\Logger;
 use AperturePro\Storage\Traits\Retryable;
 
@@ -152,6 +154,46 @@ class S3Storage implements StorageInterface
         } catch (\Throwable $e) {
             return false;
         }
+    }
+
+    public function existsMany(array $targets): array
+    {
+        $results = [];
+        $targetList = array_values($targets);
+        $commands = [];
+
+        foreach ($targetList as $target) {
+            $commands[] = $this->s3->getCommand('HeadObject', [
+                'Bucket' => $this->bucket,
+                'Key'    => ltrim($target, '/'),
+            ]);
+            // Default to false
+            $results[$target] = false;
+        }
+
+        try {
+            $pool = new CommandPool($this->s3, $commands, [
+                'concurrency' => 25,
+                'fulfilled' => function ($result, $iteratorId) use (&$results, $targetList) {
+                    $target = $targetList[$iteratorId];
+                    $results[$target] = true;
+                },
+                'rejected' => function ($reason, $iteratorId) use (&$results, $targetList) {
+                    // If it's a 404, it just doesn't exist.
+                    // If it's another error, we treat it as not existing for now, but could log.
+                    $target = $targetList[$iteratorId];
+                    $results[$target] = false;
+                },
+            ]);
+
+            $promise = $pool->promise();
+            $promise->wait();
+
+        } catch (\Throwable $e) {
+             Logger::log('error', 'storage', 'S3 existsMany pool failed: ' . $e->getMessage());
+        }
+
+        return $results;
     }
 
     public function getUrl(string $target, array $options = []): string

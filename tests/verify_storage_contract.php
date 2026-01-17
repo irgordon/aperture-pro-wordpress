@@ -158,6 +158,27 @@ if (!$storage->exists($targetKey)) {
 }
 echo "[PASS] exists() verified.\n";
 
+// existsMany
+echo "Testing existsMany...\n";
+$targets = [$targetKey, 'non-existent-file.txt'];
+$results = $storage->existsMany($targets);
+
+if (!is_array($results)) {
+    echo "[FAIL] existsMany() did not return an array.\n";
+    exit(1);
+}
+if (!isset($results[$targetKey]) || $results[$targetKey] !== true) {
+    echo "[FAIL] existsMany() failed to find existing file.\n";
+    print_r($results);
+    exit(1);
+}
+if (!isset($results['non-existent-file.txt']) || $results['non-existent-file.txt'] !== false) {
+    echo "[FAIL] existsMany() reported non-existent file as existing.\n";
+    print_r($results);
+    exit(1);
+}
+echo "[PASS] existsMany() verified.\n";
+
 // getUrl
 $url2 = $storage->getUrl($targetKey);
 if (empty($url2)) {

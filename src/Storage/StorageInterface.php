@@ -56,6 +56,14 @@ interface StorageInterface
     public function exists(string $target): bool;
 
     /**
+     * Check whether multiple objects exist.
+     *
+     * @param array $targets Array of relative paths/keys.
+     * @return array Key-value pair where key is the target and value is boolean existence.
+     */
+    public function existsMany(array $targets): array;
+
+    /**
      * Return storage statistics for health + UI.
      *
      * Expected shape:

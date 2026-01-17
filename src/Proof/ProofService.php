@@ -30,6 +30,73 @@ use AperturePro\Helpers\Logger;
 class ProofService
 {
     /**
+     * Get proof URLs for multiple images in batch.
+     *
+     * PERFORMANCE:
+     *  - Uses StorageInterface::existsMany() to check for existing proofs in parallel.
+     *  - Generates missing proofs sequentially.
+     *
+     * @param array                 $images   List of image records.
+     * @param StorageInterface|null $storage  Optional storage driver.
+     *
+     * @return array Map of image index/ID to proof URL. Key matches input array key.
+     */
+    public static function getProofUrls(array $images, ?StorageInterface $storage = null): array
+    {
+        if ($storage === null) {
+            $storage = StorageFactory::create();
+        }
+
+        $proofPaths = [];
+        $originalPaths = [];
+        $urls = [];
+
+        // 1. Calculate paths
+        foreach ($images as $key => $image) {
+            $originalPath = $image['path'] ?? $image['filename'] ?? null;
+            if ($originalPath) {
+                $proofPaths[$key] = self::getProofPath($originalPath);
+                $originalPaths[$key] = $originalPath;
+            }
+        }
+
+        if (empty($proofPaths)) {
+            return [];
+        }
+
+        // 2. Batch check existence
+        $pathsToCheck = array_unique(array_values($proofPaths));
+        $existenceMap = $storage->existsMany($pathsToCheck);
+
+        // 3. Process results
+        foreach ($proofPaths as $key => $proofPath) {
+            $exists = $existenceMap[$proofPath] ?? false;
+
+            if (!$exists) {
+                // Generate if missing
+                try {
+                    $originalPath = $originalPaths[$key];
+                    $generated = self::generateProofVariant($originalPath, $proofPath, $storage);
+                    if ($generated) {
+                        $exists = true;
+                    } else {
+                        Logger::log('error', 'proofs', 'Batch generation failed for image', ['key' => $key]);
+                    }
+                } catch (\Throwable $e) {
+                     Logger::log('error', 'proofs', 'Batch generation exception', ['key' => $key, 'error' => $e->getMessage()]);
+                }
+            }
+
+            if ($exists) {
+                // 4. Get URL
+                $urls[$key] = $storage->getUrl($proofPath, ['signed' => true, 'expires' => 3600]);
+            }
+        }
+
+        return $urls;
+    }
+
+    /**
      * Get a proof URL for a given image record.
      *
      * @param array                 $image    Image record (expects at least 'path' or 'filename')

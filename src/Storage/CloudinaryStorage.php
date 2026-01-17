@@ -151,6 +151,15 @@ class CloudinaryStorage implements StorageInterface
         }
     }
 
+    public function existsMany(array $targets): array
+    {
+        $results = [];
+        foreach ($targets as $target) {
+            $results[$target] = $this->exists($target);
+        }
+        return $results;
+    }
+
     public function getUrl(string $target, array $options = []): string
     {
         $publicId = $target;
