@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Implemented `HealthCardRegistry` to centralize health card management.
+- Added sorting to health cards based on `order`.
+- Exposed health cards to Admin SPA via `ApertureAdmin.healthCards`.
+- Wired up Health Dashboard to render dynamic card slots.
 - New `HealthService::getMetrics()` method to provide centralized performance and storage metrics.
 - New REST endpoint `GET /aperture/v1/admin/health-metrics` for retrieving dashboard metrics.
 - New `useStorageMetrics.js` hook for fetching storage data.
