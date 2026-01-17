@@ -92,23 +92,14 @@ add_action('admin_init', function () {
 });
 
 /* -------------------------------------------------------------------------
- * Admin initialization
+ * Plugin Boot
  * ------------------------------------------------------------------------- */
 
-add_action('init', function () {
-    if (!is_admin() || !current_user_can('manage_options')) {
-        return;
-    }
+$loader = new \AperturePro\Loader(
+    APERTURE_PRO_FILE,
+    APERTURE_PRO_DIR,
+    APERTURE_PRO_URL,
+    APERTURE_PRO_VERSION
+);
 
-    if (class_exists('\AperturePro\Installer\SetupWizard')) {
-        \AperturePro\Installer\SetupWizard::init();
-    }
-
-    if (class_exists('\AperturePro\Admin\AdminUI')) {
-        \AperturePro\Admin\AdminUI::init();
-    }
-
-    if (class_exists('\AperturePro\Admin\HealthCard')) {
-        \AperturePro\Admin\HealthCard::init();
-    }
-}, 5);
+$loader->boot();

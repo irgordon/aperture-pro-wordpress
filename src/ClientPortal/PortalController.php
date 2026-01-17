@@ -162,5 +162,3 @@ class PortalController
     }
 }
 
-// Initialize on plugin load
-PortalController::init();
