@@ -1,13 +1,13 @@
 /**
- * Aperture Pro Marketing SPA Bootstrap
+ * Aperture Pro Marketing + Admin SPA Bootstrap
  *
- * This file is responsible for:
- * - Detecting interactive islands via data-spa-component attributes
- * - Lazy-loading the correct component module
- * - Hydrating components only when needed
- * - Ensuring progressive enhancement (page works without JS)
+ * Responsibilities:
+ * - Detect interactive islands via data-spa-component attributes
+ * - Lazy-load the correct component module
+ * - Hydrate components only when needed
+ * - Ensure progressive enhancement (page works without JS)
  *
- * This file should remain extremely lightweight.
+ * Keep this file extremely lightweight.
  */
 
 const ApertureSPA = (() => {
@@ -15,16 +15,26 @@ const ApertureSPA = (() => {
     const HYDRATED_FLAG = "data-spa-hydrated";
 
     /**
-     * Map component names to dynamic imports.
-     * These paths correspond to assets/spa/components/*.js
+     * Component registry
+     * Maps component names → dynamic imports
+     *
+     * These paths correspond to:
+     * /assets/js/spa/components/*.js
      */
     const componentRegistry = {
+        // Marketing site components
         hero: () => import("./components/hero.js"),
         features: () => import("./components/features.js"),
         pricing: () => import("./components/pricing.js"),
         testimonials: () => import("./components/testimonials.js"),
         faq: () => import("./components/faq.js"),
         cta: () => import("./components/cta.js"),
+
+        // Admin Health Dashboard components
+        "performance-card": () => import("./components/PerformanceCard.js"),
+        // Future cards:
+        // "storage-card": () => import("./components/StorageCard.js"),
+        // "logging-card": () => import("./components/LoggingCard.js"),
     };
 
     /**
@@ -46,7 +56,9 @@ const ApertureSPA = (() => {
                 module.default(el);
                 el.setAttribute(HYDRATED_FLAG, "true");
             } else {
-                console.warn(`[ApertureSPA] Component ${name} loaded but has no default export`);
+                console.warn(
+                    `[ApertureSPA] Component "${name}" loaded but has no default export`
+                );
             }
         } catch (err) {
             console.error(`[ApertureSPA] Failed to hydrate component: ${name}`, err);
@@ -63,14 +75,13 @@ const ApertureSPA = (() => {
 
     /**
      * Initialize SPA behavior.
-     * Called once on DOMContentLoaded.
      */
     function init() {
         hydrateAll();
 
-        // Optional: intercept internal links for smooth transitions
-        // Optional: add event bus listeners
-        // Optional: add scroll/visibility-based hydration
+        // Optional: scroll/visibility hydration
+        // TODO: event bus
+        // TODO: internal link interception
     }
 
     return { init };
