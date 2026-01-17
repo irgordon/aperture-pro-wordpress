@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Persisted client image selection in `ClientProofController`.
 - Persisted client image comments in `ClientProofController`.
 - Added transactional email queue system to handle failed email sends in the background without blocking user requests.
 - Implemented `CloudinaryStorage` driver with chunked upload support (64MB).
