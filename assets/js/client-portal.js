@@ -30,7 +30,7 @@
 
   // Configuration
   const CONFIG = {
-    CHUNK_SIZE: 1024 * 1024, // 1 MB
+    CHUNK_SIZE: 10 * 1024 * 1024, // 10 MB
     MAX_RETRIES: 5,
     BASE_RETRY_MS: 400,
     MAX_CONCURRENT_CHUNKS: 2,
