@@ -43,6 +43,12 @@ class AdminController extends BaseController
             'callback'            => [$this, 'health_check'],
             'permission_callback' => [$this, 'require_admin'],
         ]);
+
+        register_rest_route($this->namespace, '/admin/health-metrics', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'health_metrics'],
+            'permission_callback' => [$this, 'require_admin'],
+        ]);
     }
 
     public function require_admin(): bool
@@ -307,5 +313,16 @@ class AdminController extends BaseController
             $results = HealthService::check();
             return $this->respond_success($results);
         }, ['endpoint' => 'admin_health_check']);
+    }
+
+    /**
+     * Metrics endpoint used by Admin Dashboard (Performance/Storage cards).
+     */
+    public function health_metrics(WP_REST_Request $request)
+    {
+        return $this->with_error_boundary(function () {
+            $metrics = HealthService::getMetrics();
+            return $this->respond_success($metrics);
+        }, ['endpoint' => 'admin_health_metrics']);
     }
 }

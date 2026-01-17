@@ -32,8 +32,8 @@ const ApertureSPA = (() => {
 
         // Admin Health Dashboard components
         "performance-card": () => import("./components/PerformanceCard.js"),
+        "storage-card": () => import("./components/StorageCard.js"),
         // Future cards:
-        // "storage-card": () => import("./components/StorageCard.js"),
         // "logging-card": () => import("./components/LoggingCard.js"),
     };
 

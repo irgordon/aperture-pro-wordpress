@@ -251,6 +251,8 @@ class AdminUI
             wp_localize_script('ap-admin-ui-js', 'ApertureAdmin', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce(self::NONCE_ACTION),
+                'restBase' => rest_url('aperture/v1'),
+                'restNonce' => wp_create_nonce('wp_rest'),
                 'testApiKeyAction' => 'aperture_pro_test_api_key',
                 'validateWebhookAction' => 'aperture_pro_validate_webhook',
                 'strings' => [
