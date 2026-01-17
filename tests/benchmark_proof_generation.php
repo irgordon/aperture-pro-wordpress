@@ -1,10 +1,11 @@
 <?php
 /**
- * Benchmark for Proof Generation (N+1 Storage Check)
+ * Benchmark for Proof Generation (N+1 Storage Check + Cache)
  * Usage: php tests/benchmark_proof_generation.php
  */
 
 require_once __DIR__ . '/../src/Storage/StorageInterface.php';
+require_once __DIR__ . '/../src/Proof/ProofCache.php';
 require_once __DIR__ . '/../src/Proof/ProofService.php';
 
 // Mock Dependencies
@@ -14,6 +15,30 @@ if (!function_exists('apply_filters')) {
 if (!function_exists('wp_tempnam')) {
     function wp_tempnam($prefix = '') { return tempnam(sys_get_temp_dir(), $prefix); }
 }
+
+// Mock Transients for ProofCache
+$mock_transients = [];
+if (!function_exists('get_transient')) {
+    function get_transient($transient) {
+        global $mock_transients;
+        return $mock_transients[$transient] ?? false;
+    }
+}
+if (!function_exists('set_transient')) {
+    function set_transient($transient, $value, $expiration) {
+        global $mock_transients;
+        $mock_transients[$transient] = $value;
+        return true;
+    }
+}
+if (!function_exists('delete_transient')) {
+    function delete_transient($transient) {
+        global $mock_transients;
+        unset($mock_transients[$transient]);
+        return true;
+    }
+}
+
 class MockLogger {
     public static function log($level, $context, $message, $data = []) {}
 }
@@ -23,6 +48,7 @@ if (!class_exists('AperturePro\Helpers\Logger')) {
 
 use AperturePro\Storage\StorageInterface;
 use AperturePro\Proof\ProofService;
+use AperturePro\Proof\ProofCache;
 
 // Mock Storage with Latency
 class MockSlowStorage implements StorageInterface
@@ -51,10 +77,9 @@ class MockSlowStorage implements StorageInterface
 
     public function getStats(): array { return []; }
 
-    // Placeholder for future implementation
     public function existsMany(array $targets): array
     {
-        // Simulate concurrent check (e.g. only 1x or 2x latency for the whole batch)
+        // Simulate concurrent check (only 1x latency for the whole batch)
         usleep($this->latencyMs * 1000);
         $results = [];
         foreach ($targets as $target) {
@@ -95,7 +120,7 @@ foreach ($images as $image) {
 $end = microtime(true);
 $duration = $end - $start;
 
-echo sprintf("Baseline Duration: %.4f seconds\n", $duration);
+echo sprintf("Baseline Duration (N+1): %.4f seconds\n", $duration);
 echo sprintf("Average per image: %.4f seconds\n", $duration / 50);
 
 // Simple validation
@@ -104,18 +129,38 @@ if (count($proofs) !== 50) {
     exit(1);
 }
 
-// Add a hook to run optimized version later if class exists
+// Test Optimized + Cached Version
 if (method_exists(ProofService::class, 'getProofUrls')) {
-    echo "\nTesting Optimized Version...\n";
+    echo "\nTesting Optimized Version (Cold Cache)...\n";
+    // Ensure cache is empty
+    global $mock_transients;
+    $mock_transients = [];
+
     $startOpt = microtime(true);
-
     $proofUrlsMap = ProofService::getProofUrls($images, $storage);
-
     $endOpt = microtime(true);
     $durationOpt = $endOpt - $startOpt;
 
-    echo sprintf("Optimized Duration: %.4f seconds\n", $durationOpt);
-    echo sprintf("Improvement: %.2fx faster\n", $duration / $durationOpt);
+    echo sprintf("Optimized Duration (Cold): %.4f seconds\n", $durationOpt);
+    echo sprintf("Improvement vs Baseline: %.2fx faster\n", $duration / $durationOpt);
+
+    // Test Cache Hit
+    echo "\nTesting Optimized Version (Warm Cache)...\n";
+    $startCache = microtime(true);
+    $proofUrlsMapCached = ProofService::getProofUrls($images, $storage);
+    $endCache = microtime(true);
+    $durationCache = $endCache - $startCache;
+
+    echo sprintf("Optimized Duration (Warm): %.6f seconds\n", $durationCache);
+    if ($durationOpt > 0) {
+        echo sprintf("Improvement vs Cold: %.2fx faster\n", $durationOpt / $durationCache);
+    }
+
+    // Validate result count
+    if (count($proofUrlsMapCached) !== 50) {
+        echo "ERROR: Warm cache returned " . count($proofUrlsMapCached) . " items\n";
+    }
+
 } else {
     echo "\nOptimized ProofService::getProofUrls not yet implemented.\n";
 }

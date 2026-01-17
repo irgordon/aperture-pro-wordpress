@@ -153,10 +153,63 @@ class CloudinaryStorage implements StorageInterface
 
     public function existsMany(array $targets): array
     {
+        // 1. Prepare Public IDs
+        $map = []; // target => publicId
+        $publicIds = [];
+
+        foreach ($targets as $target) {
+            $publicId = $target;
+            $ext = pathinfo($target, PATHINFO_EXTENSION);
+            if ($ext) {
+                $publicId = substr($target, 0, -(strlen($ext) + 1));
+            }
+            $map[$target] = $publicId;
+            $publicIds[] = $publicId;
+        }
+
+        $publicIds = array_unique($publicIds);
+        $foundPublicIds = [];
+
+        // 2. Batch check via Admin API (chunked to avoid URL length limits)
+        // Cloudinary typically allows 100 public_ids per call.
+        $chunks = array_chunk($publicIds, 100);
+
+        try {
+            $adminApi = $this->cloudinary->adminApi();
+
+            foreach ($chunks as $chunk) {
+                try {
+                    $response = $this->executeWithRetry(function() use ($adminApi, $chunk) {
+                        return $adminApi->resources([
+                            'public_ids' => $chunk,
+                            'max_results' => count($chunk),
+                        ]);
+                    });
+
+                    if (!empty($response['resources'])) {
+                        foreach ($response['resources'] as $resource) {
+                            $foundPublicIds[$resource['public_id']] = true;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // If a chunk fails, log it but don't crash everything?
+                    // Or maybe fall back to single checks?
+                    // For now, log error.
+                    Logger::log('error', 'cloudinary', 'Batch exists check failed: ' . $e->getMessage());
+                }
+            }
+        } catch (\Throwable $e) {
+            // Overall failure
+            Logger::log('error', 'cloudinary', 'existsMany failed: ' . $e->getMessage());
+        }
+
+        // 3. Map results back to targets
         $results = [];
         foreach ($targets as $target) {
-            $results[$target] = $this->exists($target);
+            $pid = $map[$target] ?? '';
+            $results[$target] = isset($foundPublicIds[$pid]);
         }
+
         return $results;
     }
 
