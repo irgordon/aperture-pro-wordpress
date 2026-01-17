@@ -29,7 +29,7 @@ class ClientProofController extends BaseController
     /**
      * Register routes.
      */
-    public function register_routes()
+    public function register_routes(): void
     {
         register_rest_route('aperture/v1', '/projects/(?P<project_id>\d+)/proofs', [
             [
@@ -206,12 +206,60 @@ class ClientProofController extends BaseController
             return new WP_Error('invalid_params', 'Missing required fields', ['status' => 400]);
         }
 
-        // TODO: persist comment in your data layer.
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_images';
+
+        // 1. Fetch existing comments
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT client_comments FROM $table WHERE id = %d AND gallery_id = %d",
+            $image_id,
+            $gallery_id
+        ));
+
+        if (!$row) {
+            return new WP_Error('not_found', 'Image not found', ['status' => 404]);
+        }
+
+        $comments = json_decode($row->client_comments, true);
+        if (!is_array($comments)) {
+            $comments = [];
+        }
+
+        // 2. Append new comment
+        $comments[] = [
+            'author'    => 'Client',
+            'text'      => sanitize_text_field($comment),
+            'timestamp' => current_time('mysql', 1),
+        ];
+
+        // 3. Update DB
+        $result = $wpdb->update(
+            $table,
+            [
+                'client_comments' => json_encode($comments),
+                'updated_at'      => current_time('mysql', 1),
+            ],
+            [
+                'id'         => $image_id,
+                'gallery_id' => $gallery_id,
+            ]
+        );
+
+        if ($result === false) {
+            Logger::log('error', 'comment_image', 'Failed to update image comments in DB', [
+                'gallery_id' => $gallery_id,
+                'image_id'   => $image_id,
+                'error_code' => $wpdb->last_error,
+            ]);
+
+            return new WP_Error('db_error', 'Could not save comment', ['status' => 500]);
+        }
 
         return new WP_REST_Response([
             'gallery_id' => $gallery_id,
             'image_id'   => $image_id,
             'comment'    => $comment,
+            'comments'   => $comments,
         ], 200);
     }
 
