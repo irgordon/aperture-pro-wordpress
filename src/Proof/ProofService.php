@@ -64,7 +64,7 @@ class ProofService
 
         // Use signed URL or public URL depending on your policy.
         // For proof copies, short-lived signed URLs are recommended.
-        $url = $storage->getSignedUrl($proofPath, 3600);
+        $url = $storage->getUrl($proofPath, ['signed' => true, 'expires' => 3600]);
 
         return $url;
     }
@@ -131,7 +131,7 @@ class ProofService
             }
 
             // Upload proof back to storage.
-            $ok = $storage->putFile($tmpProof, $proofPath, [
+            $storage->upload($tmpProof, $proofPath, [
                 'content_type' => 'image/jpeg',
                 'acl'          => 'private', // proofs should not be world-readable by default
             ]);
@@ -139,7 +139,7 @@ class ProofService
             @unlink($tmpOriginal);
             @unlink($tmpProof);
 
-            return $ok;
+            return true;
         } catch (\Throwable $e) {
             Logger::log('error', 'proofs', 'Exception during proof generation: ' . $e->getMessage(), [
                 'originalPath' => $originalPath,
@@ -168,9 +168,9 @@ class ProofService
             }
         }
 
-        // For simplicity, assume StorageInterface has getSignedUrl() and we use file_get_contents().
+        // For simplicity, assume StorageInterface has getUrl() and we use file_get_contents().
         // In a hardened implementation, you might use driver-specific SDK calls instead.
-        $url = $storage->getSignedUrl($remotePath, 600);
+        $url = $storage->getUrl($remotePath, ['signed' => true, 'expires' => 600]);
 
         $contents = @file_get_contents($url);
         if ($contents === false) {

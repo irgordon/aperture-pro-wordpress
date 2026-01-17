@@ -19,9 +19,7 @@ use AperturePro\Storage\Traits\Retryable;
  *
  * Performance / failure policy:
  *  - Failures are logged via Logger::log and will trigger admin notification
- *    when appropriate (see Logger::log).
- *  - This class does not throw for routine failures; it returns structured
- *    responses and logs details for admin attention.
+ *    when appropriate.
  */
 class LocalStorage implements StorageInterface
 {
@@ -56,17 +54,26 @@ class LocalStorage implements StorageInterface
         }
     }
 
+    public function getName(): string
+    {
+        return 'Local';
+    }
+
     /**
      * Upload a local file into the storage area.
      *
-     * Returns a structured array. On success 'url' will be a signed REST URL
-     * that can be used to retrieve the file. The raw server path is never returned.
+     * @param string $source  Absolute path to local temp file or content.
+     * @param string $target  Relative path/key in the storage backend.
+     * @param array  $options Optional driver-specific options.
+     *
+     * @return string Public or signed URL to the stored file.
+     * @throws \RuntimeException If upload fails.
      */
-    public function upload(string $localPath, string $remoteKey, array $options = []): array
+    public function upload(string $source, string $target, array $options = []): string
     {
         try {
-            return $this->executeWithRetry(function() use ($localPath, $remoteKey, $options) {
-                $dest = $this->baseDir . ltrim($remoteKey, '/');
+            return $this->executeWithRetry(function() use ($source, $target, $options) {
+                $dest = $this->baseDir . ltrim($target, '/');
 
                 $destDir = dirname($dest);
                 if (!file_exists($destDir)) {
@@ -76,71 +83,39 @@ class LocalStorage implements StorageInterface
                     }
                 }
 
-                $success = @copy($localPath, $dest);
+                $success = @copy($source, $dest);
                 if (!$success) {
-                    throw new \RuntimeException("Failed to copy file to local storage: $localPath -> $dest");
+                    throw new \RuntimeException("Failed to copy file to local storage: $source -> $dest");
                 }
 
                 @chmod($dest, 0644);
 
-                // Create a signed URL for immediate access if requested, otherwise return key and meta.
-                $signed = $options['signed'] ?? true;
-                $url = null;
-                if ($signed) {
-                    $token = $this->createSignedTokenForPath($dest, $remoteKey, $options);
-                    if ($token) {
-                        $url = $this->buildSignedUrl($token);
-                    } else {
-                        // Token creation failed; trigger retry
-                        throw new \RuntimeException("Signed token creation failed after upload");
-                    }
-                }
-
-                return [
-                    'success' => true,
-                    'key'     => $remoteKey,
-                    'url'     => $url,
-                    'meta'    => [
-                        'path' => $dest,
-                        'size' => filesize($dest),
-                    ],
-                ];
+                return $this->getUrl($target, $options);
             });
         } catch (\Throwable $e) {
-            Logger::log('error', 'local_storage', 'Upload failed: ' . $e->getMessage(), ['src' => $localPath, 'notify_admin' => true]);
-            return ['success' => false, 'key' => $remoteKey, 'url' => null, 'meta' => []];
+            Logger::log('error', 'local_storage', 'Upload failed: ' . $e->getMessage(), ['src' => $source, 'notify_admin' => true]);
+            throw new \RuntimeException('Upload failed: ' . $e->getMessage(), 0, $e);
         }
     }
 
     /**
-     * Store a file from a local path (Alias/Compat).
+     * Returns a signed REST URL that maps to the file.
      *
-     * @param string $localPath
-     * @param string $remotePath
+     * @param string $target
      * @param array  $options
-     * @return bool
+     * @return string
+     * @throws \RuntimeException
      */
-    public function putFile(string $localPath, string $remotePath, array $options = []): bool
-    {
-        $result = $this->upload($localPath, $remotePath, $options);
-        return $result['success'];
-    }
-
-    /**
-     * Returns a signed REST URL that maps to the file. The URL does not reveal
-     * the server path. The token is single-use and expires after tokenTtl seconds.
-     */
-    public function getUrl(string $remoteKey, array $options = []): ?string
+    public function getUrl(string $target, array $options = []): string
     {
         try {
-            return $this->executeWithRetry(function() use ($remoteKey, $options) {
-                $path = $this->baseDir . ltrim($remoteKey, '/');
+            return $this->executeWithRetry(function() use ($target, $options) {
+                $path = $this->baseDir . ltrim($target, '/');
 
-                if (!file_exists($path)) {
-                    return null;
-                }
+                // Generate signed token even if file doesn't exist yet (for lazy checks or consistent interface)
+                // But strictly speaking, we need path to map.
 
-                $token = $this->createSignedTokenForPath($path, $remoteKey, $options);
+                $token = $this->createSignedTokenForPath($path, $target, $options);
                 if (!$token) {
                     throw new \RuntimeException("Failed to create signed token for getUrl");
                 }
@@ -148,27 +123,20 @@ class LocalStorage implements StorageInterface
                 return $this->buildSignedUrl($token);
             });
         } catch (\Throwable $e) {
-            Logger::log('error', 'local_storage', 'getUrl failed: ' . $e->getMessage(), ['key' => $remoteKey]);
-            return null;
+            Logger::log('error', 'local_storage', 'getUrl failed: ' . $e->getMessage(), ['key' => $target]);
+            // Contract says return string. We should throw if we can't generate a URL.
+            throw $e;
         }
     }
 
     /**
      * Create a transient token mapping to the real file path and metadata.
-     *
-     * Returns token string on success or null on failure.
-     *
-     * Options:
-     *  - ttl: override TTL in seconds
-     *  - inline: bool (serve inline vs attachment)
-     *  - bind_ip: bool override default binding behavior
      */
     protected function createSignedTokenForPath(string $path, string $remoteKey, array $options = []): ?string
     {
         try {
             $token = bin2hex(random_bytes(self::TOKEN_BYTES));
         } catch (\Throwable $e) {
-            // Fallback to less secure uniqid if random_bytes fails (very unlikely)
             $token = hash('sha256', uniqid('ap_', true));
         }
 
@@ -178,9 +146,9 @@ class LocalStorage implements StorageInterface
         $payload = [
             'path'       => $path,
             'key'        => $remoteKey,
-            'mime'       => $this->detectMimeType($path),
+            'mime'       => $this->detectMimeType($path), // Might be inaccurate if file doesn't exist, will fallback
             'created_at' => time(),
-            'expires_at' => time() + ($options['ttl'] ?? $this->tokenTtl),
+            'expires_at' => time() + ($options['expires'] ?? $options['ttl'] ?? $this->tokenTtl),
             'inline'     => $options['inline'] ?? false,
             'bind_ip'    => $bindIp,
             'ip'         => $bindIp ? $clientIp : null,
@@ -189,60 +157,48 @@ class LocalStorage implements StorageInterface
 
         $saved = set_transient(self::TRANSIENT_PREFIX . $token, $payload, $payload['expires_at'] - time());
         if (!$saved) {
-            Logger::log('error', 'local_storage', 'Failed to save signed token transient', ['token' => $token, 'path' => $path, 'notify_admin' => true]);
+            Logger::log('error', 'local_storage', 'Failed to save signed token transient', ['token' => $token, 'path' => $path]);
             return null;
         }
 
         return $token;
     }
 
-    /**
-     * Build the REST URL that will serve the file for the given token.
-     *
-     * Enforces HTTPS scheme for the returned URL.
-     */
     protected function buildSignedUrl(string $token): string
     {
-        // Use the plugin REST namespace route implemented in DownloadController
         $restBase = rest_url('aperture/v1/local-file/' . $token);
-
-        // Force https for signed URLs to ensure tokens are not leaked over plain HTTP.
         $httpsUrl = set_url_scheme($restBase, 'https');
-
         return esc_url_raw($httpsUrl);
     }
 
     /**
      * Delete a stored object.
      */
-    public function delete(string $remoteKey): bool
+    public function delete(string $target): void
     {
         try {
-            return $this->executeWithRetry(function() use ($remoteKey) {
-                $path = $this->baseDir . ltrim($remoteKey, '/');
+            $this->executeWithRetry(function() use ($target) {
+                $path = $this->baseDir . ltrim($target, '/');
                 if (!file_exists($path)) {
-                    return true;
+                    return;
                 }
 
                 $deleted = @unlink($path);
                 if (!$deleted) {
-                     // Retryable
                     throw new \RuntimeException("Failed to delete file: $path");
                 }
-
-                return true;
             });
         } catch (\Throwable $e) {
-            Logger::log('warning', 'local_storage', 'Delete failed: ' . $e->getMessage(), ['path' => $remoteKey, 'notify_admin' => true]);
-            return false;
+            Logger::log('warning', 'local_storage', 'Delete failed: ' . $e->getMessage(), ['path' => $target, 'notify_admin' => true]);
+            throw $e;
         }
     }
 
-    public function exists(string $remoteKey): bool
+    public function exists(string $target): bool
     {
         try {
-             return $this->executeWithRetry(function() use ($remoteKey) {
-                 $path = $this->baseDir . ltrim($remoteKey, '/');
+             return $this->executeWithRetry(function() use ($target) {
+                 $path = $this->baseDir . ltrim($target, '/');
                  return file_exists($path);
              });
         } catch (\Throwable $e) {
@@ -250,82 +206,75 @@ class LocalStorage implements StorageInterface
         }
     }
 
+    public function getStats(): array
+    {
+        try {
+            $free  = @disk_free_space($this->baseDir);
+            $total = @disk_total_space($this->baseDir);
+
+            if ($free === false || $total === false) {
+                return [
+                    'healthy'         => true,
+                    'used_bytes'      => null,
+                    'available_bytes' => null,
+                    'used_human'      => null,
+                    'available_human' => null,
+                ];
+            }
+
+            $used      = $total - $free;
+            $usedHuman = size_format($used);
+            $freeHuman = size_format($free);
+
+            return [
+                'healthy'         => true,
+                'used_bytes'      => $used,
+                'available_bytes' => $free,
+                'used_human'      => $usedHuman,
+                'available_human' => $freeHuman,
+            ];
+        } catch (\Throwable $e) {
+            Logger::log('error', 'local_storage', 'Stats failed: ' . $e->getMessage());
+            return [
+                'healthy'         => false,
+                'used_bytes'      => null,
+                'available_bytes' => null,
+                'used_human'      => null,
+                'available_human' => null,
+            ];
+        }
+    }
+
     /**
      * Get the absolute local path for a key, if it exists.
-     * This allows services to bypass HTTP calls when working with local files.
      */
-    public function getLocalPath(string $remoteKey): ?string
+    public function getLocalPath(string $target): ?string
     {
-        $path = $this->baseDir . ltrim($remoteKey, '/');
+        $path = $this->baseDir . ltrim($target, '/');
         return file_exists($path) ? $path : null;
     }
 
-    public function list(string $prefix = '', array $options = []): array
-    {
-        try {
-            return $this->executeWithRetry(function() use ($prefix) {
-                $dir = $this->baseDir . ltrim($prefix, '/');
-                $results = [];
-
-                if (!is_dir($dir)) {
-                    return $results;
-                }
-
-                $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir));
-                foreach ($iterator as $file) {
-                    if ($file->isFile()) {
-                        $relative = str_replace($this->baseDir, '', $file->getPathname());
-                        $results[] = [
-                            'key'  => ltrim($relative, '/'),
-                            'size' => $file->getSize(),
-                            'mtime'=> date('c', $file->getMTime()),
-                        ];
-                    }
-                }
-
-                return $results;
-            });
-        } catch (\Throwable $e) {
-            Logger::log('warning', 'local_storage', 'List failed: ' . $e->getMessage(), ['prefix' => $prefix]);
-            return [];
-        }
-    }
-
-    /**
-     * Detect mime type for a file path.
-     */
     protected function detectMimeType(string $path): string
     {
         $mime = null;
-
-        if (function_exists('mime_content_type')) {
-            $mime = @mime_content_type($path);
-        }
-
-        if (empty($mime) && function_exists('finfo_open')) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            if ($finfo) {
-                $mime = finfo_file($finfo, $path);
-                finfo_close($finfo);
+        if (file_exists($path)) {
+            if (function_exists('mime_content_type')) {
+                $mime = @mime_content_type($path);
+            }
+            if (empty($mime) && function_exists('finfo_open')) {
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                if ($finfo) {
+                    $mime = finfo_file($finfo, $path);
+                    finfo_close($finfo);
+                }
             }
         }
-
-        if (empty($mime)) {
-            // Fallback to generic binary
-            $mime = 'application/octet-stream';
-        }
-
-        return $mime;
+        return $mime ?: 'application/octet-stream';
     }
 
-    /**
-     * Get client IP address, respecting common proxy headers.
-     */
     protected function getClientIp(): string
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-
-        // Respect X-Forwarded-For if present (first IP)
         if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
             $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
             $first = trim($parts[0]);
@@ -335,7 +284,6 @@ class LocalStorage implements StorageInterface
         } elseif (!empty($_SERVER['HTTP_CLIENT_IP']) && filter_var($_SERVER['HTTP_CLIENT_IP'], FILTER_VALIDATE_IP)) {
             $ip = $_SERVER['HTTP_CLIENT_IP'];
         }
-
         return $ip;
     }
 }

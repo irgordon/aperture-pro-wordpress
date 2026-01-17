@@ -17,10 +17,6 @@ use AperturePro\Storage\Traits\Retryable;
  *  - Store files in S3
  *  - Generate public URLs via CloudFront or S3
  *  - Generate signed URLs for private content
- *
- * Requirements:
- *  - aws/aws-sdk-php via Composer
- *  - Config provided via constructor (bucket, region, credentials, cloudfront_domain, cloudfront_key_pair_id, cloudfront_private_key)
  */
 class S3Storage implements StorageInterface
 {
@@ -50,17 +46,6 @@ class S3Storage implements StorageInterface
     /** @var string */
     protected $defaultAcl;
 
-    /**
-     * @param array $config
-     *   - bucket (string, required)
-     *   - region (string, required)
-     *   - access_key (string, required)
-     *   - secret_key (string, required)
-     *   - cloudfront_domain (string, optional)
-     *   - cloudfront_key_pair_id (string, optional)
-     *   - cloudfront_private_key (string, optional, PEM string)
-     *   - default_acl (string, optional, default 'private')
-     */
     public function __construct(array $config)
     {
         $this->bucket = $config['bucket'] ?? '';
@@ -98,33 +83,31 @@ class S3Storage implements StorageInterface
         }
     }
 
+    public function getName(): string
+    {
+        return 'S3';
+    }
+
     /**
      * Store a file from a local path.
-     *
-     * @param string $localPath
-     * @param string $remotePath
-     * @param array  $options
-     * @return bool
      */
-    public function putFile(string $localPath, string $remotePath, array $options = []): bool
+    public function upload(string $source, string $target, array $options = []): string
     {
-        if (!is_readable($localPath)) {
-            Logger::log('error', 'storage', 'S3 putFile: local path not readable', [
-                'localPath' => $localPath,
-                'remotePath' => $remotePath,
-            ]);
-            return false;
+        if (!is_readable($source)) {
+            $msg = "S3 upload: local path not readable: $source";
+            Logger::log('error', 'storage', $msg);
+            throw new \RuntimeException($msg);
         }
 
         try {
-            return $this->executeWithRetry(function() use ($localPath, $remotePath, $options) {
+            $this->executeWithRetry(function() use ($source, $target, $options) {
                 $acl = $options['acl'] ?? $this->defaultAcl;
                 $contentType = $options['content_type'] ?? null;
 
                 $params = [
                     'Bucket'     => $this->bucket,
-                    'Key'        => ltrim($remotePath, '/'),
-                    'SourceFile' => $localPath,
+                    'Key'        => ltrim($target, '/'),
+                    'SourceFile' => $source,
                     'ACL'        => $acl,
                 ];
 
@@ -135,142 +118,69 @@ class S3Storage implements StorageInterface
                 $this->s3->putObject($params);
                 return true;
             });
+
+            return $this->getUrl($target, $options);
         } catch (\Throwable $e) {
-            Logger::log('error', 'storage', 'S3 putFile failed: ' . $e->getMessage(), [
-                'remotePath' => $remotePath,
-            ]);
+            $msg = 'S3 upload failed: ' . $e->getMessage();
+            Logger::log('error', 'storage', $msg, ['target' => $target]);
+            throw new \RuntimeException($msg, 0, $e);
+        }
+    }
+
+    public function delete(string $target): void
+    {
+        try {
+            $this->executeWithRetry(function() use ($target) {
+                $this->s3->deleteObject([
+                    'Bucket' => $this->bucket,
+                    'Key'    => ltrim($target, '/'),
+                ]);
+            });
+        } catch (\Throwable $e) {
+            $msg = 'S3 delete failed: ' . $e->getMessage();
+            Logger::log('error', 'storage', $msg, ['target' => $target]);
+            throw new \RuntimeException($msg, 0, $e);
+        }
+    }
+
+    public function exists(string $target): bool
+    {
+        try {
+            return $this->executeWithRetry(function() use ($target) {
+                return $this->s3->doesObjectExist($this->bucket, ltrim($target, '/'));
+            });
+        } catch (\Throwable $e) {
             return false;
         }
     }
 
-    /**
-     * StorageInterface upload implementation.
-     *
-     * @param string $localPath
-     * @param string $remoteKey
-     * @param array  $options
-     * @return array
-     */
-    public function upload(string $localPath, string $remoteKey, array $options = []): array
+    public function getUrl(string $target, array $options = []): string
     {
-        $success = $this->putFile($localPath, $remoteKey, $options);
+        if (!empty($options['signed'])) {
+            $ttl = $options['expires'] ?? 3600;
+            return $this->getSignedUrl($target, (int) $ttl);
+        }
+        return $this->getPublicUrl($target);
+    }
 
+    public function getStats(): array
+    {
+        // S3 doesn't expose "free space". We just return healthy.
         return [
-            'success' => $success,
-            'key'     => $remoteKey,
-            'url'     => $success ? $this->getUrl($remoteKey, $options) : null,
-            'meta'    => [],
+            'healthy'         => true,
+            'used_bytes'      => null,
+            'available_bytes' => null,
+            'used_human'      => null,
+            'available_human' => null,
         ];
     }
 
     /**
-     * Store raw contents.
-     *
-     * @param string $contents
-     * @param string $remotePath
-     * @param array  $options
-     * @return bool
+     * Helper for public URL
      */
-    public function putContents(string $contents, string $remotePath, array $options = []): bool
+    protected function getPublicUrl(string $target): string
     {
-        try {
-            return $this->executeWithRetry(function() use ($contents, $remotePath, $options) {
-                $acl = $options['acl'] ?? $this->defaultAcl;
-                $contentType = $options['content_type'] ?? null;
-
-                $params = [
-                    'Bucket' => $this->bucket,
-                    'Key'    => ltrim($remotePath, '/'),
-                    'Body'   => $contents,
-                    'ACL'    => $acl,
-                ];
-
-                if ($contentType) {
-                    $params['ContentType'] = $contentType;
-                }
-
-                $this->s3->putObject($params);
-                return true;
-            });
-        } catch (\Throwable $e) {
-            Logger::log('error', 'storage', 'S3 putContents failed: ' . $e->getMessage(), [
-                'remotePath' => $remotePath,
-            ]);
-            return false;
-        }
-    }
-
-    /**
-     * Check if an object exists.
-     *
-     * @param string $remotePath
-     * @return bool
-     */
-    public function exists(string $remotePath): bool
-    {
-        try {
-            return $this->executeWithRetry(function() use ($remotePath) {
-                return $this->s3->doesObjectExist($this->bucket, ltrim($remotePath, '/'));
-            });
-        } catch (\Throwable $e) {
-            Logger::log('warning', 'storage', 'S3 exists check failed: ' . $e->getMessage(), [
-                'remotePath' => $remotePath,
-            ]);
-            return false;
-        }
-    }
-
-    /**
-     * Delete an object.
-     *
-     * @param string $remotePath
-     * @return bool
-     */
-    public function delete(string $remotePath): bool
-    {
-        try {
-            return $this->executeWithRetry(function() use ($remotePath) {
-                $this->s3->deleteObject([
-                    'Bucket' => $this->bucket,
-                    'Key'    => ltrim($remotePath, '/'),
-                ]);
-                return true;
-            });
-        } catch (\Throwable $e) {
-            Logger::log('error', 'storage', 'S3 delete failed: ' . $e->getMessage(), [
-                'remotePath' => $remotePath,
-            ]);
-            return false;
-        }
-    }
-
-    /**
-     * Get a public or signed URL for a stored object.
-     *
-     * @param string $remoteKey
-     * @param array  $options
-     * @return string|null
-     */
-    public function getUrl(string $remoteKey, array $options = []): ?string
-    {
-        if (!empty($options['signed'])) {
-            $ttl = $options['expires'] ?? 3600;
-            return $this->getSignedUrl($remoteKey, (int) $ttl);
-        }
-        return $this->getPublicUrl($remoteKey);
-    }
-
-    /**
-     * Get a public URL (non-signed).
-     *
-     * If CloudFront domain is configured, use it; otherwise fall back to S3 URL.
-     *
-     * @param string $remotePath
-     * @return string
-     */
-    public function getPublicUrl(string $remotePath): string
-    {
-        $key = ltrim($remotePath, '/');
+        $key = ltrim($target, '/');
 
         if (!empty($this->cloudfrontDomain)) {
             return rtrim($this->cloudfrontDomain, '/') . '/' . $key;
@@ -285,23 +195,15 @@ class S3Storage implements StorageInterface
     }
 
     /**
-     * Get a signed URL for private content.
-     *
-     * If CloudFront key pair is configured, use CloudFront signed URL.
-     * Otherwise, fall back to S3 pre-signed URL.
-     *
-     * @param string $remotePath
-     * @param int    $ttlSeconds
-     * @return string
+     * Helper for signed URL
      */
-    public function getSignedUrl(string $remotePath, int $ttlSeconds = 3600): string
+    protected function getSignedUrl(string $target, int $ttlSeconds = 3600): string
     {
-        $key = ltrim($remotePath, '/');
+        $key = ltrim($target, '/');
         $expires = time() + $ttlSeconds;
 
-        // Wrapped in retry for consistency, though mostly local
         try {
-            return $this->executeWithRetry(function() use ($key, $expires, $remotePath, $ttlSeconds) {
+            return $this->executeWithRetry(function() use ($key, $expires, $target, $ttlSeconds) {
                 // Prefer CloudFront signed URL if configured
                 if (!empty($this->cloudfrontDomain) && !empty($this->cloudfrontKeyPairId) && !empty($this->cloudfrontPrivateKey)) {
                     try {
@@ -310,7 +212,7 @@ class S3Storage implements StorageInterface
                         return $signer->getSignedUrl($url, $expires);
                     } catch (\Throwable $e) {
                         Logger::log('error', 'storage', 'CloudFront signed URL failed: ' . $e->getMessage(), [
-                            'remotePath' => $remotePath,
+                            'target' => $target,
                         ]);
                         // fall through to S3 pre-signed
                     }
@@ -326,50 +228,40 @@ class S3Storage implements StorageInterface
             });
         } catch (\Throwable $e) {
             Logger::log('error', 'storage', 'S3 pre-signed URL failed: ' . $e->getMessage(), [
-                'remotePath' => $remotePath,
+                'target' => $target,
             ]);
-            // As a last resort, return public URL (may fail if object is private)
-            return $this->getPublicUrl($remotePath);
+            // Fallback to public URL but it might not work for private objects
+            return $this->getPublicUrl($target);
         }
     }
 
     /**
-     * List objects under a prefix.
-     *
-     * @param string $prefix
-     * @param array $options
-     * @return array
+     * Store raw contents. (Helper not in interface, but useful for internal logic if needed, keeping it just in case or removing if unused. I'll keep it as helper).
      */
-    public function list(string $prefix = '', array $options = []): array
+    public function putContents(string $contents, string $target, array $options = []): void
     {
         try {
-            return $this->executeWithRetry(function() use ($prefix) {
-                $results = [];
+            $this->executeWithRetry(function() use ($contents, $target, $options) {
+                $acl = $options['acl'] ?? $this->defaultAcl;
+                $contentType = $options['content_type'] ?? null;
+
                 $params = [
                     'Bucket' => $this->bucket,
-                    'Prefix' => ltrim($prefix, '/'),
+                    'Key'    => ltrim($target, '/'),
+                    'Body'   => $contents,
+                    'ACL'    => $acl,
                 ];
 
-                $paginator = $this->s3->getPaginator('ListObjectsV2', $params);
-
-                foreach ($paginator as $page) {
-                    if (isset($page['Contents'])) {
-                        foreach ($page['Contents'] as $object) {
-                            $results[] = [
-                                'key'   => $object['Key'],
-                                'size'  => $object['Size'],
-                                'mtime' => isset($object['LastModified']) ? (string)$object['LastModified'] : null,
-                            ];
-                        }
-                    }
+                if ($contentType) {
+                    $params['ContentType'] = $contentType;
                 }
-                return $results;
+
+                $this->s3->putObject($params);
             });
         } catch (\Throwable $e) {
-            Logger::log('error', 'storage', 'S3 list failed: ' . $e->getMessage(), [
-                'prefix' => $prefix,
-            ]);
-            return [];
+            $msg = 'S3 putContents failed: ' . $e->getMessage();
+            Logger::log('error', 'storage', $msg, ['target' => $target]);
+            throw new \RuntimeException($msg, 0, $e);
         }
     }
 }

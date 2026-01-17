@@ -11,50 +11,61 @@ namespace AperturePro\Storage;
 interface StorageInterface
 {
     /**
-     * Upload a file to storage.
-     *
-     * @param string $localPath Absolute path to the local file to upload.
-     * @param string $remoteKey Desired remote key / path (driver-specific).
-     * @param array  $options   Optional driver-specific options (ACL, content-type, metadata).
-     * @return array            Returns an associative array with at least:
-     *                          - 'success' => bool
-     *                          - 'key'     => string remote key
-     *                          - 'url'     => string public or signed URL (if available)
-     *                          - 'meta'    => array driver metadata
+     * Human-readable driver name (e.g. "Local", "S3").
      */
-    public function upload(string $localPath, string $remoteKey, array $options = []): array;
+    public function getName(): string;
 
     /**
-     * Get a public or signed URL for a stored object.
+     * Store a file at the given path.
      *
-     * @param string $remoteKey
-     * @param array  $options   Optional: ['expires' => seconds, 'signed' => bool]
-     * @return string|null      URL or null if not available
+     * @param string $source  Absolute path to local temp file or content.
+     * @param string $target  Relative path/key in the storage backend.
+     * @param array  $options Optional driver-specific options (ACL, content-type, metadata).
+     *
+     * @return string Public or signed URL to the stored file.
+     *
+     * @throws \RuntimeException If upload fails.
      */
-    public function getUrl(string $remoteKey, array $options = []): ?string;
+    public function upload(string $source, string $target, array $options = []): string;
 
     /**
-     * Delete an object from storage.
+     * Delete a file from storage.
      *
-     * @param string $remoteKey
-     * @return bool
+     * @param string $target Relative path/key in the storage backend.
+     *
+     * @throws \RuntimeException If deletion fails.
      */
-    public function delete(string $remoteKey): bool;
+    public function delete(string $target): void;
+
+    /**
+     * Return a signed or direct URL for a stored file.
+     *
+     * @param string $target  Relative path/key in the storage backend.
+     * @param array  $options Optional: ['expires' => seconds, 'signed' => bool]
+     *
+     * @return string URL to the file.
+     */
+    public function getUrl(string $target, array $options = []): string;
 
     /**
      * Check whether an object exists.
      *
-     * @param string $remoteKey
+     * @param string $target Relative path/key in the storage backend.
      * @return bool
      */
-    public function exists(string $remoteKey): bool;
+    public function exists(string $target): bool;
 
     /**
-     * List objects under a prefix/path.
+     * Return storage statistics for health + UI.
      *
-     * @param string $prefix
-     * @param array  $options  Optional pagination or filtering options
-     * @return array           Array of object metadata arrays
+     * Expected shape:
+     * [
+     *   'healthy'         => bool,
+     *   'used_bytes'      => int|null,
+     *   'available_bytes' => int|null,
+     *   'used_human'      => string|null,
+     *   'available_human' => string|null,
+     * ]
      */
-    public function list(string $prefix = '', array $options = []): array;
+    public function getStats(): array;
 }
