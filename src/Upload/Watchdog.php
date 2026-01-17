@@ -51,6 +51,7 @@ class Watchdog
             return;
         }
 
+        $storage = null;
         $dirIt = new \DirectoryIterator($baseDir);
         foreach ($dirIt as $fileinfo) {
             if ($fileinfo->isDot()) {
@@ -74,7 +75,9 @@ class Watchdog
                 if (file_exists($assembled)) {
                     // Attempt one best-effort upload using storage driver
                     try {
-                        $storage = \AperturePro\Storage\StorageFactory::make();
+                        if (!$storage) {
+                            $storage = \AperturePro\Storage\StorageFactory::make();
+                        }
                         // Determine a remote key placeholder (we don't have session metadata)
                         $remoteKey = 'orphaned/' . $uploadId . '/' . basename($assembled);
                         $res = $storage->upload($assembled, $remoteKey, ['signed' => true]);
