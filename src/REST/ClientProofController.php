@@ -161,8 +161,30 @@ class ClientProofController extends BaseController
             return new WP_Error('invalid_params', 'Invalid gallery or image ID', ['status' => 400]);
         }
 
-        // TODO: persist selection in your data layer.
-        // Example: $this->repository->setSelection($gallery_id, $image_id, $selected);
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_images';
+
+        $result = $wpdb->update(
+            $table,
+            [
+                'is_selected' => $selected ? 1 : 0,
+                'updated_at'  => current_time('mysql', 1),
+            ],
+            [
+                'id'         => $image_id,
+                'gallery_id' => $gallery_id,
+            ]
+        );
+
+        if ($result === false) {
+            Logger::log('error', 'select_image', 'Failed to update image selection in DB', [
+                'gallery_id' => $gallery_id,
+                'image_id'   => $image_id,
+                'error_code' => $wpdb->last_error,
+            ]);
+
+            return new WP_Error('db_error', 'Could not update selection', ['status' => 500]);
+        }
 
         return new WP_REST_Response([
             'gallery_id' => $gallery_id,
