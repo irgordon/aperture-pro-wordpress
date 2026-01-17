@@ -8,11 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added transactional email queue system to handle failed email sends in the background without blocking user requests.
 - Implemented `CloudinaryStorage` driver with chunked upload support (64MB).
 - Formalized `StorageInterface` contract with `upload`, `delete`, `getUrl`, `getStats`, `getName`.
 - Added `getStats` method to all storage drivers for uniform health reporting.
 
 ### Changed
+- Optimized `EmailService::sendTemplate` to remove blocking `sleep()` and retry loop; failed emails are now immediately queued for background processing.
 - Refactored `LocalStorage`, `S3Storage`, and `ImageKitStorage` to adhere to the strict `StorageInterface` contract.
 - Refactored `ProofService` to use standardized storage methods (`upload`, `getUrl`) and handle exceptions robustly.
 - Updated `HealthService` to use `StorageInterface::getStats()` for retrieving storage metrics, removing driver-specific logic.
