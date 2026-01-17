@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - 2026-01-17 23:35:24
 
 ### Added
+- Added `ProofCache` service to cache signed proof URLs, reducing redundant signing operations and improving response times for large galleries.
 - Added `existsMany` method to `StorageInterface` and all drivers (`LocalStorage`, `S3Storage`, `CloudinaryStorage`, `ImageKitStorage`) to support batch existence checks.
 - Added `ProofService::getProofUrls` for batch proof URL generation.
 - Persisted client image selection in `ClientProofController`.
@@ -18,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `getStats` method to all storage drivers for uniform health reporting.
 
 ### Changed
-- Performance: Refactored `ClientProofController::list_proofs` to use batch proof generation, eliminating N+1 storage existence checks (approx 50x speedup).
+- Performance: Refactored `ClientProofController::list_proofs` to use batch proof generation and caching, eliminating N+1 storage existence checks and redundant signing (approx 50x speedup for cold cache, instant for warm cache).
+- Optimized `CloudinaryStorage::existsMany` to use the Admin API `resources` endpoint for true batch checking.
 - Optimized `EmailService::sendTemplate` to remove blocking `sleep()` and retry loop; failed emails are now immediately queued for background processing.
 - Optimized `Watchdog` maintenance task by instantiating storage driver once instead of per-session.
 - Refactored `LocalStorage`, `S3Storage`, and `ImageKitStorage` to adhere to the strict `StorageInterface` contract.

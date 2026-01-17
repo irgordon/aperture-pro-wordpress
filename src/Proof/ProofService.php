@@ -5,6 +5,7 @@ namespace AperturePro\Proof;
 use AperturePro\Storage\StorageFactory;
 use AperturePro\Storage\StorageInterface;
 use AperturePro\Helpers\Logger;
+use AperturePro\Proof\ProofCache;
 
 /**
  * ProofService
@@ -43,6 +44,14 @@ class ProofService
      */
     public static function getProofUrls(array $images, ?StorageInterface $storage = null): array
     {
+        // 1. Try Cache
+        // We use a hash of the images array as the key to ensure we return the correct set.
+        $cacheKey = ProofCache::generateKey('batch', $images);
+        $cached = ProofCache::get($cacheKey);
+        if ($cached !== null) {
+            return $cached;
+        }
+
         if ($storage === null) {
             $storage = StorageFactory::create();
         }
@@ -92,6 +101,9 @@ class ProofService
                 $urls[$key] = $storage->getUrl($proofPath, ['signed' => true, 'expires' => 3600]);
             }
         }
+
+        // Cache the result
+        ProofCache::set($cacheKey, $urls);
 
         return $urls;
     }
