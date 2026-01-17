@@ -9,6 +9,17 @@
 <div class="wrap ap-settings-wrap">
     <h1>Aperture Pro Health Status</h1>
 
+    <!-- Dashboard Cards (SPA Islands) -->
+    <div class="ap-health-dashboard" style="display: flex; gap: 20px; margin-top: 20px; margin-bottom: 20px;">
+        <?php if (!empty($cards)): ?>
+            <?php foreach ($cards as $card): ?>
+                <?php if (!empty($card['enabled']) && current_user_can($card['capability'])): ?>
+                    <div data-spa-component="<?php echo esc_attr($card['spa_component']); ?>" class="ap-card-slot"></div>
+                <?php endif; ?>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+
     <div class="card ap-card" style="max-width: 800px; margin-top: 20px;">
         <h2>System Status:
             <?php if ($healthData['overall_status'] === 'ok'): ?>
