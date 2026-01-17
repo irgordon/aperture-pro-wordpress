@@ -143,6 +143,15 @@ class ImageKitStorage implements StorageInterface
         }
     }
 
+    public function existsMany(array $targets): array
+    {
+        $results = [];
+        foreach ($targets as $target) {
+            $results[$target] = $this->exists($target);
+        }
+        return $results;
+    }
+
     public function getStats(): array
     {
         // ImageKit doesn't easily expose storage stats via standard API call without extra perms?

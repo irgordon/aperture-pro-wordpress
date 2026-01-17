@@ -120,11 +120,22 @@ class ClientProofController extends BaseController
         // Pre-instantiate storage for this request.
         $storage = StorageFactory::create(); // Uses configured driver; includes decryption.
 
-        $proofs = [];
-        foreach ($images as $image) {
-            try {
-                $proofUrl = ProofService::getProofUrlForImage($image, $storage);
+        // Batch generate proof URLs to avoid N+1 storage existence checks.
+        try {
+            $proofUrls = ProofService::getProofUrls($images, $storage);
+        } catch (\Throwable $e) {
+            Logger::log('error', 'client_proofs', 'Batch proof generation failed', [
+                'project_id' => $project_id,
+                'error'      => $e->getMessage(),
+            ]);
+            $proofUrls = [];
+        }
 
+        $proofs = [];
+        foreach ($images as $key => $image) {
+            $proofUrl = $proofUrls[$key] ?? null;
+
+            if ($proofUrl) {
                 $proofs[] = [
                     'id'          => (int) $image['id'],
                     'filename'    => $image['filename'],
@@ -132,12 +143,10 @@ class ClientProofController extends BaseController
                     'is_selected' => (bool) ($image['is_selected'] ?? false),
                     'comments'    => $image['comments'] ?? [],
                 ];
-            } catch (\Throwable $e) {
-                // Fail-soft: log and skip this image rather than failing the entire response.
+            } else {
                 Logger::log('error', 'client_proofs', 'Failed to generate proof URL', [
                     'project_id' => $project_id,
                     'image_id'   => $image['id'] ?? null,
-                    'error'      => $e->getMessage(),
                 ]);
             }
         }
