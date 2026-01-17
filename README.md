@@ -50,104 +50,117 @@ Aperture Pro is a modern, production‑grade WordPress plugin built for photogra
 - Watchdog for stuck uploads and storage issues  
 
 ---
-## File Structure 
+## Plugin File Structure 
 
-```
 aperture-pro/
 │
-├── aperture-pro.php                     # Plugin bootstrap (initialization, cron, REST registration)
-├── composer.json                        # Optional autoloading / dependencies
-├── vendor/                              # Composer dependencies (if used)
+├── aperture-pro.php
+├── index.php
+├── README.md
+├── CHANGELOG.md
+├── composer.json
+├── package.json
+│
+├── inc/
+│   ├── autoloader.php
+│   ├── helpers.php
+│   ├── ajax-health-endpoint.php        # NEW — unified health metrics endpoint
 │
 ├── src/
-│   ├── Admin/
-│   │   ├── AdminUI.php                  # Full admin settings UI (tooltips, validation, encryption)
-│   │   ├── ThemeVariables.php           # Theme variable overrides for client portal
-│   │   └── HealthCard.php               # Admin health dashboard (optional)
-│   │
-│   ├── ClientPortal/
-│   │   ├── PortalController.php         # Portal routing, session binding, security
-│   │   └── PortalRenderer.php           # Renders client-facing templates
-│   │
-│   ├── Config/
-│   │   └── Config.php                   # Central config loader (reads encrypted settings)
-│   │
-│   ├── Download/
-│   │   └── ZipStreamService.php         # Memory-safe ZIP streaming with rate limiting
-│   │
-│   ├── Email/
-│   │   ├── EmailService.php             # Queued email sending, admin notifications
-│   │   └── Templates/
-│   │       ├── project-created.php
-│   │       ├── proofs-ready.php
-│   │       ├── proofs-approved.php
-│   │       ├── editing-started.php
-│   │       ├── final-gallery-ready.php
-│   │       ├── otp-code.php
-│   │       └── download-link.php
-│   │
-│   ├── Helpers/
-│   │   ├── Crypto.php                   # AES-256/Sodium encryption for API keys & secrets
-│   │   ├── Logger.php                   # Centralized logging
-│   │   └── RateLimiter.php              # Token/IP-based rate limiting
-│   │
-│   ├── Proof/
-│   │   └── ProofService.php             # Watermarking, low-res proof generation
-│   │
-│   ├── REST/
-│   │   ├── BaseController.php           # Shared REST utilities
-│   │   ├── AuthController.php           # Client session auth
-│   │   ├── ClientProofController.php    # Proof selection, comments, approval
-│   │   ├── AdminController.php          # Admin-side REST actions
-│   │   ├── DownloadController.php       # Token-based downloads + OTP verification
-│   │   ├── UploadController.php         # Chunked upload endpoints
-│   │   └── PaymentController.php        # Webhook handler (decrypts secret)
-│   │
-│   ├── Services/
-│   │   └── PaymentService.php           # Payment event processing
-│   │
-│   ├── Storage/
-│   │   ├── StorageInterface.php         # Contract for all storage drivers
-│   │   ├── StorageFactory.php           # Creates storage driver instances
-│   │   ├── LocalStorage.php             # Local storage w/ signed URLs + path hiding
-│   │   ├── CloudinaryStorage.php        # Cloudinary adapter
-│   │   └── ImageKitStorage.php          # ImageKit adapter
-│   │
-│   ├── Upload/
-│   │   ├── ChunkedUploadHandler.php     # Chunk session mgmt, assembly, integrity checks
-│   │   └── Watchdog.php                 # Cleans abandoned uploads, updates Health Card
-│   │
-│   └── Health/
-│       └── HealthService.php            # Tracks warnings/errors for admin visibility
+│   ├── Loader.php
+│   ├── Contracts/
+│   │   └── ServiceInterface.php
+│   └── Services/
+│       ├── Assets.php
+│       ├── SPA.php
+│       ├── REST_API.php
+│       ├── Admin_UI.php
+│       ├── SetupWizard.php
+│       ├── Database.php
+│       ├── Security.php
+│       ├── Upgrades.php
+│       ├── Health_Card.php
+│       ├── Client_Portal.php
+│       ├── Logger.php
+│       ├── Jobs.php
+│       └── Storage.php                 # Storage metrics provider
 │
 ├── assets/
-│   ├── js/
-│   │   ├── client-portal.js             # Full client-side uploader, proofs, OTP, downloads
-│   │   └── admin-ui.js                  # Admin UI interactivity + AJAX tests
-│   │
 │   ├── css/
-│   │   ├── client-portal.css            # Full portal UI
-│   │   ├── client-portal.min.css        # Minified version
-│   │   └── admin-ui.css                 # Admin settings UI
+│   │   ├── admin.css
+│   │   ├── health.css
+│   │   └── cards/
+│   │       └── performance.css         # NEW — performance card styles
 │   │
-│   └── img/                             # Icons, placeholders, watermark overlays
+│   ├── js/
+│   │   ├── client-portal.js
+│   │   └── spa/
+│   │       ├── index.js
+│   │       ├── bootstrap.js            # UPDATED — registers new SPA components
+│   │       ├── components/
+│   │       │   ├── hero.js
+│   │       │   ├── features.js
+│   │       │   ├── pricing.js
+│   │       │   ├── testimonials.js
+│   │       │   ├── faq.js
+│   │       │   ├── cta.js
+│   │       │   ├── PerformanceCard.js  # NEW — live performance card
+│   │       │   ├── StorageCard.js      # NEW — live storage card
+│   │       │   └── HealthDashboard.js  # NEW — auto-registers all cards
+│   │       │
+│   │       └── hooks/
+│   │           ├── usePerformanceMetrics.js  # NEW — performance hook
+│   │           └── useStorageMetrics.js      # NEW — storage hook
+│   │
+│   └── images/
+│
+└── tests/
+    ├── verify_theme_load.php
+    ├── benchmark_js_chunking.js
+    └── phpunit.xml
+
+```
+---
+## Theme File Structure
+```
+aperture-pro-theme/
+│
+├── style.css
+├── theme.json
+├── screenshot.png
+│
+├── functions.php
+├── index.php
+│
+├── inc/
+│   ├── enqueue.php
+│   ├── template-tags.php
+│   └── helpers.php
+│
+├── parts/
+│   ├── header.html
+│   ├── footer.html
+│   └── navigation.html
 │
 ├── templates/
-│   ├── client/
-│   │   ├── portal-header.php
-│   │   ├── portal-dashboard.php
-│   │   ├── portal-proofs.php
-│   │   ├── portal-download.php
-│   │   ├── portal-payment-alert.php
-│   │   └── portal-footer.php
-│   │
-│   ├── email/                           # (Also mirrored under src/Email/Templates)
-│   │   └── *.php
-│   │
-│   └── admin/
-│       └── settings-page.php            # Full admin settings UI template
+│   ├── front-page.html
+│   ├── single.html
+│   └── page.html
 │
-└── README.md                            # GitHub-ready documentation
+├── assets/
+│   ├── css/
+│   │   ├── header.css
+│   │   ├── navigation.css
+│   │   └── layout.css
+│   │
+│   ├── js/
+│   │   ├── theme.js
+│   │   └── interactions.js
+│   │
+│   └── images/
+│
+└── tests/
+    └── verify_theme_load.php
 ```
 
 ---
