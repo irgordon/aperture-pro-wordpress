@@ -25,6 +25,22 @@ add_action('wp_enqueue_scripts', function () {
         $version
     );
 
+    // Header Styles
+    wp_enqueue_style(
+        'aperture-theme-header',
+        get_theme_file_uri('/assets/css/header.css'),
+        ['aperture-theme-tokens'],
+        $version
+    );
+
+    // Navigation Styles
+    wp_enqueue_style(
+        'aperture-theme-navigation',
+        get_theme_file_uri('/assets/css/navigation.css'),
+        ['aperture-theme-tokens'],
+        $version
+    );
+
     // Global frontend styles
     wp_enqueue_style(
         'aperture-theme-frontend',

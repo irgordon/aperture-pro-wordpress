@@ -11,4 +11,4 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-echo wp_kses_post( wp_template_part( 'footer' ) );
+block_template_part( 'footer' );
