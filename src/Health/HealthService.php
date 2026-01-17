@@ -121,55 +121,29 @@ class HealthService
         // -----------------------------------------
         // STORAGE METRICS
         // -----------------------------------------
-        $config = Config::all();
-        $driverName = $config['storage']['driver'] ?? 'unknown';
-
         $storage = [
-            'driver'    => $driverName,
+            'driver'    => 'Unknown',
             'status'    => 'Unavailable',
-            'used'      => null, // Not easily available without expensive calls
+            'used'      => null,
             'available' => null,
         ];
 
         try {
             $driver = StorageFactory::make();
-            // If we instantiated it, it's at least configured correctly.
-            $storage['status'] = 'Active';
+            $stats  = $driver->getStats();
 
-            // Optional: Check if local and get disk space
-            if ($driver instanceof \AperturePro\Storage\LocalStorage) {
-                // We access the protected local path via a public helper if available,
-                // or assume base path from config. LocalStorage has getLocalPath.
-                $localPath = $driver->getLocalPath('');
-                if ($localPath) {
-                    $free = @disk_free_space($localPath);
-                    $total = @disk_total_space($localPath);
-                    if ($free !== false && $total !== false) {
-                        $storage['available'] = self::formatBytes($free);
-                        $storage['used'] = self::formatBytes($total - $free);
-                    }
-                }
-            }
+            $storage['driver']    = $driver->getName();
+            $storage['status']    = $stats['healthy'] ? 'Active' : 'Error';
+            $storage['used']      = $stats['used_human'];
+            $storage['available'] = $stats['available_human'];
         } catch (\Throwable $e) {
             $storage['status'] = 'Error';
+            Logger::log('error', 'health', 'Failed to load storage metrics: ' . $e->getMessage());
         }
 
         return [
             'performance' => $performance,
             'storage'     => $storage,
         ];
-    }
-
-    protected static function formatBytes($bytes, $precision = 2)
-    {
-        $units = array('B', 'KB', 'MB', 'GB', 'TB');
-
-        $bytes = max($bytes, 0);
-        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-        $pow = min($pow, count($units) - 1);
-
-        $bytes /= pow(1024, $pow);
-
-        return round($bytes, $precision) . ' ' . $units[$pow];
     }
 }
