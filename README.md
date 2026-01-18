@@ -1,7 +1,3 @@
-Below is an **updated, reviewer‑ready `README.md`** that incorporates the recent architectural upgrades—most notably the **unified `UploaderInterface`**, hardened workflows, security middleware, and performance improvements—while preserving the tone and structure you already established.
-
----
-
 # 📸 Aperture Pro  
 **Photography Studio SaaS for Image Proofing, Download, and Gallery Management — powered by WordPress**
 
