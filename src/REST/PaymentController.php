@@ -22,6 +22,59 @@ class PaymentController extends BaseController
             'callback' => [$this, 'handle_webhook'],
             'permission_callback' => '__return_true', // provider will authenticate via signature
         ]);
+
+        register_rest_route($this->namespace, '/projects/(?P<id>\d+)/payment-summary', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_payment_summary'],
+            'permission_callback' => [$this, 'check_admin_permissions'],
+        ]);
+
+        register_rest_route($this->namespace, '/projects/(?P<id>\d+)/payment-timeline', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_payment_timeline'],
+            'permission_callback' => [$this, 'check_admin_permissions'],
+        ]);
+
+        register_rest_route($this->namespace, '/projects/(?P<id>\d+)/retry-payment', [
+            'methods' => 'POST',
+            'callback' => [$this, 'retry_payment'],
+            'permission_callback' => [$this, 'check_admin_permissions'],
+        ]);
+    }
+
+    public function check_admin_permissions()
+    {
+        return current_user_can('manage_options');
+    }
+
+    public function get_payment_summary(WP_REST_Request $request)
+    {
+        $projectId = (int) $request['id'];
+        $summary = PaymentService::getPaymentSummary($projectId);
+
+        if (!$summary) {
+            return new \WP_REST_Response(['error' => 'Not found'], 404);
+        }
+
+        return new \WP_REST_Response($summary, 200);
+    }
+
+    public function get_payment_timeline(WP_REST_Request $request)
+    {
+        $projectId = (int) $request['id'];
+        $timeline = PaymentService::getPaymentTimeline($projectId);
+        return new \WP_REST_Response($timeline, 200);
+    }
+
+    public function retry_payment(WP_REST_Request $request)
+    {
+        $projectId = (int) $request['id'];
+        $intent = PaymentService::recreatePaymentIntent($projectId);
+
+        return new \WP_REST_Response([
+            'payment_intent' => $intent->id,
+            'checkout_url'   => $intent->next_action->redirect_to_url->url ?? null,
+        ], 200);
     }
 
     public function handle_webhook(WP_REST_Request $request)

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - 2026-01-17 23:35:24
 
 ### Added
+- **Payments:** Formalized project-centric payments system in database (`booking_date`, `payment_status`, etc. in `ap_projects`).
+- **Payments:** Added `ap_payment_events` table for audit logging of payment webhooks and actions.
+- **Payments:** Implemented robust `PaymentService` with idempotency, detailed logging, and support for `payment_intent.succeeded`, `payment_failed`, and `refunded` webhooks.
+- **Payments:** Added REST endpoints for Admin UI: `GET /projects/{id}/payment-summary`, `GET /projects/{id}/payment-timeline`, `POST /projects/{id}/retry-payment`.
+- **Admin UI:** Added `PaymentCard` SPA component and `usePaymentSummary` hook.
+- **Admin UI:** Added "Command Center" page with payment summary integration.
+- **Workflow:** Added `Workflow::onPaymentReceived` trigger.
 - Added `ProofCache` service to cache signed proof URLs, reducing redundant signing operations and improving response times for large galleries.
 - Added `existsMany` method to `StorageInterface` and all drivers (`LocalStorage`, `S3Storage`, `CloudinaryStorage`, `ImageKitStorage`) to support batch existence checks.
 - Added `ProofService::getProofUrls` for batch proof URL generation.

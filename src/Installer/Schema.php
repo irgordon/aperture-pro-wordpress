@@ -32,11 +32,37 @@ CREATE TABLE {$prefix}ap_projects (
     status VARCHAR(50) NOT NULL DEFAULT 'lead',
     session_date DATETIME NULL,
     eta_delivery DATETIME NULL,
+    booking_date DATETIME NULL,
+    package_price DECIMAL(10,2) NULL,
+    payment_status VARCHAR(50) NULL DEFAULT 'pending',
+    payment_provider VARCHAR(50) NULL,
+    payment_intent_id VARCHAR(255) NULL,
+    payment_amount_received DECIMAL(10,2) NULL DEFAULT 0.00,
+    payment_currency VARCHAR(3) NULL,
+    payment_last_update DATETIME NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     PRIMARY KEY (id),
     KEY client_id (client_id),
     KEY status (status)
+) ENGINE=InnoDB {$charset};
+SQL;
+
+        /**
+         * ---------------------------------------------------------------------
+         * ap_payment_events
+         * ---------------------------------------------------------------------
+         * Audit log for all payment-related webhooks and manual actions.
+         */
+        $tables[] = <<<SQL
+CREATE TABLE {$prefix}ap_payment_events (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    project_id BIGINT UNSIGNED NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    payload JSON NULL,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    KEY project_id (project_id)
 ) ENGINE=InnoDB {$charset};
 SQL;
 
