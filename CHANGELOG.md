@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `ProofCache` service to cache signed proof URLs, reducing redundant signing operations and improving response times for large galleries.
 - Added `existsMany` method to `StorageInterface` and all drivers (`LocalStorage`, `S3Storage`, `CloudinaryStorage`, `ImageKitStorage`) to support batch existence checks.
 - Added `ProofService::getProofUrls` for batch proof URL generation.
+- Added client-side SPA routing with internal link interception in `assets/spa/bootstrap.js`.
 - Persisted client image selection in `ClientProofController`.
 - Persisted client image comments in `ClientProofController`.
 - Added transactional email queue system to handle failed email sends in the background without blocking user requests.

@@ -94,7 +94,7 @@ aperture-pro/
 │   │   ├── client-portal.js
 │   │   └── spa/
 │   │       ├── index.js
-│   │       ├── bootstrap.js            # UPDATED — registers new SPA components
+│   │       ├── bootstrap.js            # UPDATED — registers components + handles SPA routing
 │   │       ├── components/
 │   │       │   ├── hero.js
 │   │       │   ├── features.js
