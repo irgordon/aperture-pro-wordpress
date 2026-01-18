@@ -4,6 +4,9 @@ namespace AperturePro\Storage;
 
 use AperturePro\Helpers\Logger;
 use AperturePro\Storage\Traits\Retryable;
+use AperturePro\Storage\Cloudinary\CloudinaryUploader;
+use AperturePro\Storage\Retry\RetryExecutor;
+use AperturePro\Storage\Upload\UploadRequest;
 
 /**
  * CloudinaryStorage
@@ -17,6 +20,7 @@ class CloudinaryStorage implements StorageInterface
 
     protected array $config;
     protected $cloudinary;
+    protected CloudinaryUploader $uploader;
 
     const CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
 
@@ -48,6 +52,11 @@ class CloudinaryStorage implements StorageInterface
                 'secure' => true
             ]
         ]);
+
+        $this->uploader = new CloudinaryUploader(
+            $this->cloudinary,
+            new RetryExecutor()
+        );
     }
 
     public function getName(): string
@@ -58,44 +67,17 @@ class CloudinaryStorage implements StorageInterface
     public function upload(string $source, string $target, array $options = []): string
     {
         try {
-            return $this->executeWithRetry(function() use ($source, $target, $options) {
-                // Cloudinary uses public_id which is the key without extension usually, but can be full path.
-                // We'll use target as public_id.
-                // We strip extension for Cloudinary public_id usually, but keeping it makes it predictable if unique_filename is false.
+            $request = new UploadRequest(
+                localPath: $source,
+                destinationKey: $target,
+                contentType: $options['content_type'] ?? null,
+                metadata: $options,
+                sizeBytes: file_exists($source) ? filesize($source) : null
+            );
 
-                $publicId = pathinfo($target, PATHINFO_FILENAME);
-                // Wait, if target is "folder/file.jpg", public_id should be "folder/file"?
-                // Or just pass target and let Cloudinary handle it?
-                // Standard practice is to let Cloudinary assign extension or use exact public_id with `use_filename` => true, `unique_filename` => false.
+            $result = $this->uploader->upload($request);
 
-                // Let's preserve the full path structure
-                $publicId = $target;
-                // Remove extension from publicId because Cloudinary adds it back?
-                // Actually Cloudinary encourages public_id without extension.
-                $ext = pathinfo($target, PATHINFO_EXTENSION);
-                if ($ext) {
-                    $publicId = substr($target, 0, -(strlen($ext) + 1));
-                }
-
-                $params = [
-                    'public_id' => $publicId,
-                    'overwrite' => true,
-                    'resource_type' => 'auto',
-                ];
-
-                if (filesize($source) > 20 * 1024 * 1024) {
-                    $params['chunk_size'] = self::CHUNK_SIZE;
-                }
-
-                $uploadApi = $this->cloudinary->uploadApi();
-                $result = $uploadApi->upload($source, $params);
-
-                if (empty($result['secure_url'])) {
-                    throw new \RuntimeException('Cloudinary upload returned no URL');
-                }
-
-                return $result['secure_url'];
-            });
+            return $result->url;
         } catch (\Throwable $e) {
             Logger::log('error', 'cloudinary', 'Upload failed: ' . $e->getMessage(), ['target' => $target]);
             throw new \RuntimeException('Upload failed: ' . $e->getMessage(), 0, $e);
