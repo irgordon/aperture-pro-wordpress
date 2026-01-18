@@ -6,6 +6,7 @@ use AperturePro\Storage\StorageFactory;
 use AperturePro\Storage\StorageInterface;
 use AperturePro\Helpers\Logger;
 use AperturePro\Proof\ProofCache;
+use AperturePro\Proof\ProofQueue;
 
 /**
  * ProofService
@@ -82,21 +83,13 @@ class ProofService
             $exists = $existenceMap[$proofPath] ?? false;
 
             if (!$exists) {
-                // Generate if missing
-                try {
-                    $originalPath = $originalPaths[$key];
-                    $generated = self::generateProofVariant($originalPath, $proofPath, $storage);
-                    if ($generated) {
-                        $exists = true;
-                    } else {
-                        Logger::log('error', 'proofs', 'Batch generation failed for image', ['key' => $key]);
-                    }
-                } catch (\Throwable $e) {
-                     Logger::log('error', 'proofs', 'Batch generation exception', ['key' => $key, 'error' => $e->getMessage()]);
-                }
-            }
+                // OFFLOAD: Do not generate synchronously. Queue it.
+                $originalPath = $originalPaths[$key];
+                ProofQueue::enqueue($originalPath, $proofPath);
 
-            if ($exists) {
+                // Return placeholder
+                $urls[$key] = self::getPlaceholderUrl();
+            } else {
                 // 4. Get URL
                 $urls[$key] = $storage->getUrl($proofPath, ['signed' => true, 'expires' => 3600]);
             }
@@ -133,12 +126,10 @@ class ProofService
 
         $proofPath = self::getProofPath($originalPath);
 
-        // Ensure proof exists; generate if missing.
+        // Ensure proof exists; if missing, queue and return placeholder.
         if (!$storage->exists($proofPath)) {
-            $generated = self::generateProofVariant($originalPath, $proofPath, $storage);
-            if (!$generated) {
-                throw new \RuntimeException('Failed to generate proof variant.');
-            }
+            ProofQueue::enqueue($originalPath, $proofPath);
+            return self::getPlaceholderUrl();
         }
 
         // Use signed URL or public URL depending on your policy.
@@ -172,6 +163,16 @@ class ProofService
     }
 
     /**
+     * Get URL for a placeholder image (processing state).
+     */
+    public static function getPlaceholderUrl(): string
+    {
+        // Ideally, this points to a real asset in the plugin/theme.
+        // For now, we return a generic placeholder or a data URI.
+        return apply_filters('aperture_pro_proof_placeholder_url', '/wp-content/plugins/aperture-pro/assets/images/processing-proof.jpg');
+    }
+
+    /**
      * Generate a watermarked, low-resolution proof variant.
      *
      * SECURITY / UX:
@@ -187,7 +188,7 @@ class ProofService
      *
      * @return bool
      */
-    protected static function generateProofVariant(string $originalPath, string $proofPath, StorageInterface $storage): bool
+    public static function generateProofVariant(string $originalPath, string $proofPath, StorageInterface $storage): bool
     {
         try {
             // Fetch original file to a temp location.

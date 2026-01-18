@@ -56,6 +56,7 @@ class Loader
         $this->register_service(\AperturePro\Services\ClientPortal::class);
         $this->register_service(\AperturePro\Services\REST::class);
         $this->register_service(\AperturePro\Services\Email::class);
+        $this->register_service(\AperturePro\Services\Proof::class);
     }
 
     /**
