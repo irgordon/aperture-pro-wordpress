@@ -3,11 +3,6 @@
 /**
  * The plugin bootstrap file
  *
- * This file is read by WordPress to generate the plugin information in the plugin
- * admin area. This file also includes all of the dependencies used by the plugin,
- * registers the activation and deactivation functions, and defines a function
- * that starts the plugin.
- *
  * @link              https://github.com/irgordon/aperture-pro-wordpress
  * @since             1.0.0
  * @package           Aperture_Pro
@@ -15,7 +10,7 @@
  * @wordpress-plugin
  * Plugin Name:       Aperture Pro
  * Plugin URI:        https://iangordon.app/aperturepro
- * Description:       Aperture Pro is a modern, production‑grade WordPress plugin built for photography studios that need a secure, elegant, and scalable way to deliver proofs, collect approvals, and provide final downloads. It blends a polished client experience with a robust operational backend designed for reliability, observability, and long‑term maintainability.
+ * Description:       Aperture Pro is a modern, production‑grade WordPress plugin built for photography studios that need a secure, elegant, and scalable way to deliver proofs, collect approvals, and provide final downloads.
  * Version:           1.0.11
  * Author:            Ian Gordon
  * Author URI:        https://iangordon.app/
@@ -41,21 +36,24 @@ define('APERTURE_PRO_DIR', plugin_dir_path(__FILE__));
 define('APERTURE_PRO_URL', plugin_dir_url(__FILE__));
 
 /* -------------------------------------------------------------------------
- * Autoload
+ * Autoload (Composer-first, fail-soft fallback)
  * ------------------------------------------------------------------------- */
 
-$autoload = APERTURE_PRO_DIR . 'vendor/autoload.php';
-if (file_exists($autoload)) {
-    require_once $autoload;
+// Prefer Composer autoload when available (dev installs, CI, advanced hosts).
+// Fallback autoloader supports ZIP installs and environments without Composer.
+$composerAutoload = APERTURE_PRO_DIR . 'vendor/autoload.php';
+
+if (file_exists($composerAutoload)) {
+    require_once $composerAutoload;
 } else {
     require_once APERTURE_PRO_DIR . 'inc/autoloader.php';
 }
 
 /* -------------------------------------------------------------------------
- * Activation: set one‑time setup redirect flag
+ * Activation: one-time setup + schema install
  * ------------------------------------------------------------------------- */
 
-register_activation_hook(__FILE__, function () {
+register_activation_hook(__FILE__, function (): void {
     Schema::activate();
 
     if (!current_user_can('manage_options')) {
@@ -66,17 +64,20 @@ register_activation_hook(__FILE__, function () {
     set_transient('aperture_pro_do_setup_redirect', 1, 60);
 });
 
-// Production safety: also run cheap upgrade checks on load,
-// so updates apply without requiring deactivate/activate.
+/*
+ * Production safety:
+ * Run lightweight upgrade checks on every load so schema changes
+ * apply without requiring deactivate/activate cycles.
+ */
 add_action('plugins_loaded', static function (): void {
     Schema::maybe_upgrade();
 }, 5);
 
 /* -------------------------------------------------------------------------
- * One‑time setup redirect (admin only)
+ * One-time setup redirect (admin only)
  * ------------------------------------------------------------------------- */
 
-add_action('admin_init', function () {
+add_action('admin_init', function (): void {
     if (!current_user_can('manage_options')) {
         return;
     }
@@ -114,22 +115,33 @@ $loader = new \AperturePro\Loader(
 
 $loader->boot();
 
+/* -------------------------------------------------------------------------
+ * Global accessor (legacy convenience)
+ * ------------------------------------------------------------------------- */
+
 /**
  * Global accessor for Aperture Pro services.
+ *
+ * NOTE:
+ * This is a lightweight convenience wrapper.
+ * Core services should be accessed via dependency injection where possible.
  *
  * @return object
  */
 function aperture_pro()
 {
     static $instance;
+
     if (!$instance) {
         $instance = new class {
             public $settings;
+
             public function __construct()
             {
                 $this->settings = new \AperturePro\Config\Settings();
             }
         };
     }
+
     return $instance;
 }
