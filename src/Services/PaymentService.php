@@ -4,183 +4,135 @@ namespace AperturePro\Services;
 
 use AperturePro\Helpers\Logger;
 use AperturePro\Email\EmailService;
-use AperturePro\Storage\StorageFactory;
+use AperturePro\Payments\PaymentProviderFactory;
+use AperturePro\Payments\DTO\PaymentUpdate;
 
 /**
  * PaymentService
  *
- * Minimal payment webhook processing. Designed to be provider-agnostic but uses HMAC signature verification.
+ * Provider-agnostic payment processing service.
  */
 class PaymentService
 {
     /**
-     * Verify webhook signature using HMAC-SHA256.
+     * Create a payment intent for a project.
      *
-     * @param string $payload raw request body
-     * @param string $signatureHeader header value from provider
-     * @param string $secret configured webhook secret
-     * @return bool
+     * @param int $projectId
+     * @param string $providerName
+     * @return \AperturePro\Payments\DTO\PaymentIntentResult
      */
-    public static function verifySignature(string $payload, string $signatureHeader, string $secret): bool
+    public static function create_intent_for_project(int $projectId, string $providerName)
     {
-        if (empty($secret) || empty($signatureHeader)) {
-            return false;
+        global $wpdb;
+        $project = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_projects WHERE id = %d", $projectId));
+
+        if (!$project) {
+            throw new \Exception("Project not found: $projectId");
         }
 
-        // Provider-specific: here we assume signatureHeader is hex HMAC of payload
-        $expected = hash_hmac('sha256', $payload, $secret);
-        return hash_equals($expected, $signatureHeader);
+        $provider = PaymentProviderFactory::make($providerName);
+
+        $intent = $provider->create_payment_intent([
+            'amount'   => $project->package_price,
+            'currency' => 'usd', // Should likely be configurable or per-project
+            'metadata' => ['project_id' => $projectId],
+            // Add email if needed by provider
+        ]);
+
+        // Populate checkout URL if the provider generates it separately (e.g. PayPal)
+        if (empty($intent->checkout_url)) {
+            $intent->checkout_url = $provider->get_checkout_url($intent);
+        }
+
+        $wpdb->update(
+            $wpdb->prefix . 'ap_projects',
+            [
+                'payment_intent_id' => $intent->id,
+                'payment_provider'  => $providerName,
+                'updated_at'        => current_time('mysql'),
+            ],
+            ['id' => $projectId]
+        );
+
+        return $intent;
     }
 
     /**
-     * Process a webhook event payload (decoded JSON).
+     * Handle incoming webhook request.
      *
-     * @param array $event
-     * @return array ['success'=>bool,'message'=>string]
+     * @param string $providerName
+     * @param string $payload
+     * @param array $headers
+     * @return array
      */
-    public static function processEvent(array $event): array
+    public static function handleWebhook(string $providerName, string $payload, array $headers): array
     {
-        $type = $event['type'] ?? '';
-        $data = $event['data']['object'] ?? [];
-        $object = (object) $data;
-
         try {
-            switch ($type) {
-                case 'payment_intent.succeeded':
-                case 'charge.succeeded':
-                    return self::handlePaymentSucceeded($object);
+            $provider = PaymentProviderFactory::make($providerName);
+            $event = $provider->verify_webhook($payload, $headers);
+            $update = $provider->handle_webhook_event($event);
 
-                case 'payment_intent.payment_failed':
-                    return self::handlePaymentFailed($object);
+            self::apply_update($update);
 
-                case 'charge.refunded':
-                    return self::handlePaymentRefunded($object);
-
-                default:
-                    Logger::log('info', 'payment', 'Unhandled payment event type', ['type' => $type]);
-                    return ['success' => true, 'message' => 'Event ignored'];
-            }
+            return ['success' => true, 'message' => 'Processed'];
         } catch (\Throwable $e) {
-            Logger::log('error', 'payment', 'Exception processing payment event: ' . $e->getMessage(), ['notify_admin' => true]);
-            return ['success' => false, 'message' => 'Exception processing event'];
+            Logger::log('error', 'payment', 'Exception processing payment webhook: ' . $e->getMessage(), ['provider' => $providerName]);
+            return ['success' => false, 'message' => $e->getMessage()];
         }
     }
 
-    protected static function handlePaymentSucceeded($pi): array
+    public static function apply_update(PaymentUpdate $update)
     {
         global $wpdb;
 
-        $project = self::findProjectByPaymentIntent($pi->id);
+        if (!$update->project_id) {
+             // Try to find project by intent ID if not provided
+             $project = self::findProjectByPaymentIntent($update->intent_id);
+             if ($project) {
+                 $update->project_id = $project->id;
+             } else {
+                 Logger::log('warning', 'payment', 'Webhook missing project_id or unmatched intent', ['intent' => $update->intent_id]);
+                 self::logEvent(null, $update->status, $update->raw_event);
+                 return;
+             }
+        }
 
-        // Fallback to metadata if available
-        if (!$project && isset($pi->metadata['project_id'])) {
-            $projectId = (int) $pi->metadata['project_id'];
+        $projectId = $update->project_id;
+
+        // Log event
+        self::logEvent($projectId, $update->status, $update->raw_event);
+
+        $updates = [
+            'payment_last_update' => current_time('mysql'),
+            'updated_at'          => current_time('mysql')
+        ];
+
+        if ($update->status === 'paid') {
+             $updates['payment_status'] = 'paid';
+             $updates['payment_amount_received'] = $update->amount;
+             $updates['payment_currency'] = $update->currency;
+        } elseif ($update->status === 'failed') {
+             $updates['payment_status'] = 'failed';
+        } elseif ($update->status === 'refunded') {
+             $updates['payment_status'] = 'refunded';
+        }
+
+        $wpdb->update(
+            $wpdb->prefix . 'ap_projects',
+            $updates,
+            ['id' => $projectId]
+        );
+
+        if ($update->status === 'paid') {
+            // Trigger workflow
+            if (class_exists(\AperturePro\Workflow\Workflow::class)) {
+                \AperturePro\Workflow\Workflow::onPaymentReceived($projectId);
+            }
+
+            // Legacy/Auxiliary: Generate download token
             $project = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_projects WHERE id = %d", $projectId));
+            self::generateDownloadToken($project, $update->raw_event);
         }
-
-        if (!$project) {
-            self::logEvent(null, 'payment_intent_succeeded_unmatched', $pi);
-            Logger::log('warning', 'payment', 'Webhook missing project_id or unmatched payment_intent', ['event' => $pi]);
-            return ['success' => false, 'message' => 'Missing project_id'];
-        }
-
-        // Idempotency: skip if already marked paid
-        if ($project->payment_status === 'paid') {
-            return ['success' => true, 'message' => 'Already paid'];
-        }
-
-        // Calculate amount
-        $amountReceived = isset($pi->amount_received) ? $pi->amount_received / 100 : ($pi->amount / 100);
-
-        // Update project
-        $updated = $wpdb->update(
-            $wpdb->prefix . 'ap_projects',
-            [
-                'payment_status'        => 'paid',
-                'payment_amount_received' => $amountReceived,
-                'payment_currency'      => strtoupper($pi->currency ?? 'USD'),
-                'payment_last_update'   => current_time('mysql'),
-                'payment_intent_id'     => $pi->id ?? ($pi->payment_intent ?? null),
-                'payment_provider'      => 'stripe', // Assuming stripe for now
-                'updated_at'            => current_time('mysql')
-            ],
-            ['id' => $project->id],
-            ['%s', '%f', '%s', '%s', '%s', '%s', '%s'],
-            ['%d']
-        );
-
-        if ($updated === false) {
-             Logger::log('error', 'payment', 'Failed to update project payment_status', ['project_id' => $project->id]);
-             return ['success' => false, 'message' => 'DB update failed'];
-        }
-
-        self::logEvent($project->id, 'payment_succeeded', $pi);
-
-        // Trigger workflow transition
-        if (class_exists(\AperturePro\Workflow\Workflow::class)) {
-            \AperturePro\Workflow\Workflow::onPaymentReceived($project->id);
-        }
-
-        // Legacy logic: Generate download token
-        self::generateDownloadToken($project, $pi);
-
-        return ['success' => true, 'message' => 'Processed payment'];
-    }
-
-    protected static function handlePaymentFailed($pi): array
-    {
-        global $wpdb;
-
-        $project = self::findProjectByPaymentIntent($pi->id);
-
-        if (!$project) {
-            self::logEvent(null, 'payment_failed_unmatched', $pi);
-            return ['success' => true, 'message' => 'Unmatched project'];
-        }
-
-        $wpdb->update(
-            $wpdb->prefix . 'ap_projects',
-            [
-                'payment_status'      => 'failed',
-                'payment_last_update' => current_time('mysql'),
-            ],
-            ['id' => $project->id],
-            ['%s', '%s'],
-            ['%d']
-        );
-
-        self::logEvent($project->id, 'payment_failed', $pi);
-
-        return ['success' => true, 'message' => 'Recorded payment failure'];
-    }
-
-    protected static function handlePaymentRefunded($charge): array
-    {
-        global $wpdb;
-
-        // Charge object usually has payment_intent field
-        $intentId = $charge->payment_intent ?? $charge->id; // Fallback
-        $project = self::findProjectByPaymentIntent($intentId);
-
-        if (!$project) {
-            self::logEvent(null, 'refund_unmatched', $charge);
-            return ['success' => true, 'message' => 'Unmatched project'];
-        }
-
-        $wpdb->update(
-            $wpdb->prefix . 'ap_projects',
-            [
-                'payment_status'      => 'refunded',
-                'payment_last_update' => current_time('mysql'),
-            ],
-            ['id' => $project->id],
-            ['%s', '%s'],
-            ['%d']
-        );
-
-        self::logEvent($project->id, 'payment_refunded', $charge);
-
-        return ['success' => true, 'message' => 'Recorded refund'];
     }
 
     protected static function findProjectByPaymentIntent($intentId)
@@ -199,7 +151,7 @@ class PaymentService
         $wpdb->insert(
             $wpdb->prefix . 'ap_payment_events',
             [
-                'project_id' => $projectId ?: 0, // 0 for unmatched
+                'project_id' => $projectId ?: 0,
                 'event_type' => $eventType,
                 'payload'    => wp_json_encode($payload),
                 'created_at' => current_time('mysql'),
@@ -208,12 +160,21 @@ class PaymentService
         );
     }
 
-    protected static function generateDownloadToken($project, $pi)
+    protected static function generateDownloadToken($project, $rawEvent)
     {
         global $wpdb;
 
-        // Extract email from metadata or customer info
-        $email = $pi->metadata['client_email'] ?? ($pi->billing_details['email'] ?? null);
+        // Try to get email from rawEvent if it's an object/array resembling Stripe
+        // or just use project client email if available?
+        // We will prioritize rawEvent email if present, else fall back?
+        // Actually, let's just check the structure.
+        $email = null;
+        if (is_object($rawEvent)) {
+             $email = $rawEvent->metadata->client_email ?? ($rawEvent->billing_details->email ?? null);
+        } elseif (is_array($rawEvent)) {
+             $email = $rawEvent['metadata']['client_email'] ?? ($rawEvent['billing_details']['email'] ?? null);
+        }
+
         if (!$email) return;
 
         $downloadsTable = $wpdb->prefix . 'ap_download_tokens';
@@ -232,7 +193,6 @@ class PaymentService
         ], ['%d', '%d', '%s', '%s', '%s', '%s']);
 
         if ($inserted) {
-            // Set transient for quick lookup
             set_transient('ap_download_' . $token, [
                 'gallery_id' => $galleryId,
                 'project_id' => $project->id,
@@ -241,7 +201,6 @@ class PaymentService
                 'expires_at' => strtotime($expiresAt),
             ], 7 * 24 * 3600);
 
-            // Notify client via email with download link
             $downloadUrl = add_query_arg('ap_download', $token, home_url('/'));
             EmailService::sendTemplate('final-gallery-ready', $email, [
                 'client_name' => $email,
@@ -293,15 +252,10 @@ class PaymentService
 
     public static function recreatePaymentIntent(int $projectId)
     {
-        // Stub implementation for Admin UI "Retry" button
-        // In a real implementation, this would fetch the project, instantiate the Stripe client,
-        // and create a new PaymentIntent.
-
-        return (object) [
-            'id' => 'pi_retry_' . bin2hex(random_bytes(8)),
-            'next_action' => (object) [
-                'redirect_to_url' => (object) ['url' => home_url('/checkout?project_id=' . $projectId)]
-            ]
-        ];
+        global $wpdb;
+        $project = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_projects WHERE id = %d", $projectId));
+        // Use existing provider or default to stripe
+        $provider = $project->payment_provider ?: 'stripe';
+        return self::create_intent_for_project($projectId, $provider);
     }
 }
