@@ -75,16 +75,11 @@ class EmailService
 
         $allHeaders = array_merge($defaultHeaders, $headers);
 
-        $sent = @wp_mail($to, $subject, $body, $allHeaders);
+        // Always queue for background sending
+        self::enqueueTransactionalEmail($to, $subject, $body, $allHeaders);
 
-        if (!$sent) {
-            // Queue for retry
-            Logger::log('warning', 'email', 'Failed to send email immediately; queuing for retry', ['template' => $templateName, 'to' => $to]);
-            self::enqueueTransactionalEmail($to, $subject, $body, $allHeaders);
-            return true; // We return true because the system has accepted the responsibility to deliver it
-        }
+        Logger::log('info', 'email', 'Email queued for sending', ['template' => $templateName, 'to' => $to]);
 
-        Logger::log('info', 'email', 'Email sent', ['template' => $templateName, 'to' => $to]);
         return true;
     }
 
