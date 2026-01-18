@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.14] – Optimized Proof Downloads** - 2026-01-27 12:00:00
+
+### **Performance**
+- **Proofs:** Optimized `ProofService::downloadToTemp` to use `wp_remote_get` with streaming. This significantly reduces memory usage when downloading large original images for proof generation, as the file content is piped directly to disk instead of being loaded into RAM.
+
 ## **[1.0.13] – Async Email Queuing** - 2026-01-27 10:00:00
 
 ### **Changed**

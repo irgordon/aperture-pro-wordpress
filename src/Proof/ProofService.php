@@ -252,17 +252,24 @@ class ProofService
         // In a hardened implementation, you might use driver-specific SDK calls instead.
         $url = $storage->getUrl($remotePath, ['signed' => true, 'expires' => 600]);
 
-        $contents = @file_get_contents($url);
-        if ($contents === false) {
-            return null;
-        }
-
         $tmp = wp_tempnam('ap-proof-');
         if (!$tmp) {
             return null;
         }
 
-        file_put_contents($tmp, $contents);
+        // OPTIMIZATION: Use wp_remote_get with stream=true to avoid loading entire file into RAM.
+        $response = wp_remote_get($url, [
+            'timeout'  => 60,
+            'stream'   => true,
+            'filename' => $tmp,
+        ]);
+
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            // Logger::log('error', 'proofs', 'Failed to download original via wp_remote_get', ['url' => $url, 'error' => is_wp_error($response) ? $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code($response)]);
+            @unlink($tmp);
+            return null;
+        }
+
         return $tmp;
     }
 

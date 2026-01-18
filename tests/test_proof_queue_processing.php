@@ -33,6 +33,16 @@ namespace {
     function delete_transient($transient) { return true; }
     function wp_tempnam($prefix = '') { return tempnam(sys_get_temp_dir(), $prefix); }
     function apply_filters($tag, $value) { return $value; }
+
+    function is_wp_error($thing) { return false; }
+    function wp_remote_retrieve_response_code($response) { return $response['response']['code'] ?? 500; }
+    function wp_remote_get($url, $args = []) {
+        if (isset($args['stream']) && $args['stream'] && isset($args['filename'])) {
+            // Mimic download: copy source ($url in this test is a local path) to target
+            copy($url, $args['filename']);
+        }
+        return ['response' => ['code' => 200]];
+    }
 }
 
 namespace AperturePro\Test {
