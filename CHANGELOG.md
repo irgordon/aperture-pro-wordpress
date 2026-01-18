@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.16] – REST Security Middleware** - 2026-01-27 16:00:00
+
+### **Security**
+- **Middleware:** Implemented a robust, stackable middleware layer for REST endpoints (`MiddlewareInterface`, `MiddlewareStack`).
+- **Rate Limiter:** Added a transient-based `RateLimiter` and `RateLimitMiddleware` to protect sensitive endpoints (e.g., magic link consumption) from abuse.
+- **Hygiene:** Added `RequestHygieneMiddleware` to block excessively large payloads and suspicious patterns (e.g., SQL injection attempts).
+- **Auth:** Secured `AuthController::consume_magic_link` with the new middleware stack (IP+Email rate limiting, payload hygiene).
+
 ## **[1.0.15] – Proof Queue Optimization** - 2026-01-27 14:00:00
 
 ### **Performance**
