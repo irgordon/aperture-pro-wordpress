@@ -1,173 +1,194 @@
 <?php
+declare(strict_types=1);
 
 namespace AperturePro\Services;
 
-use AperturePro\Helpers\Logger;
-use AperturePro\Email\EmailService;
 use AperturePro\Payments\PaymentProviderFactory;
+use AperturePro\Payments\DTO\PaymentIntentResult;
 use AperturePro\Payments\DTO\PaymentUpdate;
+use AperturePro\Payments\DTO\RefundResult;
+use AperturePro\Repositories\ProjectRepository;
+use AperturePro\Services\WorkflowAdapter;
+use AperturePro\Email\EmailService;
+use AperturePro\Helpers\Logger;
 
-/**
- * PaymentService
- *
- * Provider-agnostic payment processing service.
- */
 class PaymentService
 {
-    /**
-     * Create a payment intent for a project.
-     *
-     * @param int $projectId
-     * @param string $providerName
-     * @return \AperturePro\Payments\DTO\PaymentIntentResult
-     */
-    public static function create_intent_for_project(int $projectId, string $providerName)
-    {
-        global $wpdb;
-        $project = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_projects WHERE id = %d", $projectId));
+    protected ProjectRepository $projects;
+    protected WorkflowAdapter $workflow;
 
+    public function __construct(ProjectRepository $projects, WorkflowAdapter $workflow)
+    {
+        $this->projects = $projects;
+        $this->workflow = $workflow;
+    }
+
+    /**
+     * Create a payment intent for a project using its configured provider.
+     */
+    public function create_intent_for_project(int $project_id): PaymentIntentResult
+    {
+        $project = $this->projects->find($project_id);
         if (!$project) {
-            throw new \Exception("Project not found: $projectId");
+             throw new \Exception("Project not found: $project_id");
         }
+
+        $providerName = $project->payment_provider ?: 'stripe';
 
         $provider = PaymentProviderFactory::make($providerName);
 
+        $amount = (int)(($project->package_price ?? 0) * 100);
+
         $intent = $provider->create_payment_intent([
-            'amount'   => $project->package_price,
-            'currency' => 'usd', // Should likely be configurable or per-project
-            'metadata' => ['project_id' => $projectId],
-            // Add email if needed by provider
+            'amount'   => $amount,
+            'currency' => 'USD',
+            'metadata' => [
+                'project_id' => $project_id,
+            ],
         ]);
 
-        // Populate checkout URL if the provider generates it separately (e.g. PayPal)
-        if (empty($intent->checkout_url)) {
-            $intent->checkout_url = $provider->get_checkout_url($intent);
-        }
+        $this->projects->update($project_id, [
+            'payment_intent_id' => $intent->id,
+            'payment_provider'  => $provider->get_name(),
+            'updated_at'        => current_time('mysql'),
+        ]);
 
-        $wpdb->update(
-            $wpdb->prefix . 'ap_projects',
-            [
-                'payment_intent_id' => $intent->id,
-                'payment_provider'  => $providerName,
-                'updated_at'        => current_time('mysql'),
-            ],
-            ['id' => $projectId]
-        );
+        // Populate checkout URL if supported by provider (e.g. PayPal)
+        // Check if property exists or just assign (dynamic property)
+        if (!isset($intent->checkout_url) || empty($intent->checkout_url)) {
+             $url = $provider->get_checkout_url($intent);
+             if ($url) {
+                 $intent->checkout_url = $url;
+             }
+        }
 
         return $intent;
     }
 
     /**
-     * Handle incoming webhook request.
-     *
-     * @param string $providerName
-     * @param string $payload
-     * @param array $headers
-     * @return array
+     * Apply a normalized PaymentUpdate from any provider.
      */
-    public static function handleWebhook(string $providerName, string $payload, array $headers): array
+    public function apply_update(PaymentUpdate $update): void
     {
-        try {
-            $provider = PaymentProviderFactory::make($providerName);
-            $event = $provider->verify_webhook($payload, $headers);
-            $update = $provider->handle_webhook_event($event);
-
-            self::apply_update($update);
-
-            return ['success' => true, 'message' => 'Processed'];
-        } catch (\Throwable $e) {
-            Logger::log('error', 'payment', 'Exception processing payment webhook: ' . $e->getMessage(), ['provider' => $providerName]);
-            return ['success' => false, 'message' => $e->getMessage()];
-        }
-    }
-
-    public static function apply_update(PaymentUpdate $update)
-    {
-        global $wpdb;
-
-        if (!$update->project_id) {
-             // Try to find project by intent ID if not provided
-             $project = self::findProjectByPaymentIntent($update->intent_id);
-             if ($project) {
-                 $update->project_id = $project->id;
-             } else {
-                 Logger::log('warning', 'payment', 'Webhook missing project_id or unmatched intent', ['intent' => $update->intent_id]);
-                 self::logEvent(null, $update->status, $update->raw_event);
-                 return;
-             }
+        if ($update->project_id <= 0) {
+            $this->log_event(null, 'unmatched_payment_event', $update->raw_event);
+            return;
         }
 
-        $projectId = $update->project_id;
+        $project = $this->projects->find($update->project_id);
+        if (!$project) {
+            $this->log_event(null, 'unmatched_project', $update->raw_event);
+            return;
+        }
 
-        // Log event
-        self::logEvent($projectId, $update->status, $update->raw_event);
+        // Idempotency: skip if already paid
+        if (($project->payment_status ?? '') === 'paid' && $update->status === 'paid') {
+            return;
+        }
 
-        $updates = [
+        $this->projects->update($update->project_id, [
+            'payment_status'      => $update->status,
+            'payment_amount_received' => $update->amount,
+            'payment_currency'    => $update->currency,
             'payment_last_update' => current_time('mysql'),
-            'updated_at'          => current_time('mysql')
+            'updated_at'          => current_time('mysql'),
+        ]);
+
+        $this->log_event($update->project_id, $update->status, $update->raw_event);
+
+        if ($update->status === 'paid') {
+            $this->workflow->onPaymentReceived($update->project_id);
+
+            // Generate download token (Legacy/Auxiliary feature)
+            $this->generateDownloadToken($project, $update->raw_event);
+        }
+    }
+
+    /**
+     * Issue a refund via the provider.
+     */
+    public function refund(int $project_id, ?int $amount = null): RefundResult
+    {
+        $project = $this->projects->find($project_id);
+
+        $provider = PaymentProviderFactory::make($project->payment_provider);
+
+        $result = $provider->refund($project->payment_intent_id, $amount);
+
+        $this->log_event($project_id, 'refund', $result->raw);
+
+        $this->projects->update($project_id, [
+            'payment_status'      => 'refunded',
+            'payment_last_update' => current_time('mysql'),
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * Log payment events to ap_payment_events.
+     */
+    protected function log_event(?int $project_id, string $type, array $payload): void
+    {
+        global $wpdb;
+
+        $wpdb->insert("{$wpdb->prefix}ap_payment_events", [
+            'project_id' => $project_id ?: 0,
+            'event_type' => $type,
+            'payload'    => wp_json_encode($payload),
+            'created_at' => current_time('mysql'),
+        ]);
+    }
+
+    // --- Ported Methods ---
+
+    public function getPaymentSummary(int $projectId): ?array
+    {
+        $project = $this->projects->find($projectId);
+
+        if (!$project) {
+            return null;
+        }
+
+        return [
+            'package_price'   => $project->package_price,
+            'payment_status'  => $project->payment_status,
+            'amount_received' => $project->payment_amount_received,
+            'currency'        => $project->payment_currency,
+            'provider'        => $project->payment_provider,
+            'payment_intent'  => $project->payment_intent_id,
+            'last_update'     => $project->payment_last_update,
+            'booking_date'    => $project->booking_date,
         ];
-
-        if ($update->status === 'paid') {
-             $updates['payment_status'] = 'paid';
-             $updates['payment_amount_received'] = $update->amount;
-             $updates['payment_currency'] = $update->currency;
-        } elseif ($update->status === 'failed') {
-             $updates['payment_status'] = 'failed';
-        } elseif ($update->status === 'refunded') {
-             $updates['payment_status'] = 'refunded';
-        }
-
-        $wpdb->update(
-            $wpdb->prefix . 'ap_projects',
-            $updates,
-            ['id' => $projectId]
-        );
-
-        if ($update->status === 'paid') {
-            // Trigger workflow
-            if (class_exists(\AperturePro\Workflow\Workflow::class)) {
-                \AperturePro\Workflow\Workflow::onPaymentReceived($projectId);
-            }
-
-            // Legacy/Auxiliary: Generate download token
-            $project = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_projects WHERE id = %d", $projectId));
-            self::generateDownloadToken($project, $update->raw_event);
-        }
     }
 
-    protected static function findProjectByPaymentIntent($intentId)
+    public function getPaymentTimeline(int $projectId): array
     {
         global $wpdb;
-        if (!$intentId) return null;
-        return $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}ap_projects WHERE payment_intent_id = %s",
-            $intentId
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT event_type, payload, created_at FROM {$wpdb->prefix}ap_payment_events WHERE project_id = %d ORDER BY created_at ASC",
+            $projectId
         ));
+
+        return array_map(function($row) {
+            return [
+                'event'     => $row->event_type,
+                'timestamp' => $row->created_at,
+                'payload'   => json_decode($row->payload, true),
+            ];
+        }, $rows);
     }
 
-    protected static function logEvent($projectId, $eventType, $payload)
+    public function recreatePaymentIntent(int $projectId)
     {
-        global $wpdb;
-        $wpdb->insert(
-            $wpdb->prefix . 'ap_payment_events',
-            [
-                'project_id' => $projectId ?: 0,
-                'event_type' => $eventType,
-                'payload'    => wp_json_encode($payload),
-                'created_at' => current_time('mysql'),
-            ],
-            ['%d', '%s', '%s', '%s']
-        );
+         return $this->create_intent_for_project($projectId);
     }
 
-    protected static function generateDownloadToken($project, $rawEvent)
+    protected function generateDownloadToken($project, $rawEvent)
     {
         global $wpdb;
 
-        // Try to get email from rawEvent if it's an object/array resembling Stripe
-        // or just use project client email if available?
-        // We will prioritize rawEvent email if present, else fall back?
-        // Actually, let's just check the structure.
+        // Try to find email
         $email = null;
         if (is_object($rawEvent)) {
              $email = $rawEvent->metadata->client_email ?? ($rawEvent->billing_details->email ?? null);
@@ -210,52 +231,5 @@ class PaymentService
 
             Logger::log('info', 'payment', 'Download token created', ['project_id' => $project->id, 'token' => $token]);
         }
-    }
-
-    public static function getPaymentSummary(int $projectId): ?array
-    {
-        global $wpdb;
-        $project = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_projects WHERE id = %d", $projectId));
-
-        if (!$project) {
-            return null;
-        }
-
-        return [
-            'package_price'   => $project->package_price,
-            'payment_status'  => $project->payment_status,
-            'amount_received' => $project->payment_amount_received,
-            'currency'        => $project->payment_currency,
-            'provider'        => $project->payment_provider,
-            'payment_intent'  => $project->payment_intent_id,
-            'last_update'     => $project->payment_last_update,
-            'booking_date'    => $project->booking_date,
-        ];
-    }
-
-    public static function getPaymentTimeline(int $projectId): array
-    {
-        global $wpdb;
-        $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT event_type, payload, created_at FROM {$wpdb->prefix}ap_payment_events WHERE project_id = %d ORDER BY created_at ASC",
-            $projectId
-        ));
-
-        return array_map(function($row) {
-            return [
-                'event'     => $row->event_type,
-                'timestamp' => $row->created_at,
-                'payload'   => json_decode($row->payload, true),
-            ];
-        }, $rows);
-    }
-
-    public static function recreatePaymentIntent(int $projectId)
-    {
-        global $wpdb;
-        $project = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_projects WHERE id = %d", $projectId));
-        // Use existing provider or default to stripe
-        $provider = $project->payment_provider ?: 'stripe';
-        return self::create_intent_for_project($projectId, $provider);
     }
 }

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.10] – Stripe & PayPal Providers** - 2026-01-20 10:00:00
+
+### **Added**
+- **Payments:** Added `StripeProvider` and `PayPalProvider` implementations using official SDKs.
+- **Payments:** Added `ProjectRepository` to abstract database operations for projects.
+- **Config:** Added `AperturePro\Config\Settings` class and `aperture_pro()` global helper for instance-based configuration access.
+- **Config:** Added `stripe` and `paypal` settings mapping in `Config::all()`.
+
+### **Changed**
+- **Payments:** Refactored `PaymentService` to be instance-based and fully provider-agnostic.
+- **Payments:** Updated `PaymentController` to support dynamic webhook routing (`/webhooks/payment/{provider}`) and manual dependency injection.
+- **Architecture:** Switched `PaymentService` to use dependency injection for repository and workflow services.
+
 ## **[1.0.9] – Payment Abstraction Layer & Multi‑Provider Support** - 2026-01-18 10:05:24
 
 ### **Added**

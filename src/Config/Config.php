@@ -59,6 +59,18 @@ class Config {
                 'sender' => $settings['email_sender'] ?? '',
             ],
 
+            'stripe' => [
+                'secret_key' => $settings['stripe_secret_key'] ?? '',
+                'webhook_secret' => $settings['stripe_webhook_secret'] ?? '',
+            ],
+
+            'paypal' => [
+                'client_id' => $settings['paypal_client_id'] ?? '',
+                'secret' => $settings['paypal_secret'] ?? '',
+                'webhook_id' => $settings['paypal_webhook_id'] ?? '',
+                'mode' => $settings['paypal_mode'] ?? 'sandbox',
+            ],
+
             'security' => [
                 'require_otp' => !empty($settings['require_otp']),
                 'webhook_secret' => $settings['webhook_secret'] ?? '',
