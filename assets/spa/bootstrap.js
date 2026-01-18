@@ -75,14 +75,112 @@ const ApertureSPA = (() => {
     }
 
     /**
+     * Navigate to a URL via SPA transition.
+     * @param {string} url - The URL to navigate to.
+     * @param {boolean} push - Whether to push the new state to history.
+     */
+    async function navigateTo(url, push = true) {
+        try {
+            // Save scroll position of current page before leaving (if pushing)
+            if (push) {
+                const currentScroll = window.scrollY;
+                history.replaceState(
+                    { ...(history.state || {}), scrollY: currentScroll },
+                    document.title,
+                    window.location.href
+                );
+            }
+
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const text = await res.text();
+
+            // Parse HTML
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(text, "text/html");
+
+            // Update Title
+            document.title = doc.title;
+
+            // Swap Body
+            // We use replaceChildren to clear and append new nodes
+            // This preserves the document element but swaps body content
+            document.body.replaceChildren(...doc.body.childNodes);
+
+            // Update History and Scroll
+            if (push) {
+                history.pushState({ scrollY: 0 }, doc.title, url);
+                window.scrollTo(0, 0);
+            } else {
+                // Restore scroll for popstate
+                const savedScroll = history.state?.scrollY || 0;
+                window.scrollTo(0, savedScroll);
+            }
+
+            // Re-hydrate
+            hydrateAll();
+        } catch (err) {
+            console.error("[ApertureSPA] Navigation failed:", err);
+            // Fallback to real navigation if fetch fails
+            window.location.href = url;
+        }
+    }
+
+    /**
+     * Setup internal link interception.
+     */
+    function setupLinkInterception() {
+        // Intercept clicks
+        document.addEventListener("click", (e) => {
+            const link = e.target.closest("a");
+            if (!link) return;
+
+            // Check for modifier keys (new tab, etc.)
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+
+            // Check target
+            if (link.target && link.target !== "_self") return;
+
+            // Check if href exists
+            const href = link.getAttribute("href");
+            if (!href) return;
+
+            // Check origin
+            try {
+                const url = new URL(link.href);
+                if (url.origin !== window.location.origin) return;
+
+                // Check for download or hash
+                if (link.hasAttribute("download")) return;
+                // If it's the same page and has a hash, let browser handle anchor scroll
+                if (url.pathname === window.location.pathname && url.hash) return;
+
+                // Allow specific exclusions via data attribute
+                if (link.hasAttribute("data-no-spa")) return;
+
+                // Intercept
+                e.preventDefault();
+                navigateTo(link.href);
+            } catch (err) {
+                // Ignore invalid URLs
+            }
+        });
+
+        // Handle Back/Forward
+        window.addEventListener("popstate", () => {
+            navigateTo(window.location.href, false);
+        });
+    }
+
+    /**
      * Initialize SPA behavior.
      */
     function init() {
         hydrateAll();
+        setupLinkInterception();
 
         // Optional: scroll/visibility hydration
         // TODO: event bus
-        // TODO: internal link interception
     }
 
     return { init };
