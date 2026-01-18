@@ -16,7 +16,7 @@
  * Plugin Name:       Aperture Pro
  * Plugin URI:        https://iangordon.app/aperturepro
  * Description:       Aperture Pro is a modern, production‑grade WordPress plugin built for photography studios that need a secure, elegant, and scalable way to deliver proofs, collect approvals, and provide final downloads. It blends a polished client experience with a robust operational backend designed for reliability, observability, and long‑term maintainability.
- * Version:           1.0.0
+ * Version:           1.0.11
  * Author:            Ian Gordon
  * Author URI:        https://iangordon.app/
  * License:           MIT License
@@ -29,11 +29,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use AperturePro\Installer\Schema;
+
 /* -------------------------------------------------------------------------
  * Constants
  * ------------------------------------------------------------------------- */
 
-define('APERTURE_PRO_VERSION', '1.0.0');
+define('APERTURE_PRO_VERSION', '1.0.11');
 define('APERTURE_PRO_FILE', __FILE__);
 define('APERTURE_PRO_DIR', plugin_dir_path(__FILE__));
 define('APERTURE_PRO_URL', plugin_dir_url(__FILE__));
@@ -54,6 +56,8 @@ if (file_exists($autoload)) {
  * ------------------------------------------------------------------------- */
 
 register_activation_hook(__FILE__, function () {
+    Schema::activate();
+
     if (!current_user_can('manage_options')) {
         return;
     }
@@ -61,6 +65,12 @@ register_activation_hook(__FILE__, function () {
     // Flag consumed on next admin load
     set_transient('aperture_pro_do_setup_redirect', 1, 60);
 });
+
+// Production safety: also run cheap upgrade checks on load,
+// so updates apply without requiring deactivate/activate.
+add_action('plugins_loaded', static function (): void {
+    Schema::maybe_upgrade();
+}, 5);
 
 /* -------------------------------------------------------------------------
  * One‑time setup redirect (admin only)

@@ -12,7 +12,13 @@ class AuthorizeNetProvider implements PaymentProviderInterface
     public function get_name(): string { return 'authorize'; }
 
     public function create_payment_intent(array $args): PaymentIntentResult {
-        return new PaymentIntentResult('auth-dummy-id');
+         return new PaymentIntentResult(
+            id: 'auth-dummy-id',
+            amount: $args['amount'] ?? 0,
+            currency: 'USD',
+            client_secret: null,
+            provider: 'authorize'
+        );
     }
 
     public function get_checkout_url(PaymentIntentResult $intent): ?string {
@@ -20,7 +26,7 @@ class AuthorizeNetProvider implements PaymentProviderInterface
     }
 
     public function verify_webhook(string $payload, array $headers): WebhookEvent {
-        return new WebhookEvent('unknown', json_decode($payload));
+        return new WebhookEvent('authorize', 'unknown', json_decode($payload));
     }
 
     public function handle_webhook_event(WebhookEvent $event): PaymentUpdate {
@@ -28,6 +34,11 @@ class AuthorizeNetProvider implements PaymentProviderInterface
     }
 
     public function refund(string $payment_intent_id, int $amount = null): RefundResult {
-        return new RefundResult(true);
+        return new RefundResult(
+            refund_id: 're_dummy',
+            payment_intent_id: $payment_intent_id,
+            amount: (float)($amount ?? 0),
+            currency: 'USD'
+        );
     }
 }
