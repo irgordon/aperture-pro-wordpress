@@ -103,3 +103,23 @@ $loader = new \AperturePro\Loader(
 );
 
 $loader->boot();
+
+/**
+ * Global accessor for Aperture Pro services.
+ *
+ * @return object
+ */
+function aperture_pro()
+{
+    static $instance;
+    if (!$instance) {
+        $instance = new class {
+            public $settings;
+            public function __construct()
+            {
+                $this->settings = new \AperturePro\Config\Settings();
+            }
+        };
+    }
+    return $instance;
+}

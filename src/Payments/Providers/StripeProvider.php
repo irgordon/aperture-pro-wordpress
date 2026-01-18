@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 namespace AperturePro\Payments\Providers;
 
 use AperturePro\Payments\PaymentProviderInterface;
@@ -6,83 +8,113 @@ use AperturePro\Payments\DTO\PaymentIntentResult;
 use AperturePro\Payments\DTO\WebhookEvent;
 use AperturePro\Payments\DTO\PaymentUpdate;
 use AperturePro\Payments\DTO\RefundResult;
+use Stripe\StripeClient;
+use Stripe\Webhook;
 
 class StripeProvider implements PaymentProviderInterface
 {
-    public function get_name(): string { return 'stripe'; }
+    protected StripeClient $client;
+    protected string $webhookSecret;
 
-    public function create_payment_intent(array $args): PaymentIntentResult {
-        // Stub: In a real app, this calls Stripe API
-        $id = 'pi_' . bin2hex(random_bytes(10));
-        return new PaymentIntentResult($id, null, $args);
+    public function __construct()
+    {
+        $settings = aperture_pro()->settings->get('stripe');
+        $this->client = new StripeClient($settings['secret_key']);
+        $this->webhookSecret = $settings['webhook_secret'];
     }
 
-    public function get_checkout_url(PaymentIntentResult $intent): ?string {
-        return null;
+    public function get_name(): string
+    {
+        return 'stripe';
     }
 
-    public function verify_webhook(string $payload, array $headers): WebhookEvent {
-        // In a real implementation, we would verify headers['Stripe-Signature']
-        // using the webhook secret.
+    public function create_payment_intent(array $args): PaymentIntentResult
+    {
+        $intent = $this->client->paymentIntents->create([
+            'amount'   => $args['amount'],
+            'currency' => strtolower($args['currency']),
+            'metadata' => $args['metadata'] ?? [],
+            'automatic_payment_methods' => ['enabled' => true],
+        ]);
 
-        $data = json_decode($payload);
-        if (!$data) {
-             throw new \Exception("Invalid JSON payload");
-        }
-        $type = $data->type ?? 'unknown';
-        return new WebhookEvent($type, $data);
-    }
-
-    public function handle_webhook_event(WebhookEvent $event): PaymentUpdate {
-        $data = $event->payload->data->object ?? null;
-
-        // If data is null, try to use the payload itself (fallback)
-        if (!$data) {
-            $data = $event->payload;
-        }
-
-        $projectId = $data->metadata->project_id ?? null;
-        $status = 'unknown';
-        $intentId = $data->id ?? '';
-        $amount = null;
-        $currency = null;
-
-        switch ($event->type) {
-            case 'payment_intent.succeeded':
-            case 'charge.succeeded':
-                $status = 'paid';
-                // Handle different structures for payment intent vs charge
-                $amountRaw = $data->amount_received ?? $data->amount ?? 0;
-                $amount = $amountRaw / 100;
-                $currency = strtoupper($data->currency ?? 'USD');
-                // Fallback for intent ID
-                $intentId = $data->id ?? ($data->payment_intent ?? '');
-                break;
-
-            case 'payment_intent.payment_failed':
-                $status = 'failed';
-                $intentId = $data->id ?? '';
-                break;
-
-            case 'charge.refunded':
-                $status = 'refunded';
-                // For refunds, $data is a charge, usually has payment_intent
-                $intentId = $data->payment_intent ?? $data->id;
-                break;
-        }
-
-        return new PaymentUpdate(
-            (int)$projectId,
-            $status,
-            $intentId,
-            $amount,
-            $currency,
-            $event->payload
+        return new PaymentIntentResult(
+            id: $intent->id,
+            amount: $intent->amount,
+            currency: strtoupper($intent->currency),
+            client_secret: $intent->client_secret,
+            provider: 'stripe',
+            raw: $intent->toArray()
         );
     }
 
-    public function refund(string $payment_intent_id, int $amount = null): RefundResult {
-        // Stub
-        return new RefundResult(true, 're_' . bin2hex(random_bytes(10)));
+    public function get_checkout_url(PaymentIntentResult $intent): ?string
+    {
+        // Stripe Payment Element does not use redirect URLs
+        return null;
+    }
+
+    public function verify_webhook(string $payload, array $headers): WebhookEvent
+    {
+        $signature = $headers['Stripe-Signature'] ?? '';
+
+        $event = Webhook::constructEvent(
+            $payload,
+            $signature,
+            $this->webhookSecret
+        );
+
+        return new WebhookEvent(
+            provider: 'stripe',
+            type: $event->type,
+            payload: $event->data->object->toArray()
+        );
+    }
+
+    public function handle_webhook_event(WebhookEvent $event): PaymentUpdate
+    {
+        $object = $event->payload;
+
+        $intentId = $object['id'] ?? ($object['payment_intent'] ?? null);
+        $projectId = (int)($object['metadata']['project_id'] ?? 0);
+
+        $status = match ($event->type) {
+            'payment_intent.succeeded' => 'paid',
+            'payment_intent.payment_failed' => 'failed',
+            'charge.refunded' => 'refunded',
+            default => 'unknown',
+        };
+
+        $amount = isset($object['amount_received'])
+            ? $object['amount_received'] / 100
+            : null;
+
+        $currency = isset($object['currency'])
+            ? strtoupper($object['currency'])
+            : null;
+
+        return new PaymentUpdate(
+            project_id: $projectId,
+            status: $status,
+            payment_intent_id: $intentId,
+            amount: $amount,
+            currency: $currency,
+            raw_event: $event->payload
+        );
+    }
+
+    public function refund(string $payment_intent_id, ?int $amount = null): RefundResult
+    {
+        $refund = $this->client->refunds->create([
+            'payment_intent' => $payment_intent_id,
+            'amount' => $amount,
+        ]);
+
+        return new RefundResult(
+            refund_id: $refund->id,
+            payment_intent_id: $payment_intent_id,
+            amount: $refund->amount / 100,
+            currency: strtoupper($refund->currency),
+            raw: $refund->toArray()
+        );
     }
 }
