@@ -8,50 +8,55 @@ Aperture Pro is a modern, production‑grade WordPress plugin built for photogra
 ## ✨ Features
 
 ### **Client Proofing**
-- Watermarked, low‑resolution proof images to deter unauthorized downloads  
+- Watermarked, low‑resolution proof images  
 - Image selection, commenting, and approval workflows  
 - Signed, short‑lived proof URLs  
 - Mobile‑friendly, accessible client portal  
 
 ### **Secure File Delivery**
 - Download tokens bound to project, client email, and session  
-- Optional OTP verification for sensitive deliveries  
+- Optional OTP verification  
 - Rate‑limited and single‑use token options  
 - Signed URLs for local and cloud storage  
 
 ### **Chunked, Resumable Uploads**
 - Client‑side chunked uploader with exponential backoff + jitter  
-- Local session persistence for resume after network interruptions  
+- Local session persistence for resume  
 - Server‑side chunk assembly with watchdog cleanup  
 - Progress polling and resumability  
 
 ### **Storage Adapters**
 - Local storage with path‑hiding and signed URL proxying  
-- Cloudinary + ImageKit adapters with HTTPS and signed URLs  
+- Cloudinary + ImageKit adapters  
 - Extensible `StorageInterface` and `StorageFactory`  
+- Batch existence checks + batch URL signing  
 
 ### **Payment Integration**
-- Webhook handler for payment providers  
-- Secure signature verification  
+- **Payment Abstraction Layer** supporting multiple providers  
+- Provider drivers (Stripe, PayPal, Square, Authorize.net, Amazon Pay)  
+- Secure webhook verification  
+- Normalized payment events via DTOs  
 - Automatic project status updates  
-- Download token generation on successful payment  
+- Admin “Payment Summary” card + timeline  
 
 ### **Admin UI**
-- Modern SaaS‑style settings page  
+- Modern SaaS‑style settings and Command Center  
 - Tooltips, inline help, and validation  
 - API key + webhook secret test actions  
-- Theme variable overrides for branding  
-- Secure encryption of API keys and secrets at rest  
+- Theme variable overrides  
+- Encrypted API keys and secrets at rest  
 
 ### **Observability & Safety**
 - Centralized logging  
-- Health Card surfacing warnings and critical errors  
-- Queued admin email notifications (rate‑limited)  
+- Health Dashboard with modular cards  
+- Queued admin email notifications  
 - Watchdog for stuck uploads and storage issues  
 
 ---
-## Plugin File Structure 
 
+## 📁 Plugin File Structure
+
+```
 aperture-pro/
 │
 ├── aperture-pro.php
@@ -63,7 +68,7 @@ aperture-pro/
 │
 ├── inc/
 │   ├── autoloader.php
-│   ├── helpers.php
+│   └── helpers.php
 │
 ├── src/
 │   ├── Admin/
@@ -75,6 +80,11 @@ aperture-pro/
 │   ├── Health/
 │   ├── Helpers/
 │   ├── Installer/
+│   ├── Payments/                 # NEW — Payment Abstraction Layer
+│   │   ├── DTO/
+│   │   ├── Providers/
+│   │   ├── PaymentProviderInterface.php
+│   │   └── PaymentProviderFactory.php
 │   ├── Proof/
 │   ├── REST/
 │   ├── Services/
@@ -88,13 +98,13 @@ aperture-pro/
 │   │   ├── admin.css
 │   │   ├── health.css
 │   │   └── cards/
-│   │       └── performance.css         # NEW — performance card styles
+│   │       └── performance.css
 │   │
 │   ├── js/
 │   │   ├── client-portal.js
 │   │   └── spa/
 │   │       ├── index.js
-│   │       ├── bootstrap.js            # UPDATED — registers components + handles SPA routing
+│   │       ├── bootstrap.js
 │   │       ├── components/
 │   │       │   ├── hero.js
 │   │       │   ├── features.js
@@ -102,24 +112,27 @@ aperture-pro/
 │   │       │   ├── testimonials.js
 │   │       │   ├── faq.js
 │   │       │   ├── cta.js
-│   │       │   ├── PerformanceCard.js  # NEW — live performance card
-│   │       │   ├── StorageCard.js      # NEW — live storage card
-│   │       │   └── HealthDashboard.js  # NEW — auto-registers all cards
+│   │       │   ├── PerformanceCard.js
+│   │       │   ├── StorageCard.js
+│   │       │   └── HealthDashboard.js
 │   │       │
 │   │       └── hooks/
-│   │           ├── usePerformanceMetrics.js  # NEW — performance hook
-│   │           └── useStorageMetrics.js      # NEW — storage hook
+│   │           ├── usePerformanceMetrics.js
+│   │           └── useStorageMetrics.js
 │   │
 │   └── images/
 │
 └── tests/
     ├── verify_theme_load.php
     ├── benchmark_js_chunking.js
+    ├── verify_payment_abstraction.php
     └── phpunit.xml
-
 ```
+
 ---
-## Theme File Structure
+
+## 🎨 Theme File Structure
+
 ```
 aperture-pro-theme/
 │
@@ -162,6 +175,7 @@ aperture-pro-theme/
 ```
 
 ---
+
 ## 🚀 Installation
 
 1. Upload the plugin to `wp-content/plugins/`  
@@ -171,7 +185,7 @@ aperture-pro-theme/
    - Storage driver  
    - Cloud provider API keys  
    - Email sender  
-   - Webhook secret  
+   - Payment provider + webhook secret  
    - OTP requirements  
 5. (Optional) Customize portal appearance under **Settings → Aperture Portal Theme**
 
@@ -180,19 +194,19 @@ aperture-pro-theme/
 ## ⚙️ Quick Configuration Guide
 
 ### **Storage**
-- **Local**: simplest; uses server disk with signed URL proxying  
-- **Cloudinary / ImageKit**: recommended for large galleries; offloads bandwidth  
+- **Local** — simplest; uses server disk  
+- **Cloudinary / ImageKit** — recommended for large galleries  
 
 ### **Email**
-- Set a verified sender address for OTP and download notifications  
+- Set a verified sender address for OTP + notifications  
 
 ### **Payments**
-- Configure your payment provider to POST to:  
+- Configure your provider to POST to:  
   ```
-  https://your-site.com/wp-json/aperture/v1/webhooks/payment
+  https://your-site.com/wp-json/aperture/v1/webhooks/payment/{provider}
   ```
-- Add your webhook secret (encrypted at rest)  
-- Use the **Validate** button to confirm format  
+- Add your webhook secret  
+- Validate via the built‑in test tool  
 
 ### **OTP**
 - Enable OTP for secure downloads  
@@ -227,65 +241,66 @@ POST /aperture/v1/download/verify-otp
 
 ### **Payments**
 ```
-POST /aperture/v1/webhooks/payment
+POST /aperture/v1/webhooks/payment/{provider}
+GET  /aperture/v1/projects/{id}/payment-summary
+GET  /aperture/v1/projects/{id}/payment-timeline
+POST /aperture/v1/projects/{id}/retry-payment
 ```
 
 ---
 
 ## 🔐 Security
 
-- **Encryption at rest** for API keys + webhook secrets  
-- **Signed URLs** for proofs and downloads  
-- **OTP verification** (optional)  
-- **Rate limiting** for downloads and admin notifications  
-- **Session + email binding** for download tokens  
-- **Watchdog** for stuck uploads and storage failures  
+- Encryption at rest for API keys + secrets  
+- Signed URLs for proofs + downloads  
+- Optional OTP verification  
+- Rate limiting for downloads + admin notifications  
+- Session + email binding for download tokens  
+- Watchdog for stuck uploads  
 
 ---
 
 ## 🧩 Developer Notes
 
 ### **Client Assets**
-- `assets/js/client-portal.js` — uploader, proofs, OTP, downloads  
-- `assets/css/client-portal.css` — portal UI (minified version included)
+- `client-portal.js` — uploader, proofs, OTP, downloads  
+- SPA components for marketing + admin dashboards  
 
 ### **Server Components**
-- `src/Upload/ChunkedUploadHandler.php`  
-- `src/Proof/ProofService.php`  
-- `src/Helpers/Crypto.php`  
-- `src/Admin/AdminUI.php`  
-- `src/REST/*` controllers  
-- `src/Email/EmailService.php`  
+- Chunked upload handler  
+- Proof generation + batch signing  
+- Payment Abstraction Layer  
+- Workflow engine  
+- REST controllers  
+- Email queue + transactional delivery  
 
 ### **Extensibility**
-- Add new storage adapters by implementing `StorageInterface`  
-- Add new email templates under `templates/email/`  
-- Add new REST endpoints under `src/REST/`  
+- Add new storage drivers via `StorageInterface`  
+- Add new payment providers via `PaymentProviderInterface`  
+- Add new admin cards via SPA component registry  
 
 ---
 
 ## 🧪 Troubleshooting
 
-- **Proofs not generating** → check Imagick/GD availability  
-- **Webhook failures** → verify secret + signature header  
-- **Upload issues** → check PHP limits (`upload_max_filesize`, `post_max_size`)  
-- **Download errors** → verify token validity + OTP status  
+- **Proofs not generating** → check Imagick/GD  
+- **Webhook failures** → verify signature header  
+- **Upload issues** → check PHP limits  
+- **Download errors** → verify token + OTP  
 
 ---
 
 ## 🤝 Contributing
 
-Pull requests are welcome. Areas that benefit from contributions:
+Contributions welcome. High‑impact areas:
 
-- Provider‑specific API key validation  
+- Additional payment providers  
 - Background ZIP generation  
 - Redis‑backed rate limiting  
-- End‑to‑end tests for upload/download flows  
+- End‑to‑end upload/download tests  
 
 ---
 
 ## 📄 License
 
 MIT License — see `LICENSE` for details.
-
----
