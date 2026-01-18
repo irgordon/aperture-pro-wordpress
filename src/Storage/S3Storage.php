@@ -9,6 +9,9 @@ use Aws\CommandPool;
 use Aws\Exception\AwsException;
 use AperturePro\Helpers\Logger;
 use AperturePro\Storage\Traits\Retryable;
+use AperturePro\Storage\S3\S3Uploader;
+use AperturePro\Storage\Retry\RetryExecutor;
+use AperturePro\Storage\Upload\UploadRequest;
 
 /**
  * S3Storage
@@ -48,6 +51,9 @@ class S3Storage implements StorageInterface
     /** @var string */
     protected $defaultAcl;
 
+    /** @var S3Uploader */
+    protected $uploader;
+
     public function __construct(array $config)
     {
         $this->bucket = $config['bucket'] ?? '';
@@ -83,6 +89,13 @@ class S3Storage implements StorageInterface
                 'region'  => $this->region,
             ]);
         }
+
+        $this->uploader = new S3Uploader(
+            $this->s3,
+            new RetryExecutor(),
+            $this->bucket,
+            $this->defaultAcl
+        );
     }
 
     public function getName(): string
@@ -102,24 +115,15 @@ class S3Storage implements StorageInterface
         }
 
         try {
-            $this->executeWithRetry(function() use ($source, $target, $options) {
-                $acl = $options['acl'] ?? $this->defaultAcl;
-                $contentType = $options['content_type'] ?? null;
+            $request = new UploadRequest(
+                localPath: $source,
+                destinationKey: $target,
+                contentType: $options['content_type'] ?? null,
+                metadata: $options,
+                sizeBytes: file_exists($source) ? filesize($source) : null
+            );
 
-                $params = [
-                    'Bucket'     => $this->bucket,
-                    'Key'        => ltrim($target, '/'),
-                    'SourceFile' => $source,
-                    'ACL'        => $acl,
-                ];
-
-                if ($contentType) {
-                    $params['ContentType'] = $contentType;
-                }
-
-                $this->s3->putObject($params);
-                return true;
-            });
+            $this->uploader->upload($request);
 
             return $this->getUrl($target, $options);
         } catch (\Throwable $e) {

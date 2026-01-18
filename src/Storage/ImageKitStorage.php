@@ -7,6 +7,7 @@ use AperturePro\Storage\Traits\Retryable;
 use AperturePro\Storage\ImageKit\ImageKitUploader;
 use AperturePro\Storage\Retry\RetryExecutor;
 use AperturePro\Storage\Chunking\ChunkedUploader;
+use AperturePro\Storage\Upload\UploadRequest;
 
 /**
  * ImageKitStorage
@@ -56,13 +57,21 @@ class ImageKitStorage implements StorageInterface
     public function upload(string $source, string $target, array $options = []): string
     {
         try {
-            $result = $this->uploader->upload($source, $target, $options);
-            $url = $result->getUrl();
+            $request = new UploadRequest(
+                localPath: $source,
+                destinationKey: $target,
+                contentType: $options['content_type'] ?? null,
+                metadata: $options,
+                sizeBytes: file_exists($source) ? filesize($source) : null
+            );
+
+            $result = $this->uploader->upload($request);
+            $url = $result->url;
 
             if (empty($url)) {
-                $meta = $result->getMetadata();
-                if (!empty($meta['filePath'])) {
-                    return rtrim($this->config['url_endpoint'], '/') . $meta['filePath'];
+                // Fallback to constructing URL from endpoint and object key if URL is missing in response
+                if (!empty($result->objectKey)) {
+                    return rtrim($this->config['url_endpoint'], '/') . '/' . ltrim($result->objectKey, '/');
                 }
                 throw new \RuntimeException('ImageKit upload returned no URL');
             }
@@ -102,12 +111,7 @@ class ImageKitStorage implements StorageInterface
         try {
             $this->executeWithRetry(function() use ($target) {
                 // ImageKit delete requires file ID usually, but target is path/key.
-                // Does ImageKit SDK support delete by path? Documentation says deleteFile takes fileId.
-                // We might need to lookup fileId from path first if target is path.
-                // Existing implementation passed $remoteKey as fileId: $this->client->deleteFile($fileId);
-                // This implies existing code assumed remoteKey IS fileId or ImageKit supports path there?
-                // Or maybe existing code was broken/untested for delete?
-                // For now, I will keep passing target as ID, but log warning if it fails.
+                // We assume target is used as ID here as per existing implementation.
                 $fileId = $target;
                 $this->client->deleteFile($fileId);
             });
@@ -141,8 +145,6 @@ class ImageKitStorage implements StorageInterface
 
     public function getStats(): array
     {
-        // ImageKit doesn't easily expose storage stats via standard API call without extra perms?
-        // Returning healthy for now.
         return [
             'healthy'         => true,
             'used_bytes'      => null,
