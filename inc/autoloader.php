@@ -1,7 +1,9 @@
 <?php
 /**
  * Simple PSR-4 Autoloader for Aperture Pro.
- * Handles loading classes from src/ when Composer is not available.
+ *
+ * Used as a fallback when Composer autoloading is unavailable
+ * (e.g. ZIP installs or constrained hosting environments).
  */
 
 if (!defined('ABSPATH')) {
@@ -13,27 +15,25 @@ spl_autoload_register(function ($class) {
     $prefix = 'AperturePro\\';
 
     // Base directory for the namespace prefix
-    // Ensure APERTURE_PRO_DIR is defined, or fallback to relative path
-    $base_dir = defined('APERTURE_PRO_DIR')
+    // Prefer APERTURE_PRO_DIR if defined, otherwise fall back to relative path
+    $baseDir = defined('APERTURE_PRO_DIR')
         ? APERTURE_PRO_DIR . 'src/'
         : __DIR__ . '/../src/';
 
     // Does the class use the namespace prefix?
-    $len = strlen($prefix);
-    if (strncmp($prefix, $class, $len) !== 0) {
-        // no, move to the next registered autoloader
+    $prefixLength = strlen($prefix);
+    if (strncmp($prefix, $class, $prefixLength) !== 0) {
+        // Not an Aperture Pro class; allow other autoloaders to handle it
         return;
     }
 
     // Get the relative class name
-    $relative_class = substr($class, $len);
+    $relativeClass = substr($class, $prefixLength);
 
-    // Replace the namespace prefix with the base directory, replace namespace
-    // separators with directory separators in the relative class name, append
-    // with .php
-    $file = $base_dir . str_replace('\\', '/', $relative_class) . '.php';
+    // Replace namespace separators with directory separators, append .php
+    $file = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
 
-    // If the file exists, require it
+    // Load the file if it exists
     if (file_exists($file)) {
         require $file;
     }
