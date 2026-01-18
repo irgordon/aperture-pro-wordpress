@@ -88,7 +88,7 @@ class PaymentService
 
         $this->projects->update($update->project_id, [
             'payment_status'      => $update->status,
-            'payment_amount_received' => $update->amount,
+            'payment_amount'      => $update->amount,
             'payment_currency'    => $update->currency,
             'payment_last_update' => current_time('mysql'),
             'updated_at'          => current_time('mysql'),
@@ -153,7 +153,7 @@ class PaymentService
         return [
             'package_price'   => $project->package_price,
             'payment_status'  => $project->payment_status,
-            'amount_received' => $project->payment_amount_received,
+            'amount_received' => $project->payment_amount,
             'currency'        => $project->payment_currency,
             'provider'        => $project->payment_provider,
             'payment_intent'  => $project->payment_intent_id,

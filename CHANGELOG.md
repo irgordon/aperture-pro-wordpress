@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.11] – Schema Updates & Payment Abstraction** - 2026-01-25 10:00:00
+
+### **Changed**
+- **Schema:** Updated database schema installer to version 1.0.11, introducing `ap_payment_events` table and finalizing `ap_projects` payment columns (`payment_amount`, `payment_intent_id`, etc.).
+- **Payments:** Updated `PaymentService` to use `payment_amount` column instead of legacy `payment_amount_received`.
+- **Installer:** Integrated versioned schema migrations to ensure smooth upgrades.
+
 ## **[1.0.10] – Stripe & PayPal Providers** - 2026-01-20 10:00:00
 
 ### **Added**

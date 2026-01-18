@@ -18,6 +18,114 @@ function set_transient($key, $value, $expiration) {}
 function get_transient($key) { return false; }
 function get_option($key) { return 'admin@example.com'; }
 function wp_mail($to, $subject, $body) { return true; }
+function sanitize_text_field($str) { return trim($str); }
+function sanitize_email($email) { return $email; }
+
+function aperture_pro() {
+    return new class {
+        public $settings;
+        public function __construct() {
+            $this->settings = new class {
+                public function get($key) {
+                    if ($key === 'stripe') return ['secret_key' => 'sk_test', 'webhook_secret' => 'whsec_test'];
+                    if ($key === 'paypal') return ['client_id' => 'sb_client', 'secret' => 'sb_secret', 'sandbox' => true, 'webhook_id' => 'wh_paypal_123'];
+                    return null;
+                }
+            };
+        }
+    };
+}
+
+// Mock SDKs
+class MockStripeClient {
+    public $paymentIntents;
+    public $refunds;
+    public function __construct($key) {
+        $this->paymentIntents = new class {
+            public function create($args) {
+                 return new class($args) {
+                     public $id = 'pi_test_123';
+                     public $amount;
+                     public $currency;
+                     public $client_secret = 'cs_test_123';
+                     public function __construct($args) {
+                         $this->amount = $args['amount'];
+                         $this->currency = $args['currency'];
+                     }
+                     public function toArray() { return ['id' => $this->id]; }
+                 };
+            }
+        };
+        $this->refunds = new class {
+            public function create($args) {
+                return new class($args) {
+                    public $id = 're_mock';
+                    public $amount;
+                    public $currency = 'usd';
+                    public function __construct($args) {
+                         $this->amount = $args['amount'] ?? 100;
+                    }
+                    public function toArray() { return ['id' => $this->id]; }
+                };
+            }
+        };
+    }
+}
+class_alias('MockStripeClient', 'Stripe\StripeClient');
+
+class MockStripeWebhook {
+    public static function constructEvent($payload, $sig, $secret) {
+        $obj = json_decode($payload);
+        // Mock the nested StripeObject
+        $stripeObj = new class($obj->data->object) {
+            public $id;
+            public $amount_received;
+            public $currency;
+            public $metadata;
+            private $raw;
+            public function __construct($data) {
+                foreach($data as $k => $v) {
+                    if ($k === 'metadata') {
+                         $this->metadata = (array)$v;
+                    } else {
+                         $this->$k = $v;
+                    }
+                }
+                $this->raw = (array)$data;
+            }
+            public function toArray() {
+                // Ensure metadata is array in output
+                $arr = $this->raw;
+                if (isset($arr['metadata'])) $arr['metadata'] = (array)$arr['metadata'];
+                return $arr;
+            }
+        };
+        $obj->data->object = $stripeObj;
+        return $obj;
+    }
+}
+class_alias('MockStripeWebhook', 'Stripe\Webhook');
+
+class MockPayPalHttpClient {
+    public function __construct($env) {}
+    public function execute($req) {
+        return (object)[
+            'result' => (object)[
+                'id' => 'ORDER_ID',
+                'amount' => (object)['value' => '100.00', 'currency_code' => 'USD'],
+                'status' => 'APPROVED',
+                'links' => [(object)['rel' => 'approve', 'href' => 'https://paypal.com/checkout']]
+            ]
+        ];
+    }
+}
+class_alias('MockPayPalHttpClient', 'PayPalCheckoutSdk\Core\PayPalHttpClient');
+
+class MockPayPalSandbox { public function __construct($a,$b){} }
+class_alias('MockPayPalSandbox', 'PayPalCheckoutSdk\Core\SandboxEnvironment');
+
+class MockPayPalOrderCreate { public $body; public function prefer($p){} }
+class_alias('MockPayPalOrderCreate', 'PayPalCheckoutSdk\Orders\OrdersCreateRequest');
 
 // Mock WP Classes
 class WP_REST_Request implements ArrayAccess {
@@ -65,7 +173,7 @@ $wpdb = new class {
             'client_email' => 'test@example.com',
             'payment_provider' => 'stripe',
             'payment_status' => 'pending',
-            'payment_amount_received' => 0,
+            'payment_amount' => 0,
             'payment_currency' => 'USD',
             'payment_intent_id' => null,
             'payment_last_update' => null,
@@ -147,6 +255,8 @@ require_once 'src/Payments/Providers/SquareProvider.php';
 require_once 'src/Payments/Providers/AuthorizeNetProvider.php';
 require_once 'src/Payments/Providers/AmazonPayProvider.php';
 
+require_once 'src/Repositories/ProjectRepository.php';
+require_once 'src/Services/WorkflowAdapter.php';
 require_once 'src/Helpers/Logger.php';
 require_once 'src/REST/BaseController.php';
 require_once 'src/Services/PaymentService.php';
@@ -205,7 +315,7 @@ $req2->set_header('Content-Type', 'application/json');
 
 $res2 = $controller->handle_webhook($req2);
 
-if ($res2->status === 200 && $res2->data['success']) {
+if ($res2->status === 200 && ($res2->data['success'] ?? $res2->data['received'])) {
     echo "SUCCESS: Webhook processed.\n";
 
     $project = $wpdb->projects[1];
@@ -216,10 +326,10 @@ if ($res2->status === 200 && $res2->data['success']) {
         exit(1);
     }
 
-    if ($project['payment_amount_received'] == 100.0) {
+    if ($project['payment_amount'] == 100.0) {
         echo "SUCCESS: Amount received is 100.0\n";
     } else {
-        echo "FAILURE: Amount received is " . $project['payment_amount_received'] . "\n";
+        echo "FAILURE: Amount received is " . $project['payment_amount'] . "\n";
         exit(1);
     }
 } else {
@@ -236,7 +346,7 @@ $req3->set_body('{}');
 
 $res3 = $controller->handle_webhook($req3);
 
-if ($res3->status === 400 && strpos($res3->data['message'], 'Unknown provider') !== false) {
+if ($res3->status === 400 && strpos(($res3->data['message'] ?? $res3->data['error']), 'Unknown provider') !== false) {
     echo "SUCCESS: Correctly handled unknown provider.\n";
 } else {
     echo "FAILURE: Did not handle unknown provider correctly. Status: " . $res3->status . "\n";
