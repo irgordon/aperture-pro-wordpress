@@ -29,6 +29,9 @@ class AdminUI
     /** Slug for the settings page */
     const PAGE_SLUG = 'aperture-pro-settings';
 
+    /** Slug for the command center page */
+    const PAGE_COMMAND_CENTER = 'aperture-pro-command-center';
+
     /** Nonce action for AJAX security */
     const NONCE_ACTION = 'aperture_pro_admin_nonce';
 
@@ -44,6 +47,7 @@ class AdminUI
         // AJAX endpoints for testing API keys and webhook secrets
         add_action('wp_ajax_aperture_pro_test_api_key', [self::class, 'ajax_test_api_key']);
         add_action('wp_ajax_aperture_pro_validate_webhook', [self::class, 'ajax_validate_webhook']);
+        add_filter('script_loader_tag', [self::class, 'add_module_type'], 10, 3);
     }
 
     /**
@@ -63,12 +67,29 @@ class AdminUI
 
         add_submenu_page(
             'aperture-pro',
+            'Command Center',
+            'Command Center',
+            'manage_options',
+            self::PAGE_COMMAND_CENTER,
+            [self::class, 'render_command_center']
+        );
+
+        add_submenu_page(
+            'aperture-pro',
             'Settings',
             'Settings',
             'manage_options',
             self::PAGE_SLUG,
             [self::class, 'render_settings_page']
         );
+    }
+
+    /**
+     * Render the Command Center page.
+     */
+    public static function render_command_center(): void
+    {
+        include __DIR__ . '/../../templates/admin/command-center.php';
     }
 
     /**
@@ -238,7 +259,8 @@ class AdminUI
         // Main Admin UI (Settings, etc.)
         $isSettingsPage =
             $screen->id === 'toplevel_page_aperture-pro' ||
-            $screen->id === 'aperture-pro_page_' . self::PAGE_SLUG;
+            $screen->id === 'aperture-pro_page_' . self::PAGE_SLUG ||
+            $screen->id === 'aperture-pro_page_' . self::PAGE_COMMAND_CENTER;
 
         if ($isSettingsPage) {
             // Toast System
@@ -262,6 +284,12 @@ class AdminUI
                     'invalid_key' => 'Invalid API key format',
                 ],
             ]);
+
+            // Enqueue SPA bootstrap for Command Center
+            if ($screen->id === 'aperture-pro_page_' . self::PAGE_COMMAND_CENTER) {
+                 wp_enqueue_script('aperture-admin-spa', $pluginUrl . 'assets/spa/bootstrap.js', ['ap-admin-ui-js'], '1.0.0', true);
+            }
+
             return;
         }
 
@@ -363,6 +391,17 @@ class AdminUI
         }
 
         wp_send_json_success(['message' => 'Webhook secret format looks valid.']);
+    }
+
+    /**
+     * Add type="module" to SPA scripts.
+     */
+    public static function add_module_type($tag, $handle, $src)
+    {
+        if ($handle === 'aperture-admin-spa') {
+            return str_replace(' src=', ' type="module" src=', $tag);
+        }
+        return $tag;
     }
 
     /* ============================================================

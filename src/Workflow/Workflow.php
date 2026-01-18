@@ -60,6 +60,17 @@ class Workflow {
         Logger::log('info', 'workflow', "Proofs approved for project $projectId");
     }
 
+    public static function onPaymentReceived(int $projectId): void {
+        global $wpdb;
+        $projects = $wpdb->prefix . 'ap_projects';
+
+        // Update status if needed, e.g. from 'lead' to 'booked' or 'pending_proofs'
+        // For now we just log and fire action
+        Logger::log('info', 'workflow', "Payment received for project $projectId");
+
+        do_action('aperture_pro_payment_received', $projectId);
+    }
+
     public static function generateDownloadTokenForProject(int $projectId): ?string {
         global $wpdb;
 

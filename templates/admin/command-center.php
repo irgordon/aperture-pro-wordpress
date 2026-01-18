@@ -10,6 +10,11 @@ $projectId = intval($_GET['project_id'] ?? 0);
         <div class="ap-loader">Loading…</div>
     </div>
 
+    <!-- Payment Summary (SPA Component) -->
+    <div class="ap-section">
+        <div data-spa-component="payment-card" data-project-id="<?php echo esc_attr($projectId); ?>"></div>
+    </div>
+
     <div id="aperture-workflow" class="ap-section">
         <h2>Workflow</h2>
         <div class="ap-workflow-steps"></div>
