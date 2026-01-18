@@ -4,6 +4,9 @@ namespace AperturePro\Storage;
 
 use AperturePro\Helpers\Logger;
 use AperturePro\Storage\Traits\Retryable;
+use AperturePro\Storage\ImageKit\ImageKitUploader;
+use AperturePro\Storage\Retry\RetryExecutor;
+use AperturePro\Storage\Chunking\ChunkedUploader;
 
 /**
  * ImageKitStorage
@@ -16,6 +19,7 @@ class ImageKitStorage implements StorageInterface
 
     protected array $config;
     protected $client;
+    protected ImageKitUploader $uploader;
 
     public function __construct(array $config = [])
     {
@@ -36,6 +40,12 @@ class ImageKitStorage implements StorageInterface
         }
 
         $this->client = new \ImageKit\ImageKit($publicKey, $privateKey, $urlEndpoint);
+
+        $this->uploader = new ImageKitUploader(
+            $this->client,
+            new RetryExecutor(),
+            new ChunkedUploader()
+        );
     }
 
     public function getName(): string
@@ -46,41 +56,18 @@ class ImageKitStorage implements StorageInterface
     public function upload(string $source, string $target, array $options = []): string
     {
         try {
-            return $this->executeWithRetry(function() use ($source, $target, $options) {
-                $fileName = basename($target);
-                $folder = dirname($target);
-                if ($folder === '.' || $folder === '/') {
-                    $folder = '';
+            $result = $this->uploader->upload($source, $target, $options);
+            $url = $result->getUrl();
+
+            if (empty($url)) {
+                $meta = $result->getMetadata();
+                if (!empty($meta['filePath'])) {
+                    return rtrim($this->config['url_endpoint'], '/') . $meta['filePath'];
                 }
+                throw new \RuntimeException('ImageKit upload returned no URL');
+            }
 
-                $fileContent = @file_get_contents($source);
-                if ($fileContent === false) {
-                    throw new \RuntimeException("Failed to read local file: $source");
-                }
-
-                $params = [
-                    'file' => base64_encode($fileContent),
-                    'fileName' => $fileName,
-                ];
-
-                if (!empty($folder)) {
-                    $params['folder'] = $folder;
-                }
-
-                if (!empty($options['tags'])) {
-                    $params['tags'] = $options['tags'];
-                }
-
-                $response = $this->client->upload($params);
-
-                if (empty($response) || empty($response->filePath)) {
-                    throw new \RuntimeException('ImageKit upload returned unexpected response');
-                }
-
-                $url = $response->url ?? ($this->client->getUrlEndpoint() . $response->filePath);
-
-                return $url;
-            });
+            return $url;
         } catch (\Throwable $e) {
             Logger::log('error', 'imagekit', 'Upload failed: ' . $e->getMessage(), ['target' => $target]);
             throw new \RuntimeException('Upload failed: ' . $e->getMessage(), 0, $e);

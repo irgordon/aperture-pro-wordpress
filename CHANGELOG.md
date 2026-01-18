@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.17] – ImageKit Hardening** - 2026-01-27 18:00:00
+
+### **Infrastructure**
+- **Storage:** Hardened `ImageKit` driver to behave as a first-class storage provider.
+- **Storage:** Implemented `Capabilities` probe to detect SDK stream support safely.
+- **Storage:** Added `ImageKitUploader` with a unified upload strategy: prefers streaming (constant memory), falls back to chunking (SDK-limited).
+- **Storage:** Introduced `RetryExecutor` (configurable backoff/jitter) and `ChunkedUploader` (memory-safe chunking) as reusable abstractions.
+- **Storage:** Added strict file size guards (500MB limit) and read checks.
+- **Refactor:** Updated `ImageKitStorage` to delegate uploads to the new hardening layer, eliminating legacy `file_get_contents` usage.
+
 ## **[1.0.16] – REST Security Middleware** - 2026-01-27 16:00:00
 
 ### **Security**
