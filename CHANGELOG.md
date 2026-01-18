@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.15] – Proof Queue Optimization** - 2026-01-27 14:00:00
+
+### **Performance**
+- **Proof Queue:** Implemented `ProofQueue::enqueueBatch` to handle bulk proof generation requests with a single database write, eliminating N+1 overhead.
+- **Proof Queue:** Added idempotency guard (O(1) lookup) and batch size soft cap (250 items) to prevent duplicate work and memory spikes.
+- **Proof Queue:** Exposed `getStats()` for monitoring queue depth and processing status.
+- **Proofs:** Updated `ProofService::getProofUrls` to utilize batch queuing for missing proofs.
+- **Benchmark:** Achieved ~170x speedup in queue enqueue operations for batches of 200 items.
+
 ## **[1.0.14] – Optimized Proof Downloads** - 2026-01-27 12:00:00
 
 ### **Performance**

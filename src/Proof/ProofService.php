@@ -79,13 +79,19 @@ class ProofService
         $existenceMap = $storage->existsMany($pathsToCheck);
 
         // 3. Process results
+        $toEnqueue = [];
+
         foreach ($proofPaths as $key => $proofPath) {
             $exists = $existenceMap[$proofPath] ?? false;
 
             if (!$exists) {
                 // OFFLOAD: Do not generate synchronously. Queue it.
                 $originalPath = $originalPaths[$key];
-                ProofQueue::enqueue($originalPath, $proofPath);
+
+                $toEnqueue[] = [
+                    'original_path' => $originalPath,
+                    'proof_path'    => $proofPath,
+                ];
 
                 // Return placeholder
                 $urls[$key] = self::getPlaceholderUrl();
@@ -93,6 +99,11 @@ class ProofService
                 // 4. Get URL
                 $urls[$key] = $storage->getUrl($proofPath, ['signed' => true, 'expires' => 3600]);
             }
+        }
+
+        // Batch enqueue missing proofs
+        if (!empty($toEnqueue)) {
+            ProofQueue::enqueueBatch($toEnqueue);
         }
 
         // Cache the result
