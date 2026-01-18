@@ -18,6 +18,7 @@ class ProofQueue
     const QUEUE_LOCK   = 'ap_proof_queue_lock';
     const CRON_HOOK    = 'aperture_pro_generate_proofs';
     const MAX_PER_RUN  = 5;
+    const MAX_QUEUE_SIZE = 250;
 
     /**
      * Enqueue a proof for generation.
@@ -27,30 +28,80 @@ class ProofQueue
      */
     public static function enqueue(string $originalPath, string $proofPath): void
     {
+        self::enqueueBatch([
+            [
+                'original_path' => $originalPath,
+                'proof_path'    => $proofPath,
+            ]
+        ]);
+    }
+
+    /**
+     * Enqueue multiple proofs at once.
+     *
+     * OPTIMIZATION:
+     * - Reads queue once (vs N times).
+     * - Writes queue once (vs N times).
+     * - Uses O(1) lookup to prevent duplicates (Idempotency).
+     * - Enforces MAX_QUEUE_SIZE cap.
+     *
+     * @param array $items Array of ['original_path' => ..., 'proof_path' => ...]
+     */
+    public static function enqueueBatch(array $items): void
+    {
+        if (empty($items)) {
+            return;
+        }
+
         $queue = get_option(self::QUEUE_OPTION, []);
         if (!is_array($queue)) {
             $queue = [];
         }
 
-        // Avoid duplicates in the queue
-        foreach ($queue as $item) {
-            if ($item['proof_path'] === $proofPath) {
-                return;
+        // Idempotency Guard: Build O(1) lookup for existing proofs
+        $existingPaths = array_column($queue, 'proof_path');
+        $existingMap   = array_flip($existingPaths);
+
+        $changed = false;
+        $count   = count($queue);
+
+        foreach ($items as $item) {
+            // Batch Size Cap
+            if ($count >= self::MAX_QUEUE_SIZE) {
+                break;
             }
+
+            $proofPath    = $item['proof_path'] ?? null;
+            $originalPath = $item['original_path'] ?? null;
+
+            if (!$proofPath || !$originalPath) {
+                continue;
+            }
+
+            // Check existence in current queue
+            if (isset($existingMap[$proofPath])) {
+                continue;
+            }
+
+            $queue[] = [
+                'original_path' => $originalPath,
+                'proof_path'    => $proofPath,
+                'created_at'    => current_time('mysql'),
+                'attempts'      => 0,
+            ];
+
+            // Add to map so we don't add duplicates within this same batch
+            $existingMap[$proofPath] = true;
+            $changed = true;
+            $count++;
         }
 
-        $queue[] = [
-            'original_path' => $originalPath,
-            'proof_path'    => $proofPath,
-            'created_at'    => current_time('mysql'),
-            'attempts'      => 0,
-        ];
+        if ($changed) {
+            update_option(self::QUEUE_OPTION, $queue, false);
 
-        update_option(self::QUEUE_OPTION, $queue, false);
-
-        // Schedule immediate processing if not already scheduled
-        if (!wp_next_scheduled(self::CRON_HOOK)) {
-            wp_schedule_single_event(time(), self::CRON_HOOK);
+            if (!wp_next_scheduled(self::CRON_HOOK)) {
+                wp_schedule_single_event(time(), self::CRON_HOOK);
+            }
         }
     }
 
@@ -128,5 +179,22 @@ class ProofQueue
         }
 
         delete_transient(self::QUEUE_LOCK);
+    }
+
+    /**
+     * Get queue stats for backpressure signaling.
+     *
+     * @return array ['queued' => int, 'processing' => bool]
+     */
+    public static function getStats(): array
+    {
+        $queue = get_option(self::QUEUE_OPTION, []);
+        $count = is_array($queue) ? count($queue) : 0;
+        $processing = (bool) get_transient(self::QUEUE_LOCK);
+
+        return [
+            'queued'     => $count,
+            'processing' => $processing,
+        ];
     }
 }
