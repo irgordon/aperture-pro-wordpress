@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - 2026-01-17 23:35:24
 
 ### Added
+- **Payments:** Introduced Payment Abstraction Layer (Payment Provider Pattern) supporting multiple processors.
+- **Payments:** Added `PaymentProviderInterface`, `PaymentProviderFactory`, and DTOs (`PaymentIntentResult`, `WebhookEvent`, `PaymentUpdate`, `RefundResult`, `ProviderCapabilities`).
+- **Payments:** Added `StripeProvider` implementation (ported from legacy service) and skeleton providers for PayPal, Square, Authorize.net, Amazon Pay.
 - **Payments:** Formalized project-centric payments system in database (`booking_date`, `payment_status`, etc. in `ap_projects`).
 - **Payments:** Added `ap_payment_events` table for audit logging of payment webhooks and actions.
 - **Payments:** Implemented robust `PaymentService` with idempotency, detailed logging, and support for `payment_intent.succeeded`, `payment_failed`, and `refunded` webhooks.
@@ -27,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `getStats` method to all storage drivers for uniform health reporting.
 
 ### Changed
+- **Payments:** Refactored `PaymentService` to be provider-agnostic, delegating logic to drivers.
+- **Payments:** Updated `PaymentController` to support dynamic webhook routes `/webhooks/payment/{provider}`.
 - Performance: Refactored `ClientProofController::list_proofs` to use batch proof generation and caching, eliminating N+1 storage existence checks and redundant signing (approx 50x speedup for cold cache, instant for warm cache).
 - Performance: Offloaded proof generation to a background queue. Requests for missing proofs now return a placeholder immediately instead of blocking until generation completes.
 - Optimized `CloudinaryStorage::existsMany` to use the Admin API `resources` endpoint for true batch checking.
