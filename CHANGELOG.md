@@ -5,7 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-01-17 23:35:24
+## **[1.0.9] – Payment Abstraction Layer & Multi‑Provider Support** - 2026-01-18 10:05:24
+
+### **Added**
+- Introduced a full **Payment Abstraction Layer** under `src/Payments/`, including:
+  - `PaymentProviderInterface`
+  - `PaymentProviderFactory`
+  - Provider drivers directory (`Providers/`)
+  - DTOs for normalized payment events (`PaymentIntentResult`, `WebhookEvent`, `PaymentUpdate`, `RefundResult`)
+- Added dynamic webhook routing:
+  ```
+  POST /aperture/v1/webhooks/payment/{provider}
+  ```
+- Added verification test: `tests/verify_payment_abstraction.php`
+
+### **Changed**
+- Refactored `src/Services/PaymentService.php` to delegate all provider‑specific logic to the new abstraction layer.
+- Updated `src/REST/PaymentController.php` to support provider‑aware webhook handling and normalized event processing.
+- Updated Admin Command Center to use provider‑agnostic payment data.
+- Updated project payment fields to support multiple providers and normalized event states.
+
+### **Improved**
+- Payment event handling is now fully idempotent, auditable, and project‑centric.
+- Webhook processing is more resilient and easier to extend.
+- Admin UI Payment Summary card now displays normalized provider data and event timeline.
+
+### **Documentation**
+- Updated `README.md` with new file structure, Payment Abstraction Layer overview, and updated REST endpoints.
+
+## **[1.0.0]  - 2026-01-17 23:35:24
 
 ### Added
 - **Payments:** Introduced Payment Abstraction Layer (Payment Provider Pattern) supporting multiple processors.
