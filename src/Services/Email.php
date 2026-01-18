@@ -13,5 +13,8 @@ class Email implements ServiceInterface
 
         // Hook for transactional email queue
         add_action(EmailService::TRANSACTIONAL_CRON_HOOK, [EmailService::class, 'processTransactionalQueue']);
+
+        // Hook for payment received email
+        add_action('aperture_pro_payment_received', [EmailService::class, 'sendPaymentReceivedEmail']);
     }
 }

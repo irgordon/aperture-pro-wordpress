@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.12] – Client Copy & Notifications** - 2026-01-26 10:00:00
+
+### **Added**
+- **Frontend:** Created unified copy mapping at `assets/js/spa/copy/clientStates.js` for consistent client-facing messaging.
+- **Frontend:** Added React components for Client Portal integration: `PaymentStatusBanner`, `ProofGalleryStatusCard`, `DownloadStatusCard`, `OtpVerificationModal`.
+- **Frontend:** Added `useCommentToast` hook for feedback interactions.
+- **Emails:** Created `payment-received.php` and `download-expiring.php` email templates.
+- **Emails:** Added backend logic to send "Payment Received" confirmation via `aperture_pro_payment_received` hook.
+
+### **Changed**
+- **Emails:** Updated `proofs-ready.php`, `proofs-approved.php`, `final-gallery-ready.php`, and `otp.php` templates to match the new refined copy and tone.
+- **Emails:** Updated templates to support `{{studio_name}}` and streamlined placeholders.
+
 ## **[1.0.11] – Schema Updates & Payment Abstraction** - 2026-01-25 10:00:00
 
 ### **Changed**

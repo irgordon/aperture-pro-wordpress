@@ -36,6 +36,24 @@ class EmailService
      */
     public static function sendTemplate(string $templateName, $to, array $placeholders = [], array $headers = []): bool
     {
+        // Inject global defaults
+        if (!isset($placeholders['studio_name'])) {
+            $placeholders['studio_name'] = function_exists('aperture_pro')
+                ? (aperture_pro()->settings->get('studio_name') ?: get_option('blogname'))
+                : get_option('blogname');
+        }
+
+        // Backward compatibility mappings for new copy
+        if (isset($placeholders['portal_url']) && !isset($placeholders['proof_gallery_link'])) {
+            $placeholders['proof_gallery_link'] = $placeholders['portal_url'];
+        }
+        if (isset($placeholders['code']) && !isset($placeholders['otp_code'])) {
+            $placeholders['otp_code'] = $placeholders['code'];
+        }
+        if (isset($placeholders['gallery_url']) && !isset($placeholders['download_link'])) {
+            $placeholders['download_link'] = $placeholders['gallery_url'];
+        }
+
         $templateFile = self::TEMPLATE_PATH . $templateName . '.php';
         if (!file_exists($templateFile)) {
             Logger::log('error', 'email', 'Email template not found', ['template' => $templateName, 'notify_admin' => true]);
@@ -279,5 +297,38 @@ class EmailService
         }
 
         return str_replace($search, $replace, $text);
+    }
+
+    /**
+     * Send payment received email.
+     * Hooked to aperture_pro_payment_received.
+     */
+    public static function sendPaymentReceivedEmail(int $projectId): void
+    {
+        global $wpdb;
+
+        $projectTable = $wpdb->prefix . 'ap_projects';
+        $clientTable = $wpdb->prefix . 'ap_clients';
+
+        $data = $wpdb->get_row($wpdb->prepare(
+            "SELECT p.id, c.name as client_name, c.email as client_email
+             FROM $projectTable p
+             JOIN $clientTable c ON p.client_id = c.id
+             WHERE p.id = %d",
+            $projectId
+        ));
+
+        if (!$data || empty($data->client_email)) {
+            return;
+        }
+
+        $studioName = function_exists('aperture_pro')
+            ? (aperture_pro()->settings->get('studio_name') ?: get_option('blogname'))
+            : get_option('blogname');
+
+        self::sendTemplate('payment-received', $data->client_email, [
+            'client_name' => $data->client_name,
+            'studio_name' => $studioName,
+        ]);
     }
 }

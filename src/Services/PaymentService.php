@@ -223,8 +223,20 @@ class PaymentService
             ], 7 * 24 * 3600);
 
             $downloadUrl = add_query_arg('ap_download', $token, home_url('/'));
+
+            $studioName = function_exists('aperture_pro')
+                ? (aperture_pro()->settings->get('studio_name') ?: get_option('blogname'))
+                : get_option('blogname');
+
+            // Try to fetch real client name
+            $clientsTable = $wpdb->prefix . 'ap_clients';
+            $name = $wpdb->get_var($wpdb->prepare("SELECT name FROM $clientsTable WHERE email = %s", $email));
+            $clientName = $name ?: $email;
+
             EmailService::sendTemplate('final-gallery-ready', $email, [
-                'client_name' => $email,
+                'client_name' => $clientName,
+                'download_link' => $downloadUrl,
+                'studio_name' => $studioName,
                 'project_title' => $project->title ?? 'Your project',
                 'gallery_url' => $downloadUrl,
             ]);
