@@ -62,8 +62,20 @@ class OTPService
         }
 
         // Send OTP email (use EmailService template 'otp')
+        global $wpdb;
+        $clientsTable = $wpdb->prefix . 'ap_clients';
+        $name = $wpdb->get_var($wpdb->prepare("SELECT name FROM $clientsTable WHERE email = %s", $email));
+        $clientName = $name ?: 'Client';
+
+        $studioName = function_exists('aperture_pro')
+            ? (aperture_pro()->settings->get('studio_name') ?: get_option('blogname'))
+            : get_option('blogname');
+
         $placeholders = [
-            'code' => $code,
+            'otp_code' => $code, // Mapped to new template key
+            'client_name' => $clientName,
+            'studio_name' => $studioName,
+            'code' => $code, // Legacy fallback
             'context' => ucfirst($context),
             'expires_minutes' => intval(self::TTL / 60),
         ];
