@@ -51,12 +51,12 @@ class ThemeVariables
         );
 
         $fields = self::get_fields();
+        $opts = get_option(self::OPTION_KEY, []);
         foreach ($fields as $key => $meta) {
             add_settings_field(
                 $key,
                 $meta['label'],
-                function () use ($key, $meta) {
-                    $opts = get_option(self::OPTION_KEY, []);
+                function () use ($key, $meta, $opts) {
                     $value = $opts[$key] ?? $meta['default'];
                     $type = $meta['type'] ?? 'text';
                     printf(
