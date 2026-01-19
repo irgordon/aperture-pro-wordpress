@@ -165,7 +165,6 @@ class Workflow
     /**
      * Generate a download token for final gallery.
      *
-     * TODO: Replace transient-based tokens with ap_download_tokens table.
      */
     public static function generateDownloadTokenForProject(int $projectId): ?string
     {
@@ -187,17 +186,28 @@ class Workflow
             return null;
         }
 
-        $token = bin2hex(random_bytes(32));
+        $token          = bin2hex(random_bytes(32));
+        $downloadsTable = $wpdb->prefix . 'ap_download_tokens';
+        $expiresAt      = date('Y-m-d H:i:s', time() + 2 * HOUR_IN_SECONDS);
 
-        set_transient(
-            "ap_download_{$token}",
+        $inserted = $wpdb->insert(
+            $downloadsTable,
             [
-                'gallery_id' => $galleryId,
                 'project_id' => $projectId,
-                'created_at' => time(),
-            ],
-            2 * HOUR_IN_SECONDS
+                'gallery_id' => $galleryId,
+                'token'      => $token,
+                'expires_at' => $expiresAt,
+                'created_at' => current_time('mysql'),
+            ]
         );
+
+        if (!$inserted) {
+            Logger::log('error', 'workflow', 'Failed to insert download token', [
+                'project_id' => $projectId,
+                'error'      => $wpdb->last_error,
+            ]);
+            return null;
+        }
 
         Logger::log('info', 'workflow', 'Download token generated', [
             'project_id' => $projectId,
