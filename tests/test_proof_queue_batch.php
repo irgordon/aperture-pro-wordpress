@@ -78,5 +78,23 @@ namespace AperturePro\Test {
         exit(1);
     }
 
+    // 4. Test Queue Size Limit
+    echo "Test 4: Queue Size Limit\n";
+    $GLOBALS['mock_options'] = []; // Reset queue
+    $items4 = [];
+    for ($i = 0; $i < ProofQueue::MAX_QUEUE_SIZE + 50; $i++) {
+        $items4[] = ['original_path' => "orig{$i}.jpg", 'proof_path' => "proof{$i}.jpg"];
+    }
+    ProofQueue::enqueueBatch($items4);
+
+    $queue = \get_option(ProofQueue::QUEUE_OPTION);
+    if (count($queue) === ProofQueue::MAX_QUEUE_SIZE) {
+        echo "PASS\n";
+    } else {
+        echo "FAIL - Queue size is " . count($queue) . ", expected " . ProofQueue::MAX_QUEUE_SIZE . "\n";
+        print_r($queue);
+        exit(1);
+    }
+
     echo "ALL TESTS PASSED\n";
 }
