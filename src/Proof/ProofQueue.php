@@ -106,6 +106,49 @@ class ProofQueue
     }
 
     /**
+     * Enqueue multiple proofs for generation.
+     *
+     * @param array $items Array of ['original_path' => string, 'proof_path' => string]
+     */
+    public static function enqueueBatch(array $items): void
+    {
+        $queue = get_option(self::QUEUE_OPTION, []);
+        if (!is_array($queue)) {
+            $queue = [];
+        }
+
+        // Build lookup map for existing items to avoid O(N*M) complexity
+        $existingProofPaths = array_column($queue, 'proof_path');
+        $existingMap = array_flip($existingProofPaths);
+        $hasNew = false;
+
+        foreach ($items as $item) {
+            if (isset($existingMap[$item['proof_path']])) {
+                continue;
+            }
+
+            $queue[] = [
+                'original_path' => $item['original_path'],
+                'proof_path'    => $item['proof_path'],
+                'created_at'    => current_time('mysql'),
+                'attempts'      => 0,
+            ];
+
+            // Add to map to handle duplicates within the batch itself
+            $existingMap[$item['proof_path']] = true;
+            $hasNew = true;
+        }
+
+        if ($hasNew) {
+            update_option(self::QUEUE_OPTION, $queue, false);
+
+            if (!wp_next_scheduled(self::CRON_HOOK)) {
+                wp_schedule_single_event(time(), self::CRON_HOOK);
+            }
+        }
+    }
+
+    /**
      * Process the proof generation queue.
      * Called by WP Cron.
      */
