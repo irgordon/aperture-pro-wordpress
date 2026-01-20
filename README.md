@@ -25,9 +25,17 @@ Aperture Pro is a modern, production‑grade WordPress plugin built for photogra
 - Server‑side chunk assembly with watchdog cleanup  
 - Progress polling and resumability  
 
+### **Unified Upload Architecture**
+- Provider‑agnostic `UploaderInterface` for all storage backends  
+- Stream‑first uploads with automatic chunking or multipart fallback  
+- Centralized retry strategy with exponential backoff  
+- Explicit `UploadRequest` / `UploadResult` DTOs  
+- Provider‑specific optimizations without Storage API changes  
+
 ### **Storage Adapters**
 - Local storage with path‑hiding and signed URL proxying  
-- Cloudinary + ImageKit adapters  
+- S3 + CloudFront with multipart uploads  
+- Cloudinary and ImageKit adapters  
 - Extensible `StorageInterface` and `StorageFactory`  
 - Batch existence checks + batch URL signing  
 
@@ -36,8 +44,15 @@ Aperture Pro is a modern, production‑grade WordPress plugin built for photogra
 - Provider drivers (Stripe, PayPal, Square, Authorize.net, Amazon Pay)  
 - Secure webhook verification  
 - Normalized payment events via DTOs  
-- Automatic project status updates  
+- Automatic project status updates via workflow engine  
 - Admin “Payment Summary” card + timeline  
+
+### **Workflow Engine**
+- Idempotent project lifecycle transitions  
+- Proof approval → editing → delivery state management  
+- Payment‑driven state updates  
+- Event‑driven email and notification hooks  
+- Hardened against retries and webhook replay  
 
 ### **Admin UI**
 - Modern SaaS‑style settings and Command Center  
@@ -49,8 +64,9 @@ Aperture Pro is a modern, production‑grade WordPress plugin built for photogra
 ### **Observability & Safety**
 - Centralized logging  
 - Health Dashboard with modular cards  
+- Queue depth and performance metrics  
 - Queued admin email notifications  
-- Watchdog for stuck uploads and storage issues  
+- Watchdog for stuck uploads, proofs, and storage issues  
 
 ---
 
@@ -80,7 +96,7 @@ aperture-pro/
 │   ├── Health/
 │   ├── Helpers/
 │   ├── Installer/
-│   ├── Payments/                 # NEW — Payment Abstraction Layer
+│   ├── Payments/
 │   │   ├── DTO/
 │   │   ├── Providers/
 │   │   ├── PaymentProviderInterface.php
@@ -89,43 +105,26 @@ aperture-pro/
 │   ├── REST/
 │   ├── Services/
 │   ├── Storage/
-│   ├── Upload/
+│   │   ├── Upload/
+│   │   │   ├── UploaderInterface.php
+│   │   │   ├── UploadRequest.php
+│   │   │   ├── UploadResult.php
+│   │   │   ├── S3Uploader.php
+│   │   │   ├── CloudinaryUploader.php
+│   │   │   └── ImageKitUploader.php
+│   │   └── StorageFactory.php
 │   ├── Workflow/
 │   └── Loader.php
 │
 ├── assets/
 │   ├── css/
-│   │   ├── admin.css
-│   │   ├── health.css
-│   │   └── cards/
-│   │       └── performance.css
-│   │
 │   ├── js/
-│   │   ├── client-portal.js
-│   │   └── spa/
-│   │       ├── index.js
-│   │       ├── bootstrap.js
-│   │       ├── components/
-│   │       │   ├── hero.js
-│   │       │   ├── features.js
-│   │       │   ├── pricing.js
-│   │       │   ├── testimonials.js
-│   │       │   ├── faq.js
-│   │       │   ├── cta.js
-│   │       │   ├── PerformanceCard.js
-│   │       │   ├── StorageCard.js
-│   │       │   └── HealthDashboard.js
-│   │       │
-│   │       └── hooks/
-│   │           ├── usePerformanceMetrics.js
-│   │           └── useStorageMetrics.js
-│   │
 │   └── images/
 │
 └── tests/
-    ├── verify_theme_load.php
-    ├── benchmark_js_chunking.js
+    ├── verify_uploaders.php
     ├── verify_payment_abstraction.php
+    ├── benchmark_js_chunking.js
     └── phpunit.xml
 ```
 
@@ -195,7 +194,8 @@ aperture-pro-theme/
 
 ### **Storage**
 - **Local** — simplest; uses server disk  
-- **Cloudinary / ImageKit** — recommended for large galleries  
+- **S3 + CloudFront** — recommended for large ZIP deliveries  
+- **Cloudinary / ImageKit** — optimized for image‑heavy proof galleries  
 
 ### **Email**
 - Set a verified sender address for OTP + notifications  
@@ -254,9 +254,9 @@ POST /aperture/v1/projects/{id}/retry-payment
 - Encryption at rest for API keys + secrets  
 - Signed URLs for proofs + downloads  
 - Optional OTP verification  
-- Rate limiting for downloads + admin notifications  
+- Rate limiting for downloads and sensitive endpoints  
 - Session + email binding for download tokens  
-- Watchdog for stuck uploads  
+- REST middleware for request hygiene and abuse prevention  
 
 ---
 
@@ -264,18 +264,18 @@ POST /aperture/v1/projects/{id}/retry-payment
 
 ### **Client Assets**
 - `client-portal.js` — uploader, proofs, OTP, downloads  
-- SPA components for marketing + admin dashboards  
+- SPA components for marketing and admin dashboards  
 
 ### **Server Components**
-- Chunked upload handler  
-- Proof generation + batch signing  
+- Unified uploaders with retry + streaming  
+- Proof generation queue with batch enqueueing  
 - Payment Abstraction Layer  
-- Workflow engine  
-- REST controllers  
+- Workflow engine with idempotent transitions  
+- REST controllers with middleware stack  
 - Email queue + transactional delivery  
 
 ### **Extensibility**
-- Add new storage drivers via `StorageInterface`  
+- Add new storage providers via `UploaderInterface` + `StorageInterface`  
 - Add new payment providers via `PaymentProviderInterface`  
 - Add new admin cards via SPA component registry  
 
@@ -285,7 +285,7 @@ POST /aperture/v1/projects/{id}/retry-payment
 
 - **Proofs not generating** → check Imagick/GD  
 - **Webhook failures** → verify signature header  
-- **Upload issues** → check PHP limits  
+- **Upload issues** → check PHP limits and storage credentials  
 - **Download errors** → verify token + OTP  
 
 ---
@@ -297,6 +297,7 @@ Contributions welcome. High‑impact areas:
 - Additional payment providers  
 - Background ZIP generation  
 - Redis‑backed rate limiting  
+- Upload progress telemetry  
 - End‑to‑end upload/download tests  
 
 ---

@@ -5,6 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.23] – Signed URL Performance** - 2026-01-28 01:00:00
+
+### **Performance**
+- **Storage:** Implemented batch URL signing (`signMany`) across all storage drivers (`S3`, `Cloudinary`, `ImageKit`, `Local`) to significantly reduce overhead when rendering large galleries.
+- **Caching:** Added multi-layer caching for signed URLs (request-scoped + object cache) in `AbstractStorage`.
+- **S3:** Optimized `S3Storage` signing by removing redundant retry logic for local cryptographic operations, reducing CPU usage.
+- **Client Portal:** Refactored `PortalRenderer` to use batch signing, eliminating N+1 signing operations.
+
+## **[1.0.22] – Config Optimization** - 2026-01-28 00:00:00
+
+### **Performance**
+- **Config:** Optimized `Config::all()` to use static caching. This eliminates redundant `get_option` calls and array reconstruction on every access to configuration values, significantly reducing overhead in high-traffic code paths.
+
+## **[1.0.21] – Email Queue Performance** - 2026-01-27 23:00:00
+
+### **Performance**
+- **Emails:** Optimized transactional email queue processing to prevent PHP timeouts. Implemented time-aware loop that respects `max_execution_time` (with safety margin) and gracefully defers remaining emails to the next run.
+
+## **[1.0.20] – Admin Latency Optimization** - 2026-01-27 22:00:00
+
+### **Performance**
+- **Admin UI:** Removed blocking `sleep(1)` from `ajax_test_api_key` endpoint to free up PHP workers.
+- **Admin UI:** Moved simulated latency (UX delay) to client-side JavaScript to maintain the "testing" indicator without server overhead.
+
+## **[1.0.19] – Crypto Key Optimization** - 2026-01-27 21:00:00
+
+### **Performance**
+- **Crypto:** Optimized `Crypto::deriveKey` to cache the derived encryption key in a static property. This eliminates redundant SHA-256 hashing and constant lookups on every encryption/decryption operation, improving performance for high-throughput scenarios.
+
+## **[1.0.18] – Unified Uploader Abstraction** - 2026-01-27 20:00:00
+
+### **Infrastructure**
+- **Refactor:** Introduced internal `UploaderInterface` to unify upload mechanics (retries, chunking, streaming) across all storage providers.
+- **DTOs:** Added `UploadRequest` and `UploadResult` DTOs to standardize internal upload contracts.
+- **S3:** Implemented `S3Uploader` with automatic switching between streaming (`putObject`) and multipart uploads (`MultipartUploader`) based on file size (32MB threshold).
+- **Cloudinary:** Implemented `CloudinaryUploader` with standard `RetryExecutor` support and consistent 64MB chunking.
+- **ImageKit:** Refactored `ImageKitUploader` to implement `UploaderInterface` and use the unified DTOs.
+- **Verification:** Added `tests/verify_uploaders.php` to validate uploader behavior in isolation.
+
+## **[1.0.17] – ImageKit Hardening** - 2026-01-27 18:00:00
+
+### **Infrastructure**
+- **Storage:** Hardened `ImageKit` driver to behave as a first-class storage provider.
+- **Storage:** Implemented `Capabilities` probe to detect SDK stream support safely.
+- **Storage:** Added `ImageKitUploader` with a unified upload strategy: prefers streaming (constant memory), falls back to chunking (SDK-limited).
+- **Storage:** Introduced `RetryExecutor` (configurable backoff/jitter) and `ChunkedUploader` (memory-safe chunking) as reusable abstractions.
+- **Storage:** Added strict file size guards (500MB limit) and read checks.
+- **Refactor:** Updated `ImageKitStorage` to delegate uploads to the new hardening layer, eliminating legacy `file_get_contents` usage.
+
+## **[1.0.16] – REST Security Middleware** - 2026-01-27 16:00:00
+
+### **Security**
+- **Middleware:** Implemented a robust, stackable middleware layer for REST endpoints (`MiddlewareInterface`, `MiddlewareStack`).
+- **Rate Limiter:** Added a transient-based `RateLimiter` and `RateLimitMiddleware` to protect sensitive endpoints (e.g., magic link consumption) from abuse.
+- **Hygiene:** Added `RequestHygieneMiddleware` to block excessively large payloads and suspicious patterns (e.g., SQL injection attempts).
+- **Auth:** Secured `AuthController::consume_magic_link` with the new middleware stack (IP+Email rate limiting, payload hygiene).
+
+## **[1.0.15] – Proof Queue Optimization** - 2026-01-27 14:00:00
+
+### **Performance**
+- **Proof Queue:** Implemented `ProofQueue::enqueueBatch` to handle bulk proof generation requests with a single database write, eliminating N+1 overhead.
+- **Proof Queue:** Added idempotency guard (O(1) lookup) and batch size soft cap (250 items) to prevent duplicate work and memory spikes.
+- **Proof Queue:** Exposed `getStats()` for monitoring queue depth and processing status.
+- **Proofs:** Updated `ProofService::getProofUrls` to utilize batch queuing for missing proofs.
+- **Benchmark:** Achieved ~170x speedup in queue enqueue operations for batches of 200 items.
+
 ## **[1.0.14] – Optimized Proof Downloads** - 2026-01-27 12:00:00
 
 ### **Performance**

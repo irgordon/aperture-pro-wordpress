@@ -350,9 +350,6 @@ class AdminUI
             wp_send_json_error(['message' => 'Key appears too short'], 400);
         }
 
-        // Simulated test
-        sleep(1);
-
         $ok = stripos($key, 'live') !== false ||
               stripos($key, 'sk_') !== false ||
               stripos($key, 'cloud') !== false;

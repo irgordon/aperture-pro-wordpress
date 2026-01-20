@@ -3,6 +3,11 @@
 namespace AperturePro\REST;
 
 use WP_REST_Request;
+use WP_REST_Response;
+use AperturePro\REST\Middleware\MiddlewareStack;
+use AperturePro\REST\Middleware\RateLimitMiddleware;
+use AperturePro\REST\Middleware\RequestHygieneMiddleware;
+use AperturePro\Security\RateLimiter;
 use AperturePro\Auth\MagicLinkService;
 use AperturePro\Auth\CookieService;
 use AperturePro\Workflow\Workflow;
@@ -36,6 +41,17 @@ class AuthController extends BaseController
      */
     public function consume_magic_link(WP_REST_Request $request)
     {
+        $stack = new MiddlewareStack([
+            new RequestHygieneMiddleware(50_000),
+            // Limit: 5 attempts per 10 minutes per IP/Email
+            new RateLimitMiddleware(new RateLimiter(), 'magic_link_consume', 5, 600, 'ip+email'),
+        ]);
+
+        $blocked = $stack->run($request);
+        if ($blocked) {
+            return $this->as_response($blocked);
+        }
+
         return $this->with_error_boundary(function () use ($request) {
             $token = sanitize_text_field($request->get_param('token'));
 
@@ -100,5 +116,20 @@ class AuthController extends BaseController
                 'status'     => $status,
             ]);
         }, ['endpoint' => 'auth_session']);
+    }
+
+    private function as_response($blocked): WP_REST_Response
+    {
+        if ($blocked instanceof WP_REST_Response) {
+            return $blocked;
+        }
+
+        // WP_Error
+        $code = $blocked->get_error_code();
+        $message = $blocked->get_error_message();
+        $data = $blocked->get_error_data() ?? [];
+        $status = $data['status'] ?? 400;
+
+        return $this->respond_error($code, $message, $status, $data);
     }
 }

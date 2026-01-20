@@ -64,6 +64,22 @@ interface StorageInterface
     public function existsMany(array $targets): array;
 
     /**
+     * Sign a single path.
+     *
+     * @param string $path
+     * @return string|null
+     */
+    public function sign(string $path): ?string;
+
+    /**
+     * Sign multiple paths in a batch.
+     *
+     * @param array $paths
+     * @return array
+     */
+    public function signMany(array $paths): array;
+
+    /**
      * Return storage statistics for health + UI.
      *
      * Expected shape:

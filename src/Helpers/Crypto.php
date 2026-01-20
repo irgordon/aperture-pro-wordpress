@@ -23,6 +23,8 @@ class Crypto
     const OPENSSL_CIPHER = 'AES-256-CBC';
     const SODIUM_PREFIX = 'sodium:';
 
+    protected static $_key = null;
+
     /**
      * Derive a 32-byte key from WordPress secret constants.
      *
@@ -30,6 +32,10 @@ class Crypto
      */
     protected static function deriveKey(): string
     {
+        if (self::$_key !== null) {
+            return self::$_key;
+        }
+
         // Use WP salts if available; fall back to AUTH_KEY constant or site URL
         $parts = [];
         if (defined('AUTH_KEY')) {
@@ -50,7 +56,9 @@ class Crypto
 
         $seed = implode('|', $parts);
         // Use SHA-256 to derive 32 bytes
-        return hash('sha256', $seed, true);
+        self::$_key = hash('sha256', $seed, true);
+
+        return self::$_key;
     }
 
     /**

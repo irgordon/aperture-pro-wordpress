@@ -70,24 +70,22 @@ class DownloadController extends BaseController
             }
 
             // Resolve token payload
-            $transientKey = 'ap_download_' . $token;
-            $payload = get_transient($transientKey);
+            global $wpdb;
+            $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_download_tokens WHERE token = %s LIMIT 1", $token), ARRAY_A);
 
-            // Fallback to DB if transient missing
-            if (empty($payload)) {
-                global $wpdb;
-                $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_download_tokens WHERE token = %s LIMIT 1", $token), ARRAY_A);
-                if ($row) {
-                    $payload = [
-                        'gallery_id' => (int) $row['gallery_id'],
-                        'project_id' => (int) $row['project_id'],
-                        'email' => $row['email'] ?? null,
-                        'created_at' => strtotime($row['created_at']),
-                        'expires_at' => !empty($row['expires_at']) ? strtotime($row['expires_at']) : null,
-                        'require_otp' => !empty($row['require_otp']) ? (bool)$row['require_otp'] : false,
-                    ];
-                }
+            if ($row) {
+                $payload = [
+                    'gallery_id' => (int) $row['gallery_id'],
+                    'project_id' => (int) $row['project_id'],
+                    'email' => $row['email'] ?? null,
+                    'created_at' => strtotime($row['created_at']),
+                    'expires_at' => !empty($row['expires_at']) ? strtotime($row['expires_at']) : null,
+                    'require_otp' => !empty($row['require_otp']) ? (bool)$row['require_otp'] : false,
+                ];
+            } else {
+                $payload = null;
             }
+
 
             if (empty($payload) || !is_array($payload)) {
                 Logger::log('warning', 'download', 'Download token not found or expired', ['token' => $token]);
@@ -96,7 +94,6 @@ class DownloadController extends BaseController
 
             // Check expiry
             if (!empty($payload['expires_at']) && time() > (int)$payload['expires_at']) {
-                delete_transient($transientKey);
                 Logger::log('warning', 'download', 'Download token expired', ['token' => $token]);
                 return $this->respond_error('expired_token', 'This link has expired.', 410);
             }
@@ -169,21 +166,19 @@ class DownloadController extends BaseController
                 return $this->respond_error('missing_token', 'Token required.', 400);
             }
 
-            $transientKey = 'ap_download_' . $token;
-            $payload = get_transient($transientKey);
-            if (empty($payload)) {
-                global $wpdb;
-                $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_download_tokens WHERE token = %s LIMIT 1", $token), ARRAY_A);
-                if ($row) {
-                    $payload = [
-                        'gallery_id' => (int) $row['gallery_id'],
-                        'project_id' => (int) $row['project_id'],
-                        'email' => $row['email'] ?? null,
-                        'created_at' => strtotime($row['created_at']),
-                        'expires_at' => !empty($row['expires_at']) ? strtotime($row['expires_at']) : null,
-                        'require_otp' => !empty($row['require_otp']) ? (bool)$row['require_otp'] : false,
-                    ];
-                }
+            global $wpdb;
+            $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}ap_download_tokens WHERE token = %s LIMIT 1", $token), ARRAY_A);
+            if ($row) {
+                $payload = [
+                    'gallery_id' => (int) $row['gallery_id'],
+                    'project_id' => (int) $row['project_id'],
+                    'email' => $row['email'] ?? null,
+                    'created_at' => strtotime($row['created_at']),
+                    'expires_at' => !empty($row['expires_at']) ? strtotime($row['expires_at']) : null,
+                    'require_otp' => !empty($row['require_otp']) ? (bool)$row['require_otp'] : false,
+                ];
+            } else {
+                $payload = null;
             }
 
             if (empty($payload) || empty($payload['email'])) {
@@ -290,18 +285,6 @@ class DownloadController extends BaseController
                 Logger::log('error', 'download', 'Failed to persist download token', ['project_id' => $projectId, 'notify_admin' => true]);
                 return $this->respond_error('persist_failed', 'Could not create download token.', 500);
             }
-
-            // Also set transient for quick lookup
-            $transientKey = 'ap_download_' . $token;
-            $payload = [
-                'gallery_id' => $galleryId,
-                'project_id' => $projectId,
-                'email'      => $email,
-                'created_at' => time(),
-                'expires_at' => strtotime($expiresAt),
-                'require_otp' => true,
-            ];
-            set_transient($transientKey, $payload, 7 * 24 * 3600);
 
             $downloadUrl = add_query_arg('ap_download', $token, home_url('/'));
 

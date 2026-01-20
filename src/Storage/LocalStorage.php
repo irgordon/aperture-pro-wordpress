@@ -21,7 +21,7 @@ use AperturePro\Storage\Traits\Retryable;
  *  - Failures are logged via Logger::log and will trigger admin notification
  *    when appropriate.
  */
-class LocalStorage implements StorageInterface
+class LocalStorage extends AbstractStorage
 {
     use Retryable;
 
@@ -294,5 +294,19 @@ class LocalStorage implements StorageInterface
             $ip = $_SERVER['HTTP_CLIENT_IP'];
         }
         return $ip;
+    }
+
+    protected function signInternal(string $path): ?string
+    {
+        return $this->getUrl($path, ['signed' => true, 'expires' => 300]);
+    }
+
+    protected function signManyInternal(array $paths): array
+    {
+        $results = [];
+        foreach ($paths as $path) {
+            $results[$path] = $this->signInternal($path);
+        }
+        return $results;
     }
 }
