@@ -14,7 +14,7 @@ use AperturePro\Storage\Upload\UploadRequest;
  *
  * Minimal ImageKit driver.
  */
-class ImageKitStorage implements StorageInterface
+class ImageKitStorage extends AbstractStorage
 {
     use Retryable;
 
@@ -152,5 +152,19 @@ class ImageKitStorage implements StorageInterface
             'used_human'      => null,
             'available_human' => null,
         ];
+    }
+
+    protected function signInternal(string $path): ?string
+    {
+        return $this->getUrl($path, ['signed' => true, 'expires' => 300]);
+    }
+
+    protected function signManyInternal(array $paths): array
+    {
+        $results = [];
+        foreach ($paths as $path) {
+            $results[$path] = $this->signInternal($path);
+        }
+        return $results;
     }
 }

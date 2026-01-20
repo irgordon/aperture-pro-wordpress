@@ -114,6 +114,12 @@ class PortalRenderer
             $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$imagesTable} WHERE gallery_id = %d ORDER BY sort_order ASC, id ASC", (int)$gallery->id));
             $storage = StorageFactory::make();
 
+            // Collect paths once
+            $paths = array_map(static fn ($r) => $r->storage_key_original, $rows);
+
+            // Batch sign (request + cross-request cached)
+            $signedUrls = $storage->signMany($paths);
+
             foreach ($rows as $r) {
                 $comments = [];
                 if (!empty($r->client_comments)) {
@@ -123,12 +129,7 @@ class PortalRenderer
                     }
                 }
 
-                $url = null;
-                try {
-                    $url = $storage->getUrl($r->storage_key_original, ['signed' => true, 'expires' => 300]);
-                } catch (\Throwable $e) {
-                    Logger::log('warning', 'client_portal', 'Failed to get image URL', ['image_id' => $r->id, 'error' => $e->getMessage()]);
-                }
+                $url = $signedUrls[$r->storage_key_original] ?? null;
 
                 $context['images'][] = [
                     'id' => (int)$r->id,
