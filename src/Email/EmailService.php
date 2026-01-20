@@ -135,13 +135,28 @@ class EmailService
         $remaining = $queue; // The rest of the queue (if any)
         $maxRetries = 3;
 
+        $startTime = microtime(true);
+        $maxExecTime = (int)ini_get('max_execution_time');
+        $timeLimit = $maxExecTime ? ($maxExecTime * 0.8) : 45; // Default to 45s safety margin (under 60s lock)
+
+        $processedCount = 0;
         foreach ($batch as $item) {
+            // Check for timeout
+            if ((microtime(true) - $startTime) > $timeLimit) {
+                Logger::log('warning', 'email_queue', 'Time limit reached, deferring remaining emails', ['processed' => $processedCount, 'remaining' => count($batch) - $processedCount]);
+                // Prepend unprocessed items back to remaining queue to preserve order
+                $unprocessed = array_slice($batch, $processedCount);
+                $remaining = array_merge($unprocessed, $remaining);
+                break;
+            }
+
             $retries = $item['retries'] ?? 0;
 
             if ($retries >= $maxRetries) {
                 Logger::log('error', 'email_queue', 'Transactional email failed after max retries', ['to' => $item['to'], 'subject' => $item['subject'], 'notify_admin' => true]);
                 // Notify admin about the persistent failure
                 self::enqueueAdminNotification('error', 'email_queue', 'Transactional email failed permanently', ['item' => $item]);
+                $processedCount++;
                 continue; // Drop from queue
             }
 
@@ -153,6 +168,7 @@ class EmailService
                 $item['retries'] = $retries + 1;
                 $remaining[] = $item;
             }
+            $processedCount++;
         }
 
         update_option(self::TRANSACTIONAL_QUEUE_OPTION, $remaining, false);
