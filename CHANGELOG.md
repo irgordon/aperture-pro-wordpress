@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.27] – Lazy Hydration & Priority Loading** - 2026-01-28 04:00:00
+
+### **Performance**
+- **Frontend:** Implemented Lazy Hydration for SPA components using `IntersectionObserver`. Components now only load when they approach the viewport (with a 200px margin), significantly reducing initial bundle size and main-thread blocking time.
+- **Frontend:** Added `data-spa-priority="high"` support to force eager hydration for critical above-the-fold components (e.g., Hero sections).
+- **Frontend:** Added `requestIdleCallback` fallback to ensure non-visible components are eventually hydrated during browser idle periods, improving perceived performance on interaction.
+- **Frontend:** Added debug logging for hydration timing to assist in performance tuning.
+
 ## **[1.0.26] – ImageKit Batch Performance** - 2026-01-28 03:00:00
 
 ### **Performance**
