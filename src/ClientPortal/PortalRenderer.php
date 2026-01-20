@@ -123,9 +123,13 @@ class PortalRenderer
             foreach ($rows as $r) {
                 $comments = [];
                 if (!empty($r->client_comments)) {
-                    $decoded = json_decode($r->client_comments, true);
-                    if (is_array($decoded)) {
-                        $comments = $decoded;
+                    if ($r->client_comments === '[]') {
+                        // Optimization: Skip expensive json_decode for empty array
+                    } else {
+                        $decoded = json_decode($r->client_comments, true);
+                        if (is_array($decoded)) {
+                            $comments = $decoded;
+                        }
                     }
                 }
 
