@@ -5,9 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## **[1.0.31] – Optimize AdminUI Options
+## **[1.0.30] – Optimize AdminUI Options
 
-### Performance
+### **Performance
 - **Admin UI:** Implemented static caching for settings retrieval in `AdminUI`. This replaces ~20 redundant `get_option` calls (and associated deserialization overhead) per request with a single lookup, reducing memory usage and CPU cycles on the settings page.
 - **Proofs:** Optimized `ProofService::getProofUrls` to use a static request cache and batch URL signing (`signMany`). This eliminates redundant hashing within the same request and reduces the overhead of generating signed URLs for large galleries by batching the signing operations.
 - **Client Portal:** Cached the processed service worker (`sw.js`) file using the WordPress Transients API for one hour. This prevents the file from being read from disk and processed on every request, significantly improving performance and reducing server load.
