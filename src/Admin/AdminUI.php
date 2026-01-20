@@ -133,6 +133,11 @@ class AdminUI
         add_settings_field('cloud_api_key', 'Cloud API Key', [self::class, 'field_cloud_api_key'], self::PAGE_SLUG, 'aperture_pro_section_general');
         add_settings_field('cloudinary_api_secret', 'Cloudinary API Secret', [self::class, 'field_cloudinary_api_secret'], self::PAGE_SLUG, 'aperture_pro_section_general');
 
+        // ImageKit fields
+        add_settings_field('imagekit_public_key', 'ImageKit Public Key', [self::class, 'field_imagekit_public_key'], self::PAGE_SLUG, 'aperture_pro_section_general');
+        add_settings_field('imagekit_private_key', 'ImageKit Private Key', [self::class, 'field_imagekit_private_key'], self::PAGE_SLUG, 'aperture_pro_section_general');
+        add_settings_field('imagekit_url_endpoint', 'ImageKit URL Endpoint', [self::class, 'field_imagekit_url_endpoint'], self::PAGE_SLUG, 'aperture_pro_section_general');
+
         // AWS S3 + CloudFront fields
         add_settings_field('s3_bucket', 'S3 Bucket', [self::class, 'field_s3_bucket'], self::PAGE_SLUG, 'aperture_pro_section_general');
         add_settings_field('s3_region', 'S3 Region', [self::class, 'field_s3_region'], self::PAGE_SLUG, 'aperture_pro_section_general');
@@ -195,6 +200,19 @@ class AdminUI
         } else {
             $out['cloudinary_api_secret'] = $existing['cloudinary_api_secret'] ?? '';
         }
+
+        // ImageKit Public Key
+        $out['imagekit_public_key'] = sanitize_text_field($input['imagekit_public_key'] ?? '');
+
+        // ImageKit Private Key (encrypted)
+        if (!empty($input['imagekit_private_key'])) {
+            $out['imagekit_private_key'] = Crypto::encrypt(sanitize_text_field($input['imagekit_private_key']));
+        } else {
+            $out['imagekit_private_key'] = $existing['imagekit_private_key'] ?? '';
+        }
+
+        // ImageKit URL Endpoint
+        $out['imagekit_url_endpoint'] = esc_url_raw($input['imagekit_url_endpoint'] ?? '');
 
         // -----------------------------
         // AWS S3 + CLOUDFRONT
@@ -500,6 +518,46 @@ class AdminUI
                value=""
                class="regular-text"
                placeholder="<?php echo $hasKey ? '••••••••' : ''; ?>" />
+        <?php
+    }
+
+    public static function field_imagekit_public_key()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $value = $opts['imagekit_public_key'] ?? '';
+        ?>
+        <input type="text"
+               id="imagekit_public_key"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[imagekit_public_key]"
+               value="<?php echo esc_attr($value); ?>"
+               class="regular-text" />
+        <?php
+    }
+
+    public static function field_imagekit_private_key()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $hasKey = !empty($opts['imagekit_private_key']);
+        ?>
+        <input type="password"
+               id="imagekit_private_key"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[imagekit_private_key]"
+               value=""
+               class="regular-text"
+               placeholder="<?php echo $hasKey ? '••••••••' : ''; ?>" />
+        <?php
+    }
+
+    public static function field_imagekit_url_endpoint()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $value = $opts['imagekit_url_endpoint'] ?? '';
+        ?>
+        <input type="text"
+               id="imagekit_url_endpoint"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[imagekit_url_endpoint]"
+               value="<?php echo esc_attr($value); ?>"
+               class="regular-text" />
         <?php
     }
 

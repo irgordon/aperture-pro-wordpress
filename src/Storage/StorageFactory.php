@@ -86,11 +86,10 @@ class StorageFactory
 
     protected static function createImageKit(array $config): StorageInterface
     {
-        $publicKeyEnc  = $config['storage']['imagekit']['public_key'] ?? '';
+        $publicKey     = $config['storage']['imagekit']['public_key'] ?? '';
         $privateKeyEnc = $config['storage']['imagekit']['private_key'] ?? '';
         $urlEndpoint   = $config['storage']['imagekit']['url_endpoint'] ?? '';
 
-        $publicKey  = $publicKeyEnc ? Crypto::decrypt($publicKeyEnc) : null;
         $privateKey = $privateKeyEnc ? Crypto::decrypt($privateKeyEnc) : null;
 
         return new ImageKitStorage([

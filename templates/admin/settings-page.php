@@ -80,7 +80,7 @@ $nonce = wp_create_nonce(AdminUI::NONCE_ACTION);
                             <td><?php AdminUI::field_cloudinary_cloud_name(); ?></td>
                         </tr>
 
-                        <tr>
+                        <tr class="ap-cloudinary-field">
                             <th scope="row">
                                 <label for="cloud_api_key">Cloud API Key</label>
                             </th>
@@ -92,6 +92,27 @@ $nonce = wp_create_nonce(AdminUI::NONCE_ACTION);
                                 <label for="cloudinary_api_secret">API Secret</label>
                             </th>
                             <td><?php AdminUI::field_cloudinary_api_secret(); ?></td>
+                        </tr>
+
+                        <tr class="ap-imagekit-field">
+                            <th scope="row">
+                                <label for="imagekit_public_key">Public Key</label>
+                            </th>
+                            <td><?php AdminUI::field_imagekit_public_key(); ?></td>
+                        </tr>
+
+                        <tr class="ap-imagekit-field">
+                            <th scope="row">
+                                <label for="imagekit_private_key">Private Key</label>
+                            </th>
+                            <td><?php AdminUI::field_imagekit_private_key(); ?></td>
+                        </tr>
+
+                        <tr class="ap-imagekit-field">
+                            <th scope="row">
+                                <label for="imagekit_url_endpoint">URL Endpoint</label>
+                            </th>
+                            <td><?php AdminUI::field_imagekit_url_endpoint(); ?></td>
                         </tr>
                     </table>
                 </div>
