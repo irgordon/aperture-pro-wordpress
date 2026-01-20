@@ -184,6 +184,49 @@ class ProofService
     }
 
     /**
+     * Generate proofs in batch to optimize network I/O.
+     *
+     * @param array            $items   List of ['original_path' => ..., 'proof_path' => ...]
+     * @param StorageInterface $storage
+     * @return array Map of proof_path => bool (success/failure)
+     */
+    public static function generateBatch(array $items, StorageInterface $storage): array
+    {
+        $results = [];
+        $downloadMap = [];
+
+        // 1. Prepare Downloads
+        foreach ($items as $key => $item) {
+            $originalPath = $item['original_path'];
+            $downloadMap[$key] = $originalPath;
+        }
+
+        // 2. Batch Download (Parallel)
+        $tempFiles = self::downloadBatchToTemp($downloadMap, $storage);
+
+        // 3. Process & Upload
+        foreach ($items as $key => $item) {
+            $proofPath = $item['proof_path'];
+            $tempOriginal = $tempFiles[$key] ?? null;
+
+            if (!$tempOriginal || !file_exists($tempOriginal)) {
+                Logger::log('error', 'proofs', 'Missing original for batch item', ['path' => $item['original_path']]);
+                $results[$proofPath] = false;
+                continue;
+            }
+
+            // Process
+            $success = self::processAndUpload($tempOriginal, $proofPath, $storage);
+            $results[$proofPath] = $success;
+
+            // Cleanup temp original
+            @unlink($tempOriginal);
+        }
+
+        return $results;
+    }
+
+    /**
      * Generate a watermarked, low-resolution proof variant.
      *
      * SECURITY / UX:
@@ -211,32 +254,185 @@ class ProofService
                 return false;
             }
 
-            $tmpProof = self::createWatermarkedLowRes($tmpOriginal);
-
-            if (!$tmpProof || !is_readable($tmpProof)) {
-                Logger::log('error', 'proofs', 'Failed to create watermarked proof', [
-                    'originalPath' => $originalPath,
-                ]);
-                @unlink($tmpOriginal);
-                return false;
-            }
-
-            // Upload proof back to storage.
-            $storage->upload($tmpProof, $proofPath, [
-                'content_type' => 'image/jpeg',
-                'acl'          => 'private', // proofs should not be world-readable by default
-            ]);
+            $success = self::processAndUpload($tmpOriginal, $proofPath, $storage);
 
             @unlink($tmpOriginal);
-            @unlink($tmpProof);
-
-            return true;
+            return $success;
         } catch (\Throwable $e) {
             Logger::log('error', 'proofs', 'Exception during proof generation: ' . $e->getMessage(), [
                 'originalPath' => $originalPath,
             ]);
             return false;
         }
+    }
+
+    /**
+     * Process a local original file into a proof and upload it.
+     *
+     * @param string           $localOriginal Path to local source file
+     * @param string           $proofPath     Destination path
+     * @param StorageInterface $storage       Storage driver
+     * @return bool
+     */
+    protected static function processAndUpload(string $localOriginal, string $proofPath, StorageInterface $storage): bool
+    {
+        $tmpProof = self::createWatermarkedLowRes($localOriginal);
+
+        if (!$tmpProof || !is_readable($tmpProof)) {
+            Logger::log('error', 'proofs', 'Failed to create watermarked proof', [
+                'proofPath' => $proofPath,
+            ]);
+            return false;
+        }
+
+        // Upload proof back to storage.
+        try {
+            $storage->upload($tmpProof, $proofPath, [
+                'content_type' => 'image/jpeg',
+                'acl'          => 'private', // proofs should not be world-readable by default
+            ]);
+        } catch (\Throwable $e) {
+            Logger::log('error', 'proofs', 'Upload failed: ' . $e->getMessage());
+            @unlink($tmpProof);
+            return false;
+        }
+
+        @unlink($tmpProof);
+
+        return true;
+    }
+
+    /**
+     * Download multiple files to temporary locations, using parallel requests if possible.
+     *
+     * @param array            $paths   Map of key => remotePath
+     * @param StorageInterface $storage
+     * @return array Map of key => localTempPath
+     */
+    protected static function downloadBatchToTemp(array $paths, StorageInterface $storage): array
+    {
+        $results = []; // key => temp_path
+        $httpUrls = []; // key => url
+
+        foreach ($paths as $key => $remotePath) {
+            // 1. Local Storage Optimization
+            if ($storage instanceof \AperturePro\Storage\LocalStorage) {
+                $localPath = $storage->getLocalPath($remotePath);
+                if ($localPath && is_readable($localPath)) {
+                    $tmp = wp_tempnam('ap-proof-');
+                    if ($tmp && copy($localPath, $tmp)) {
+                        $results[$key] = $tmp;
+                        continue;
+                    }
+                }
+            }
+
+            // 2. Prepare for HTTP
+            try {
+                $httpUrls[$key] = $storage->getUrl($remotePath, ['signed' => true, 'expires' => 600]);
+            } catch (\Throwable $e) {
+                Logger::log('error', 'proofs', 'Failed to get URL for batch item', ['path' => $remotePath]);
+                continue;
+            }
+        }
+
+        if (empty($httpUrls)) {
+            return $results;
+        }
+
+        // 3. Parallel Download
+        $httpResults = self::performParallelDownloads($httpUrls);
+
+        return $results + $httpResults;
+    }
+
+    /**
+     * Perform parallel downloads using curl_multi.
+     *
+     * @param array $urls Map of key => URL
+     * @return array Map of key => localTempPath
+     */
+    protected static function performParallelDownloads(array $urls): array
+    {
+        if (!function_exists('curl_multi_init')) {
+            // Fallback to sequential
+            $results = [];
+            foreach ($urls as $key => $url) {
+                $tmp = wp_tempnam('ap-proof-');
+                $response = wp_remote_get($url, [
+                    'timeout'  => 60,
+                    'stream'   => true,
+                    'filename' => $tmp,
+                ]);
+                if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+                    $results[$key] = $tmp;
+                } else {
+                    @unlink($tmp);
+                }
+            }
+            return $results;
+        }
+
+        $mh = curl_multi_init();
+        $handles = [];
+        $files = []; // key => [path, resource]
+        $results = [];
+
+        foreach ($urls as $key => $url) {
+            $tmp = wp_tempnam('ap-proof-');
+            $fp = fopen($tmp, 'w+');
+            if (!$fp) {
+                continue;
+            }
+
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+            curl_setopt($ch, CURLOPT_FILE, $fp);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+
+            curl_multi_add_handle($mh, $ch);
+            $handles[$key] = $ch;
+            $files[$key] = ['path' => $tmp, 'fp' => $fp];
+        }
+
+        $active = null;
+        do {
+            $mrc = curl_multi_exec($mh, $active);
+        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+        while ($active && $mrc == CURLM_OK) {
+            if (curl_multi_select($mh) == -1) {
+                usleep(100);
+            }
+            do {
+                $mrc = curl_multi_exec($mh, $active);
+            } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+        }
+
+        // Collect results
+        foreach ($handles as $key => $ch) {
+            $info = curl_getinfo($ch);
+            $error = curl_error($ch);
+
+            // Close file handle first to flush
+            if (isset($files[$key]['fp']) && is_resource($files[$key]['fp'])) {
+                fclose($files[$key]['fp']);
+            }
+
+            if ($info['http_code'] == 200 && empty($error)) {
+                $results[$key] = $files[$key]['path'];
+            } else {
+                Logger::log('error', 'proofs', 'Parallel download failed', ['url' => $urls[$key], 'code' => $info['http_code'], 'curl_error' => $error]);
+                @unlink($files[$key]['path']);
+            }
+
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+        }
+
+        curl_multi_close($mh);
+
+        return $results;
     }
 
     /**

@@ -128,27 +128,23 @@ class ProofQueue
         $batch = array_splice($queue, 0, self::MAX_PER_RUN);
         $remaining = $queue;
 
-        $storage = null;
+        try {
+            $storage = StorageFactory::create();
+        } catch (\Throwable $e) {
+            Logger::log('error', 'proof_queue', 'Failed to init storage', ['error' => $e->getMessage()]);
+            // If storage fails, put items back without penalty and abort
+            $remaining = array_merge($batch, $remaining);
+            update_option(self::QUEUE_OPTION, $remaining, false);
+            delete_transient(self::QUEUE_LOCK);
+            return;
+        }
 
-        foreach ($batch as $item) {
-            // Lazy load storage only if we have items
-            if (!$storage) {
-                try {
-                    $storage = StorageFactory::create();
-                } catch (\Throwable $e) {
-                    Logger::log('error', 'proof_queue', 'Failed to init storage', ['error' => $e->getMessage()]);
-                    // If storage fails, put items back and abort
-                    $remaining = array_merge($batch, $remaining);
-                    break;
-                }
-            }
+        try {
+            $results = ProofService::generateBatch($batch, $storage);
 
-            $originalPath = $item['original_path'];
-            $proofPath    = $item['proof_path'];
-
-            try {
-                // generateProofVariant is now public (will be updated)
-                $success = ProofService::generateProofVariant($originalPath, $proofPath, $storage);
+            foreach ($batch as $item) {
+                $proofPath = $item['proof_path'];
+                $success   = $results[$proofPath] ?? false;
 
                 if ($success) {
                     Logger::log('info', 'proof_queue', 'Generated proof in background', ['proof' => $proofPath]);
@@ -161,8 +157,11 @@ class ProofQueue
                         Logger::log('error', 'proof_queue', 'Failed to generate proof after retries', ['proof' => $proofPath]);
                     }
                 }
-            } catch (\Throwable $e) {
-                Logger::log('error', 'proof_queue', 'Exception generating proof', ['proof' => $proofPath, 'error' => $e->getMessage()]);
+            }
+        } catch (\Throwable $e) {
+            Logger::log('error', 'proof_queue', 'Batch processing exception', ['error' => $e->getMessage()]);
+            // If batch fails unexpectedly, retry eligible items
+            foreach ($batch as $item) {
                 $item['attempts']++;
                 if ($item['attempts'] < 3) {
                     $remaining[] = $item;
