@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rate Limit:** Added `expose_rate_limit_headers` setting to `AdminUI` and `Config`.
 - **Middleware:** Updated `RateLimitMiddleware` to conditionally expose `X-RateLimit-*` headers based on the configuration, aiding client-side debugging without leaking internal limits by default.
 
+## **[1.0.31] – Native GD Loader Optimization** - 2026-01-28 08:00:00
+
+### **Performance**
+- **Proofs:** Optimized `ProofService::createWatermarkedLowRes` to use native GD image loaders (JPEG, PNG, WebP) where available. This avoids loading the entire source file into a PHP string variable (via `file_get_contents`), significantly reducing memory overhead and blocking I/O for large local files.
+- **Proofs:** Retained a robust fallback to string-based loading for unsupported types or when specific loaders fail.
+
 ## **[1.0.30] – Optimize AdminUI Options
 
 ### **Performance

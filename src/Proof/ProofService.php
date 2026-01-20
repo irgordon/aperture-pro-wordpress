@@ -571,13 +571,35 @@ class ProofService
 
         // GD fallback.
         try {
-            $srcData = file_get_contents($localOriginal);
-            if ($srcData === false) {
-                @unlink($tmp);
-                return null;
+            $src = null;
+
+            // PERFORMANCE: Try to identify image type and use specific loader to avoid
+            // loading the entire file string into memory (which file_get_contents does).
+            $size = @getimagesize($localOriginal);
+            if ($size !== false) {
+                switch ($size[2]) {
+                    case IMAGETYPE_JPEG:
+                        $src = imagecreatefromjpeg($localOriginal);
+                        break;
+                    case IMAGETYPE_PNG:
+                        $src = imagecreatefrompng($localOriginal);
+                        break;
+                    case IMAGETYPE_WEBP:
+                        if (function_exists('imagecreatefromwebp')) {
+                            $src = imagecreatefromwebp($localOriginal);
+                        }
+                        break;
+                }
             }
 
-            $src = imagecreatefromstring($srcData);
+            // Fallback to string loading if type not detected or specific loader failed/not supported
+            if (!$src) {
+                $srcData = file_get_contents($localOriginal);
+                if ($srcData !== false) {
+                    $src = imagecreatefromstring($srcData);
+                }
+            }
+
             if (!$src) {
                 @unlink($tmp);
                 return null;
