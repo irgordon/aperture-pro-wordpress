@@ -138,8 +138,87 @@ class ImageKitStorage extends AbstractStorage
     {
         $results = [];
         foreach ($targets as $target) {
-            $results[$target] = $this->exists($target);
+            $results[$target] = false;
         }
+
+        // Group targets by directory to use path-scoped searching
+        $byDir = [];
+        foreach ($targets as $target) {
+            $dir = dirname($target);
+            if ($dir === '.' || $dir === '\\') {
+                $dir = '';
+            }
+            // Normalize: ImageKit paths usually start with /
+            if ($dir !== '' && $dir !== '/' && strpos($dir, '/') !== 0) {
+                $dir = '/' . $dir;
+            }
+            // Ensure root is just /
+            if ($dir === '') {
+                $dir = '/';
+            }
+            $byDir[$dir][] = $target;
+        }
+
+        foreach ($byDir as $dir => $files) {
+            // Chunk files to avoid exceeding URL/query limits
+            $chunks = array_chunk($files, 20);
+
+            foreach ($chunks as $chunk) {
+                try {
+                    // Construct search query: name="file1.jpg" OR name="file2.jpg"
+                    $names = array_map(fn($f) => basename($f), $chunk);
+                    $queryParts = [];
+                    foreach ($names as $name) {
+                        // Simple quote escaping for safety
+                        $safeName = str_replace('"', '\"', $name);
+                        $queryParts[] = 'name="' . $safeName . '"';
+                    }
+                    $searchQuery = implode(' OR ', $queryParts);
+
+                    // Use listFiles with path scope and search query
+                    $response = $this->client->listFiles([
+                        'path' => $dir,
+                        'searchQuery' => $searchQuery,
+                        // Add a small buffer to limit just in case of duplicates or odd behavior
+                        'limit' => count($chunk) + 5
+                    ]);
+
+                    // Parse response
+                    $foundItems = [];
+                    // Handle different potential response structures (array or object wrapper)
+                    if (is_object($response) && isset($response->result)) {
+                        $foundItems = $response->result;
+                    } elseif (is_array($response)) {
+                        $foundItems = $response;
+                    } elseif (is_object($response)) {
+                        // Some SDKs return iterable object
+                        $foundItems = $response;
+                    }
+
+                    if ($foundItems) {
+                        foreach ($foundItems as $item) {
+                            $itemName = is_object($item) ? ($item->name ?? '') : ($item['name'] ?? '');
+                            if ($itemName) {
+                                // Match back to targets in this chunk
+                                foreach ($chunk as $target) {
+                                    if (basename($target) === $itemName) {
+                                        $results[$target] = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                } catch (\Throwable $e) {
+                    Logger::log('warning', 'imagekit', 'Batch exists check failed, falling back to sequential', ['error' => $e->getMessage()]);
+                    // Fallback to sequential checks for this chunk
+                    foreach ($chunk as $target) {
+                        $results[$target] = $this->exists($target);
+                    }
+                }
+            }
+        }
+
         return $results;
     }
 
