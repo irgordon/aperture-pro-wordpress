@@ -35,6 +35,20 @@ class AdminUI
     /** Nonce action for AJAX security */
     const NONCE_ACTION = 'aperture_pro_admin_nonce';
 
+    /** Local cache for settings */
+    private static $_options = null;
+
+    /**
+     * Get settings with static caching.
+     */
+    private static function get_options()
+    {
+        if (self::$_options === null) {
+            self::$_options = get_option(self::OPTION_KEY, []);
+        }
+        return self::$_options;
+    }
+
     /**
      * Initialize all admin hooks.
      */
@@ -166,6 +180,9 @@ class AdminUI
      */
     public static function sanitize_options($input)
     {
+        // Invalidate cache
+        self::$_options = null;
+
         $out = [];
 
         // -----------------------------
@@ -349,7 +366,7 @@ class AdminUI
      */
     public static function render_settings_page()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         include __DIR__ . '/../../templates/admin/settings-page.php';
     }
 
@@ -437,7 +454,7 @@ class AdminUI
 
     public static function field_storage_driver()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['storage_driver'] ?? 'local';
         ?>
         <select id="storage_driver" name="<?php echo esc_attr(self::OPTION_KEY); ?>[storage_driver]">
@@ -452,7 +469,7 @@ class AdminUI
 
     public static function field_local_storage_path()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['local_storage_path'] ?? '';
         ?>
         <input type="text" id="local_storage_path"
@@ -465,7 +482,7 @@ class AdminUI
 
     public static function field_cloud_provider()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['cloud_provider'] ?? 'none';
         ?>
         <select id="cloud_provider" name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloud_provider]">
@@ -479,7 +496,7 @@ class AdminUI
 
     public static function field_cloud_api_key()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $hasKey = !empty($opts['cloud_api_key']);
         ?>
         <input type="password"
@@ -496,7 +513,7 @@ class AdminUI
 
     public static function field_cloudinary_cloud_name()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['cloudinary_cloud_name'] ?? '';
         ?>
         <input type="text"
@@ -509,7 +526,7 @@ class AdminUI
 
     public static function field_cloudinary_api_secret()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $hasKey = !empty($opts['cloudinary_api_secret']);
         ?>
         <input type="password"
@@ -523,7 +540,7 @@ class AdminUI
 
     public static function field_imagekit_public_key()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['imagekit_public_key'] ?? '';
         ?>
         <input type="text"
@@ -536,7 +553,7 @@ class AdminUI
 
     public static function field_imagekit_private_key()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $hasKey = !empty($opts['imagekit_private_key']);
         ?>
         <input type="password"
@@ -550,7 +567,7 @@ class AdminUI
 
     public static function field_imagekit_url_endpoint()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['imagekit_url_endpoint'] ?? '';
         ?>
         <input type="text"
@@ -567,7 +584,7 @@ class AdminUI
 
     public static function field_s3_bucket()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['s3_bucket'] ?? '';
         ?>
         <input type="text" id="s3_bucket"
@@ -580,7 +597,7 @@ class AdminUI
 
     public static function field_s3_region()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['s3_region'] ?? '';
         ?>
         <input type="text" id="s3_region"
@@ -592,7 +609,7 @@ class AdminUI
 
     public static function field_s3_access_key()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $hasKey = !empty($opts['s3_access_key']);
         ?>
         <input type="password" id="s3_access_key"
@@ -605,7 +622,7 @@ class AdminUI
 
     public static function field_s3_secret_key()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $hasKey = !empty($opts['s3_secret_key']);
         ?>
         <input type="password" id="s3_secret_key"
@@ -618,7 +635,7 @@ class AdminUI
 
     public static function field_cloudfront_domain()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['cloudfront_domain'] ?? '';
         ?>
         <input type="text" id="cloudfront_domain"
@@ -630,7 +647,7 @@ class AdminUI
 
     public static function field_cloudfront_key_pair_id()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['cloudfront_key_pair_id'] ?? '';
         ?>
         <input type="text" id="cloudfront_key_pair_id"
@@ -642,7 +659,7 @@ class AdminUI
 
     public static function field_cloudfront_private_key()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $hasKey = !empty($opts['cloudfront_private_key']);
         ?>
         <textarea id="cloudfront_private_key"
@@ -655,7 +672,7 @@ class AdminUI
 
     public static function field_email_sender()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = $opts['email_sender'] ?? get_option('admin_email');
         ?>
         <input type="email" id="email_sender"
@@ -667,7 +684,7 @@ class AdminUI
 
     public static function field_webhook_secret()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $hasKey = !empty($opts['webhook_secret']);
         ?>
         <input type="password" id="webhook_secret"
@@ -681,7 +698,7 @@ class AdminUI
 
     public static function field_require_otp()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = !empty($opts['require_otp']);
         ?>
         <label>
@@ -694,7 +711,7 @@ class AdminUI
 
     public static function field_theme_overrides()
     {
-        $opts = get_option(self::OPTION_KEY, []);
+        $opts = self::get_options();
         $value = !empty($opts['theme_overrides']);
         ?>
         <label>
