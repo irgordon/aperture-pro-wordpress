@@ -73,11 +73,25 @@ $nonce = wp_create_nonce(AdminUI::NONCE_ACTION);
                             <td><?php AdminUI::field_cloud_provider(); ?></td>
                         </tr>
 
+                        <tr class="ap-cloudinary-field">
+                            <th scope="row">
+                                <label for="cloudinary_cloud_name">Cloud Name</label>
+                            </th>
+                            <td><?php AdminUI::field_cloudinary_cloud_name(); ?></td>
+                        </tr>
+
                         <tr>
                             <th scope="row">
                                 <label for="cloud_api_key">Cloud API Key</label>
                             </th>
                             <td><?php AdminUI::field_cloud_api_key(); ?></td>
+                        </tr>
+
+                        <tr class="ap-cloudinary-field">
+                            <th scope="row">
+                                <label for="cloudinary_api_secret">API Secret</label>
+                            </th>
+                            <td><?php AdminUI::field_cloudinary_api_secret(); ?></td>
                         </tr>
                     </table>
                 </div>
