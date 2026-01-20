@@ -6,11 +6,16 @@
 export function bootstrapSPA() {
   const components = document.querySelectorAll('[data-spa-component]');
 
-  components.forEach((component) => {
+  /**
+   * Hydrates a single component.
+   * @param {HTMLElement} component - The DOM element to hydrate.
+   * @param {string} reason - The trigger reason (e.g., 'high-priority', 'visible', 'idle').
+   */
+  const hydrateComponent = (component, reason) => {
     const type = component.getAttribute('data-spa-component');
 
-    // Prevent double hydration
-    if (component.dataset.spaHydrated === 'true') return;
+    // Prevent double hydration and race conditions
+    if (component.dataset.spaHydrated === 'true' || component.dataset.spaHydrated === 'hydrating') return;
 
     // Defensive: skip empty or malformed component names
     if (!type || typeof type !== 'string') {
@@ -18,8 +23,13 @@ export function bootstrapSPA() {
       return;
     }
 
-    // Mark as "hydrating" to avoid race conditions
+    // Mark as "hydrating" immediately
     component.dataset.spaHydrated = 'hydrating';
+
+    // Debug logging for hydration timing
+    if (reason) {
+      console.debug(`[Aperture SPA] Hydrating ${type}. Reason: ${reason} at ${performance.now().toFixed(2)}ms`);
+    }
 
     // Dynamic import of component module
     import(`./components/${type}.js`)
@@ -43,5 +53,51 @@ export function bootstrapSPA() {
         console.error(`[Aperture SPA] Failed to load component: ${type}`, err);
         component.dataset.spaHydrated = 'error';
       });
+  };
+
+  // Setup IntersectionObserver for lazy loading
+  const observerOptions = {
+    rootMargin: '200px 0px', // Pre-load 200px before viewport
+    threshold: 0.01
+  };
+
+  let observer;
+  if ('IntersectionObserver' in window) {
+    observer = new IntersectionObserver((entries, obs) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          hydrateComponent(entry.target, 'visible');
+          obs.unobserve(entry.target);
+        }
+      });
+    }, observerOptions);
+  }
+
+  components.forEach((component) => {
+    const priority = component.getAttribute('data-spa-priority');
+
+    // 1. High Priority: Hydrate immediately
+    if (priority === 'high') {
+      hydrateComponent(component, 'high-priority');
+      return;
+    }
+
+    // 2. Standard Priority: Use IntersectionObserver
+    if (observer) {
+      observer.observe(component);
+    } else {
+      // Fallback: Hydrate immediately if no observer support
+      hydrateComponent(component, 'fallback-immediate');
+      return; // Skip idle callback if we already hydrated
+    }
+
+    // 3. Idle Fallback: Hydrate when browser is idle (for non-visible components)
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => {
+        hydrateComponent(component, 'idle');
+        // If we hydrated via idle, we can stop observing
+        if (observer) observer.unobserve(component);
+      }, { timeout: 4000 }); // Ensure it runs eventually
+    }
   });
 }
