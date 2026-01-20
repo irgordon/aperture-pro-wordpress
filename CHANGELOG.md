@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 - **Client Portal:** Cached the processed service worker (`sw.js`) file using the WordPress Transients API for one hour. This prevents the file from being read from disk and processed on every request, significantly improving performance and reducing server load.
+- **Client Portal:** Optimized `PortalRenderer::gatherContext` to skip expensive `json_decode` operations for images with empty comments (`[]`), reducing CPU overhead when rendering large galleries.
 
 ## **[1.0.29] – Event Bus System** - 2026-01-28 06:00:00
 
