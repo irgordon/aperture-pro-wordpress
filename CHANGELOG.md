@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.21] – Email Queue Performance** - 2026-01-27 23:00:00
+
+### **Performance**
+- **Emails:** Optimized transactional email queue processing to prevent PHP timeouts. Implemented time-aware loop that respects `max_execution_time` (with safety margin) and gracefully defers remaining emails to the next run.
+
 ## **[1.0.20] – Admin Latency Optimization** - 2026-01-27 22:00:00
 
 ### **Performance**
