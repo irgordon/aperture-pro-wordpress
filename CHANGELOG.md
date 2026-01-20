@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.25] – ImageKit Decoupling** - 2026-01-28 02:00:00
+
+### **Added**
+- **Admin UI:** Added dedicated configuration fields for ImageKit (`public_key`, `private_key`, `url_endpoint`) to support simultaneous Cloudinary and ImageKit configuration.
+- **Admin UI:** Implemented dynamic visibility toggling for provider-specific fields based on the selected storage driver.
+- **Config:** Updated `Config::all()` to map the new ImageKit settings, decoupling them from the shared `cloud_api_key`.
+
 ## **[1.0.24] – Cloudinary Config Fields** - 2026-01-28 01:00:00
 
 ### **Added**

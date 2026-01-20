@@ -50,6 +50,12 @@
         cloudinaryFields.forEach(el => {
           el.style.display = showCloudinary ? '' : 'none';
         });
+
+        const imagekitFields = $all('.ap-imagekit-field', cloudSettings);
+        const showImageKit = val === 'imagekit';
+        imagekitFields.forEach(el => {
+          el.style.display = showImageKit ? '' : 'none';
+        });
       }
       if (s3Settings) {
         s3Settings.style.display = val === 's3' ? '' : 'none';

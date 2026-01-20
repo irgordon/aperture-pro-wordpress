@@ -121,9 +121,9 @@ class Config
                 ],
 
                 'imagekit' => [
-                    // TODO: ImageKit currently reuses cloud_api_key.
-                    // AdminUI must be expanded before supporting Cloudinary + ImageKit simultaneously.
-                    'private_key' => $settings['cloud_api_key'] ?? '',
+                    'public_key'   => $settings['imagekit_public_key'] ?? '',
+                    'private_key'  => $settings['imagekit_private_key'] ?? '',
+                    'url_endpoint' => $settings['imagekit_url_endpoint'] ?? '',
                 ],
             ],
 
