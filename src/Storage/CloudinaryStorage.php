@@ -14,7 +14,7 @@ use AperturePro\Storage\Upload\UploadRequest;
  * Cloudinary storage driver.
  * Uses Cloudinary PHP SDK.
  */
-class CloudinaryStorage implements StorageInterface
+class CloudinaryStorage extends AbstractStorage
 {
     use Retryable;
 
@@ -242,5 +242,19 @@ class CloudinaryStorage implements StorageInterface
                 'available_human' => null,
             ];
         }
+    }
+
+    protected function signInternal(string $path): ?string
+    {
+        return $this->getUrl($path, ['signed' => true]);
+    }
+
+    protected function signManyInternal(array $paths): array
+    {
+        $results = [];
+        foreach ($paths as $path) {
+            $results[$path] = $this->signInternal($path);
+        }
+        return $results;
     }
 }

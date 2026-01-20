@@ -26,6 +26,11 @@ final class Schema
 
         self::upgrade_from($installed);
 
+        // Clear object cache on version upgrade to invalidate old signed URLs if schema/logic changes
+        if (function_exists('wp_cache_flush')) {
+            wp_cache_flush();
+        }
+
         update_option(self::DB_VERSION_OPTION, self::DB_VERSION, true);
     }
 
