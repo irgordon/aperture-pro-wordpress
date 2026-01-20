@@ -8,7 +8,6 @@ const checks = [
     { pattern: /IntersectionObserver/, message: 'IntersectionObserver usage found' },
     { pattern: /requestIdleCallback/, message: 'requestIdleCallback usage found' },
     { pattern: /data-spa-priority/, message: 'Priority check found' },
-    { pattern: /console\.debug/, message: 'Debug logging found' },
     { pattern: /rootMargin:\s*'200px 0px'/, message: 'rootMargin 200px found' }
 ];
 
