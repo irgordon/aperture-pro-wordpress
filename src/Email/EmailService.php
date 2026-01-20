@@ -139,7 +139,21 @@ class EmailService
         $maxExecTime = (int)ini_get('max_execution_time');
         $timeLimit = $maxExecTime ? ($maxExecTime * 0.8) : 45; // Default to 45s safety margin (under 60s lock)
 
+        // Optimization: Use SMTP KeepAlive to reuse connection
+        $keepAliveInit = function ($mailer) {
+            $mailer->SMTPKeepAlive = true;
+        };
+        add_action('phpmailer_init', $keepAliveInit);
+
         $processedCount = 0;
+        $phpmailerInstance = null;
+
+        // Capture the mailer instance to close connection later
+        $captureInstance = function ($mailer) use (&$phpmailerInstance) {
+            $phpmailerInstance = $mailer;
+        };
+        add_action('phpmailer_init', $captureInstance);
+
         foreach ($batch as $item) {
             // Check for timeout
             if ((microtime(true) - $startTime) > $timeLimit) {
@@ -170,6 +184,13 @@ class EmailService
             }
             $processedCount++;
         }
+
+        // Cleanup: Close SMTP connection and remove hooks
+        if ($phpmailerInstance) {
+            $phpmailerInstance->smtpClose();
+        }
+        remove_action('phpmailer_init', $keepAliveInit);
+        remove_action('phpmailer_init', $captureInstance);
 
         update_option(self::TRANSACTIONAL_QUEUE_OPTION, $remaining, false);
 
