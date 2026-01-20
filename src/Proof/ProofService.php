@@ -45,11 +45,21 @@ class ProofService
      */
     public static function getProofUrls(array $images, ?StorageInterface $storage = null): array
     {
-        // 1. Try Cache
+        // 0. Static Request Cache (Fastest)
+        // Avoids re-hashing and transient lookup within the same request.
+        static $requestCache = [];
+
         // We use a hash of the images array as the key to ensure we return the correct set.
         $cacheKey = ProofCache::generateKey('batch', $images);
+
+        if (isset($requestCache[$cacheKey])) {
+            return $requestCache[$cacheKey];
+        }
+
+        // 1. Try Persistent Cache (Transient)
         $cached = ProofCache::get($cacheKey);
         if ($cached !== null) {
+            $requestCache[$cacheKey] = $cached;
             return $cached;
         }
 
@@ -61,7 +71,7 @@ class ProofService
         $originalPaths = [];
         $urls = [];
 
-        // 1. Calculate paths
+        // 2. Calculate paths
         foreach ($images as $key => $image) {
             $originalPath = $image['path'] ?? $image['filename'] ?? null;
             if ($originalPath) {
@@ -74,12 +84,13 @@ class ProofService
             return [];
         }
 
-        // 2. Batch check existence
+        // 3. Batch check existence
         $pathsToCheck = array_unique(array_values($proofPaths));
         $existenceMap = $storage->existsMany($pathsToCheck);
 
-        // 3. Process results
+        // 4. Identify Existing vs Missing
         $toEnqueue = [];
+        $existingPaths = [];
 
         foreach ($proofPaths as $key => $proofPath) {
             $exists = $existenceMap[$proofPath] ?? false;
@@ -96,18 +107,31 @@ class ProofService
                 // Return placeholder
                 $urls[$key] = self::getPlaceholderUrl();
             } else {
-                // 4. Get URL
-                $urls[$key] = $storage->getUrl($proofPath, ['signed' => true, 'expires' => 3600]);
+                // Mark for batch signing
+                $existingPaths[$proofPath] = $proofPath;
             }
         }
 
-        // Batch enqueue missing proofs
+        // 5. Batch Sign Existing URLs (Optimized)
+        if (!empty($existingPaths)) {
+            $signedMap = $storage->signMany(array_values($existingPaths));
+
+            foreach ($proofPaths as $key => $proofPath) {
+                // Only fill if we haven't already set a placeholder
+                if (!isset($urls[$key]) && isset($signedMap[$proofPath])) {
+                    $urls[$key] = $signedMap[$proofPath];
+                }
+            }
+        }
+
+        // 6. Batch enqueue missing proofs
         if (!empty($toEnqueue)) {
             ProofQueue::enqueueBatch($toEnqueue);
         }
 
         // Cache the result
         ProofCache::set($cacheKey, $urls);
+        $requestCache[$cacheKey] = $urls;
 
         return $urls;
     }
