@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.26] – ImageKit Batch Performance** - 2026-01-28 03:00:00
+
+### **Performance**
+- **ImageKit:** Optimized `ImageKitStorage::existsMany` to use path-scoped `listFiles` queries. This replaces N+1 network requests with batched, directory-level lookups, significantly reducing lookup time and payload size for large galleries.
+
 ## **[1.0.25] – ImageKit Decoupling** - 2026-01-28 02:00:00
 
 ### **Added**
