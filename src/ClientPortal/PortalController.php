@@ -140,6 +140,12 @@ class PortalController
             header('Content-Type: application/javascript');
             header('Service-Worker-Allowed: /');
 
+            $cachedContent = get_transient('ap_sw_cache');
+            if ($cachedContent) {
+                echo $cachedContent;
+                exit;
+            }
+
             $pluginDir = plugin_dir_path(__DIR__ . '/../../');
             $swPath = $pluginDir . 'assets/js/sw.js';
 
@@ -155,6 +161,7 @@ class PortalController
                 $content = str_replace('"./portal-app.js"', '"' . $pluginUrl . 'assets/js/portal-app.js"', $content);
                 $content = str_replace('"../css/client-portal.css"', '"' . $pluginUrl . 'assets/css/client-portal.css"', $content);
 
+                set_transient('ap_sw_cache', $content, HOUR_IN_SECONDS);
                 echo $content;
             }
             exit;
