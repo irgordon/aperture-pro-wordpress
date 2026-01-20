@@ -173,6 +173,36 @@ const ApertureSPA = (() => {
     }
 
     /**
+     * Event Bus for component communication.
+     */
+    const EventBus = {
+        listeners: {},
+
+        on(event, callback) {
+            if (!this.listeners[event]) {
+                this.listeners[event] = [];
+            }
+            this.listeners[event].push(callback);
+        },
+
+        off(event, callback) {
+            if (!this.listeners[event]) return;
+            this.listeners[event] = this.listeners[event].filter((cb) => cb !== callback);
+        },
+
+        emit(event, data) {
+            if (!this.listeners[event]) return;
+            this.listeners[event].forEach((cb) => {
+                try {
+                    cb(data);
+                } catch (err) {
+                    console.error(`[ApertureSPA] Error in event listener for ${event}:`, err);
+                }
+            });
+        },
+    };
+
+    /**
      * Initialize SPA behavior.
      */
     function init() {
@@ -180,15 +210,27 @@ const ApertureSPA = (() => {
         setupLinkInterception();
 
         // Optional: scroll/visibility hydration
-        // TODO: event bus
+
+        // Setup Event Bus listeners
+        EventBus.on("navigate", (data) => {
+            if (data && data.url) {
+                navigateTo(data.url);
+            }
+        });
     }
 
-    return { init };
+    return {
+        init,
+        on: EventBus.on.bind(EventBus),
+        off: EventBus.off.bind(EventBus),
+        emit: EventBus.emit.bind(EventBus),
+    };
 })();
 
 /**
  * Boot the SPA once the DOM is ready.
  */
 document.addEventListener("DOMContentLoaded", () => {
+    window.ApertureSPA = ApertureSPA;
     ApertureSPA.init();
 });

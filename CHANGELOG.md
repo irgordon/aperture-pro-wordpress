@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.29] – Event Bus System** - 2026-01-28 06:00:00
+
+### **Features**
+- **SPA:** Implemented a lightweight `EventBus` in `assets/spa/bootstrap.js` to facilitate decoupled component communication.
+- **SPA:** Integrated `navigate` event listener to allow components to trigger SPA navigation programmatically via `ApertureSPA.emit('navigate', { url: '...' })`.
+- **SPA:** Exposed `ApertureSPA` globally on `window` to allow external scripts to interact with the Event Bus.
+
 ## **[1.0.28] – SMTP Keep-Alive Optimization** - 2026-01-28 05:00:00
 
 ### **Performance**
