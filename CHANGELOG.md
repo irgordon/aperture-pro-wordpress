@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.31] – Rate Limit Header Exposure**
+
+### **Security**
+- **Rate Limit:** Added `expose_rate_limit_headers` setting to `AdminUI` and `Config`.
+- **Middleware:** Updated `RateLimitMiddleware` to conditionally expose `X-RateLimit-*` headers based on the configuration, aiding client-side debugging without leaking internal limits by default.
+
 ## **[1.0.30] – Optimize AdminUI Options
 
 ### **Performance

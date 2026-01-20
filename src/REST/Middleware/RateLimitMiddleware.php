@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AperturePro\REST\Middleware;
 
+use AperturePro\Config\Config;
 use AperturePro\Security\RateLimiter;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -26,14 +27,16 @@ final class RateLimitMiddleware implements MiddlewareInterface
 
         if ($result['allowed']) {
             // Optionally expose headers for client UX/debugging.
-            add_filter('rest_post_dispatch', function ($response) use ($result) {
-                if ($response instanceof WP_REST_Response) {
-                    $response->header('X-RateLimit-Limit', (string) $result['limit']);
-                    $response->header('X-RateLimit-Remaining', (string) $result['remaining']);
-                    $response->header('X-RateLimit-Reset', (string) $result['reset_in']);
-                }
-                return $response;
-            }, 10, 1);
+            if (Config::get('security.expose_rate_limit_headers')) {
+                add_filter('rest_post_dispatch', function ($response) use ($result) {
+                    if ($response instanceof WP_REST_Response) {
+                        $response->header('X-RateLimit-Limit', (string) $result['limit']);
+                        $response->header('X-RateLimit-Remaining', (string) $result['remaining']);
+                        $response->header('X-RateLimit-Reset', (string) $result['reset_in']);
+                    }
+                    return $response;
+                }, 10, 1);
+            }
 
             return null;
         }
