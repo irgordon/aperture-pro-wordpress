@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### **Added**
 - **Admin UI:** Added `cloud_name` and `api_secret` fields to the Cloudinary configuration settings, as required for full Cloudinary support.
 - **Config:** Updated `Config::all()` to map the new settings to the `cloudinary` configuration array.
+## **[1.0.23] – Signed URL Performance** - 2026-01-28 01:00:00
+
+### **Performance**
+- **Storage:** Implemented batch URL signing (`signMany`) across all storage drivers (`S3`, `Cloudinary`, `ImageKit`, `Local`) to significantly reduce overhead when rendering large galleries.
+- **Caching:** Added multi-layer caching for signed URLs (request-scoped + object cache) in `AbstractStorage`.
+- **S3:** Optimized `S3Storage` signing by removing redundant retry logic for local cryptographic operations, reducing CPU usage.
+- **Client Portal:** Refactored `PortalRenderer` to use batch signing, eliminating N+1 signing operations.
 
 ## **[1.0.22] – Config Optimization** - 2026-01-28 00:00:00
 
