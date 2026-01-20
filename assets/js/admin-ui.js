@@ -79,6 +79,9 @@
       btn.textContent = data.strings.testing || 'Testing…';
 
       try {
+        // Optional UX delay (non-blocking)
+        await new Promise(resolve => setTimeout(resolve, 800));
+
         const form = new FormData();
         form.append('action', data.testApiKeyAction);
         form.append('nonce', nonce);
