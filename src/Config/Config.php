@@ -13,6 +13,12 @@ class Config
     const OPTION_KEY = 'aperture_pro_settings';
 
     /**
+     * Cache for the parsed configuration.
+     * @var array|null
+     */
+    private static $cache = null;
+
+    /**
      * Retrieve configuration value.
      *
      * Supports dot-notation access:
@@ -69,6 +75,9 @@ class Config
         $settings[$key] = $value;
 
         update_option(self::OPTION_KEY, $settings);
+
+        // Invalidate cache so next call re-fetches
+        self::$cache = null;
     }
 
     /**
@@ -84,9 +93,13 @@ class Config
      */
     public static function all(): array
     {
+        if (self::$cache !== null) {
+            return self::$cache;
+        }
+
         $settings = get_option(self::OPTION_KEY, []);
 
-        return [
+        self::$cache = [
             'storage' => [
                 'driver'     => $settings['storage_driver'] ?? 'local',
                 'local_path' => $settings['local_storage_path'] ?? '',
@@ -137,5 +150,7 @@ class Config
 
             'theme_overrides' => !empty($settings['theme_overrides']),
         ];
+
+        return self::$cache;
     }
 }
