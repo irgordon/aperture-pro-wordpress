@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Performance
+- **Proofs:** Optimized `ProofService::getProofUrls` to use a static request cache and batch URL signing (`signMany`). This eliminates redundant hashing within the same request and reduces the overhead of generating signed URLs for large galleries by batching the signing operations.
 - **Client Portal:** Cached the processed service worker (`sw.js`) file using the WordPress Transients API for one hour. This prevents the file from being read from disk and processed on every request, significantly improving performance and reducing server load.
 - **Client Portal:** Optimized `PortalRenderer::gatherContext` to skip expensive `json_decode` operations for images with empty comments (`[]`), reducing CPU overhead when rendering large galleries.
 - **Health:** Replaced hardcoded legacy performance metrics in `HealthService` with dynamic real-time calculations. Metrics (request reduction, latency saved) are now derived from the actual number of images in the database, reflecting the 10x chunk optimization.
