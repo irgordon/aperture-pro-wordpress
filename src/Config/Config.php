@@ -146,6 +146,7 @@ class Config
             'security' => [
                 'require_otp'    => !empty($settings['require_otp']),
                 'webhook_secret' => $settings['webhook_secret'] ?? '',
+                'expose_rate_limit_headers' => !empty($settings['expose_rate_limit_headers']),
             ],
 
             'theme_overrides' => !empty($settings['theme_overrides']),

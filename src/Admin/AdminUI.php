@@ -166,6 +166,9 @@ class AdminUI
         add_settings_field('webhook_secret', 'Payment Webhook Secret', [self::class, 'field_webhook_secret'], self::PAGE_SLUG, 'aperture_pro_section_general');
         add_settings_field('require_otp', 'Require OTP for Downloads', [self::class, 'field_require_otp'], self::PAGE_SLUG, 'aperture_pro_section_general');
 
+        // Security
+        add_settings_field('expose_rate_limit_headers', 'Expose Rate Limit Headers', [self::class, 'field_expose_rate_limit_headers'], self::PAGE_SLUG, 'aperture_pro_section_general');
+
         // Theme overrides
         add_settings_field('theme_overrides', 'Enable Theme Overrides', [self::class, 'field_theme_overrides'], self::PAGE_SLUG, 'aperture_pro_section_general');
     }
@@ -278,6 +281,9 @@ class AdminUI
 
         // OTP requirement
         $out['require_otp'] = !empty($input['require_otp']) ? 1 : 0;
+
+        // Expose rate limit headers
+        $out['expose_rate_limit_headers'] = !empty($input['expose_rate_limit_headers']) ? 1 : 0;
 
         // Theme overrides
         $out['theme_overrides'] = !empty($input['theme_overrides']) ? 1 : 0;
@@ -705,6 +711,19 @@ class AdminUI
             <input type="checkbox" name="<?php echo esc_attr(self::OPTION_KEY); ?>[require_otp]"
                    value="1" <?php checked($value); ?> />
             Require email OTP for downloads
+        </label>
+        <?php
+    }
+
+    public static function field_expose_rate_limit_headers()
+    {
+        $opts = self::get_options();
+        $value = !empty($opts['expose_rate_limit_headers']);
+        ?>
+        <label>
+            <input type="checkbox" name="<?php echo esc_attr(self::OPTION_KEY); ?>[expose_rate_limit_headers]"
+                   value="1" <?php checked($value); ?> />
+            Expose rate limit headers (X-RateLimit-*) for client debugging.
         </label>
         <?php
     }
