@@ -7,6 +7,7 @@ use AperturePro\Storage\StorageInterface;
 use AperturePro\Helpers\Logger;
 use AperturePro\Proof\ProofCache;
 use AperturePro\Proof\ProofQueue;
+use AperturePro\Config\Config;
 
 /**
  * ProofService
@@ -202,9 +203,21 @@ class ProofService
      */
     public static function getPlaceholderUrl(): string
     {
-        // Ideally, this points to a real asset in the plugin/theme.
-        // For now, we return a generic placeholder or a data URI.
-        return apply_filters('aperture_pro_proof_placeholder_url', '/wp-content/plugins/aperture-pro/assets/images/processing-proof.jpg');
+        // 1. Check for Config override
+        $customUrl = Config::get('proofing.placeholder_url');
+        if (!empty($customUrl)) {
+            return apply_filters('aperture_pro_proof_placeholder_url', $customUrl);
+        }
+
+        // 2. Fallback to local asset
+        if (function_exists('plugins_url')) {
+            $defaultUrl = plugins_url('assets/images/processing-proof.svg', APERTURE_PRO_FILE);
+        } else {
+            // If 'plugins_url' is not available (e.g. CLI or weird context), fallback to relative path
+            $defaultUrl = '/wp-content/plugins/aperture-pro/assets/images/processing-proof.svg';
+        }
+
+        return apply_filters('aperture_pro_proof_placeholder_url', $defaultUrl);
     }
 
     /**

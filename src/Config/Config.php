@@ -149,6 +149,10 @@ class Config
                 'expose_rate_limit_headers' => !empty($settings['expose_rate_limit_headers']),
             ],
 
+            'proofing' => [
+                'placeholder_url' => $settings['custom_placeholder_url'] ?? '',
+            ],
+
             'theme_overrides' => !empty($settings['theme_overrides']),
         ];
 

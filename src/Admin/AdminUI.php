@@ -171,6 +171,9 @@ class AdminUI
 
         // Theme overrides
         add_settings_field('theme_overrides', 'Enable Theme Overrides', [self::class, 'field_theme_overrides'], self::PAGE_SLUG, 'aperture_pro_section_general');
+
+        // Custom proof placeholder
+        add_settings_field('custom_placeholder_url', 'Custom Proof Placeholder URL', [self::class, 'field_custom_placeholder_url'], self::PAGE_SLUG, 'aperture_pro_section_general');
     }
 
     /**
@@ -287,6 +290,9 @@ class AdminUI
 
         // Theme overrides
         $out['theme_overrides'] = !empty($input['theme_overrides']) ? 1 : 0;
+
+        // Custom placeholder URL
+        $out['custom_placeholder_url'] = esc_url_raw($input['custom_placeholder_url'] ?? '');
 
         // Log non-sensitive metadata
         Logger::log('info', 'admin_settings', 'Aperture Pro settings updated', [
@@ -738,6 +744,19 @@ class AdminUI
                    value="1" <?php checked($value); ?> />
             Enable theme overrides
         </label>
+        <?php
+    }
+
+    public static function field_custom_placeholder_url()
+    {
+        $opts = self::get_options();
+        $value = $opts['custom_placeholder_url'] ?? '';
+        ?>
+        <input type="text" id="custom_placeholder_url"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[custom_placeholder_url]"
+               value="<?php echo esc_attr($value); ?>"
+               class="regular-text" />
+        <p class="description">Optional. URL to a custom placeholder image for processing proofs. Leave empty to use the default.</p>
         <?php
     }
 }
