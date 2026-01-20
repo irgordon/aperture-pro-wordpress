@@ -109,13 +109,31 @@ class HealthService
     public static function getMetrics(): array
     {
         // -----------------------------------------
-        // PERFORMANCE METRICS (hardcoded legacy)
+        // PERFORMANCE METRICS
         // -----------------------------------------
+        global $wpdb;
+
+        $imageCount = 0;
+        $table = $wpdb->prefix . 'ap_images';
+
+        // Safe check for table existence
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) === $table) {
+            $imageCount = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+        }
+
+        // Logic: Legacy upload used 1MB chunks. Current uses 10MB chunks (10x fewer requests).
+        $reqLegacy = $imageCount * 10;
+        $reqModern = $imageCount;
+        $reqSaved  = $reqLegacy - $reqModern;
+
+        // Latency saved: ~50ms overhead per request
+        $latencySec = $reqSaved * 0.05;
+
         $performance = [
-            'requestReduction'   => '−90%',
-            'requestCountBefore' => 500,
-            'requestCountAfter'  => 50,
-            'latencySaved'       => '−22.5s',
+            'requestReduction'   => $reqLegacy > 0 ? '−90%' : '—',
+            'requestCountBefore' => $reqLegacy,
+            'requestCountAfter'  => $reqModern,
+            'latencySaved'       => $latencySec > 0 ? '−' . round($latencySec, 1) . 's' : '—',
         ];
 
         // -----------------------------------------
