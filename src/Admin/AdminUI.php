@@ -129,7 +129,9 @@ class AdminUI
         add_settings_field('storage_driver', 'Storage Driver', [self::class, 'field_storage_driver'], self::PAGE_SLUG, 'aperture_pro_section_general');
         add_settings_field('local_storage_path', 'Local Storage Path', [self::class, 'field_local_storage_path'], self::PAGE_SLUG, 'aperture_pro_section_general');
         add_settings_field('cloud_provider', 'Cloud Provider', [self::class, 'field_cloud_provider'], self::PAGE_SLUG, 'aperture_pro_section_general');
+        add_settings_field('cloudinary_cloud_name', 'Cloud Name', [self::class, 'field_cloudinary_cloud_name'], self::PAGE_SLUG, 'aperture_pro_section_general');
         add_settings_field('cloud_api_key', 'Cloud API Key', [self::class, 'field_cloud_api_key'], self::PAGE_SLUG, 'aperture_pro_section_general');
+        add_settings_field('cloudinary_api_secret', 'Cloudinary API Secret', [self::class, 'field_cloudinary_api_secret'], self::PAGE_SLUG, 'aperture_pro_section_general');
 
         // AWS S3 + CloudFront fields
         add_settings_field('s3_bucket', 'S3 Bucket', [self::class, 'field_s3_bucket'], self::PAGE_SLUG, 'aperture_pro_section_general');
@@ -182,6 +184,16 @@ class AdminUI
             $out['cloud_api_key'] = Crypto::encrypt(sanitize_text_field($input['cloud_api_key']));
         } else {
             $out['cloud_api_key'] = $existing['cloud_api_key'] ?? '';
+        }
+
+        // Cloudinary Cloud Name
+        $out['cloudinary_cloud_name'] = sanitize_text_field($input['cloudinary_cloud_name'] ?? '');
+
+        // Cloudinary API Secret (encrypted)
+        if (!empty($input['cloudinary_api_secret'])) {
+            $out['cloudinary_api_secret'] = Crypto::encrypt(sanitize_text_field($input['cloudinary_api_secret']));
+        } else {
+            $out['cloudinary_api_secret'] = $existing['cloudinary_api_secret'] ?? '';
         }
 
         // -----------------------------
@@ -461,6 +473,33 @@ class AdminUI
         <button type="button" class="button" id="ap-test-api-key">Test</button>
         <span id="ap-test-api-key-result" class="ap-test-result"></span>
         <p class="description">Stored encrypted. Click Test to validate.</p>
+        <?php
+    }
+
+    public static function field_cloudinary_cloud_name()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $value = $opts['cloudinary_cloud_name'] ?? '';
+        ?>
+        <input type="text"
+               id="cloudinary_cloud_name"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloudinary_cloud_name]"
+               value="<?php echo esc_attr($value); ?>"
+               class="regular-text" />
+        <?php
+    }
+
+    public static function field_cloudinary_api_secret()
+    {
+        $opts = get_option(self::OPTION_KEY, []);
+        $hasKey = !empty($opts['cloudinary_api_secret']);
+        ?>
+        <input type="password"
+               id="cloudinary_api_secret"
+               name="<?php echo esc_attr(self::OPTION_KEY); ?>[cloudinary_api_secret]"
+               value=""
+               class="regular-text"
+               placeholder="<?php echo $hasKey ? '••••••••' : ''; ?>" />
         <?php
     }
 

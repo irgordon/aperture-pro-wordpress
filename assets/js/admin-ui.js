@@ -44,6 +44,12 @@
       }
       if (cloudSettings) {
         cloudSettings.style.display = (val === 'cloudinary' || val === 'imagekit') ? '' : 'none';
+
+        const cloudinaryFields = $all('.ap-cloudinary-field', cloudSettings);
+        const showCloudinary = val === 'cloudinary';
+        cloudinaryFields.forEach(el => {
+          el.style.display = showCloudinary ? '' : 'none';
+        });
       }
       if (s3Settings) {
         s3Settings.style.display = val === 's3' ? '' : 'none';

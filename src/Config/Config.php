@@ -115,9 +115,9 @@ class Config
                 ],
 
                 'cloudinary' => [
-                    // TODO: AdminUI currently only exposes cloud_api_key.
-                    // Full Cloudinary support requires cloud_name and api_secret fields.
-                    'api_key' => $settings['cloud_api_key'] ?? '',
+                    'cloud_name' => $settings['cloudinary_cloud_name'] ?? '',
+                    'api_key'    => $settings['cloud_api_key'] ?? '',
+                    'api_secret' => $settings['cloudinary_api_secret'] ?? '',
                 ],
 
                 'imagekit' => [
