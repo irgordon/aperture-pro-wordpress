@@ -18,24 +18,6 @@ use AperturePro\Services\ServiceInterface;
 class Loader
 {
     /**
-     * Main plugin file path.
-     * Reserved for future use (e.g. asset resolution, plugin metadata).
-     */
-    protected string $file;
-
-    /**
-     * Plugin directory path.
-     * Reserved for future service injection.
-     */
-    protected string $path;
-
-    /**
-     * Plugin base URL.
-     * Reserved for future service injection.
-     */
-    protected string $url;
-
-    /**
      * Plugin version string.
      * Reserved for cache-busting and diagnostics.
      */
@@ -54,16 +36,10 @@ class Loader
     protected bool $booted = false;
 
     /**
-     * @param string $file    Main plugin file path
-     * @param string $path    Plugin directory path
-     * @param string $url     Plugin URL
      * @param string $version Plugin version
      */
-    public function __construct(string $file, string $path, string $url, string $version)
+    public function __construct(string $version)
     {
-        $this->file    = $file;
-        $this->path    = $path;
-        $this->url     = $url;
         $this->version = $version;
     }
 

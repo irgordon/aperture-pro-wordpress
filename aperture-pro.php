@@ -107,9 +107,6 @@ add_action('admin_init', function (): void {
  * ------------------------------------------------------------------------- */
 
 $loader = new \AperturePro\Loader(
-    APERTURE_PRO_FILE,
-    APERTURE_PRO_DIR,
-    APERTURE_PRO_URL,
     APERTURE_PRO_VERSION
 );
 
