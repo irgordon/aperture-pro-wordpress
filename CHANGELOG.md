@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Client Portal:** Cached the processed service worker (`sw.js`) file using the WordPress Transients API for one hour. This prevents the file from being read from disk and processed on every request, significantly improving performance and reducing server load.
 - **Client Portal:** Optimized `PortalRenderer::gatherContext` to skip expensive `json_decode` operations for images with empty comments (`[]`), reducing CPU overhead when rendering large galleries.
 
+## **[1.0.30] – Parallel Proof Generation Pipeline** - 2026-01-28 07:00:00
+
+### **Performance**
+- **Proofs:** Implemented a non-blocking proof generation pipeline that isolates the download phase from processing. The new `generateBatch` workflow executes parallel downloads (enqueue download job -> download file) followed by batch processing (enqueue processing job -> generate proof -> cleanup), resolving the blocking I/O bottleneck in the queue worker.
+
 ## **[1.0.29] – Event Bus System** - 2026-01-28 06:00:00
 
 ### **Features**
