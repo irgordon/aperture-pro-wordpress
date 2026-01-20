@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## **[1.0.23] – Cloudinary Config Fields** - 2026-01-28 01:00:00
+## **[1.0.24] – Cloudinary Config Fields** - 2026-01-28 01:00:00
 
 ### **Added**
 - **Admin UI:** Added `cloud_name` and `api_secret` fields to the Cloudinary configuration settings, as required for full Cloudinary support.
