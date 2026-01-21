@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.33] – Generic Proof Placeholder**
+
+### **Added**
+- **Proofs:** Added a generic placeholder SVG (`assets/images/processing-proof.svg`) for proofs that are still processing.
+- **Admin UI:** Added `custom_placeholder_url` setting to allow users to configure a custom placeholder image.
+- **ProofService:** Updated `getPlaceholderUrl` to support the configurable placeholder and fall back to the local SVG asset.
+
 ## **[1.0.32] – Code Cleanup**
 
 ### **Refactor**
