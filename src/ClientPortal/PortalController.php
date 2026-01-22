@@ -140,10 +140,17 @@ class PortalController
             header('Content-Type: application/javascript');
             header('Service-Worker-Allowed: /');
 
-            $cachedContent = get_transient('ap_sw_cache');
-            if ($cachedContent) {
-                echo $cachedContent;
-                exit;
+            // Version-aware cache key to ensure updates invalidate cache immediately
+            $cacheKey = 'ap_sw_' . APERTURE_PRO_VERSION;
+            $isDebug = defined('WP_DEBUG') && WP_DEBUG;
+
+            // In production, serve from cache aggressively
+            if (!$isDebug) {
+                $cachedContent = get_transient($cacheKey);
+                if ($cachedContent) {
+                    echo $cachedContent;
+                    exit;
+                }
             }
 
             $pluginDir = plugin_dir_path(__DIR__ . '/../../');
@@ -161,7 +168,11 @@ class PortalController
                 $content = str_replace('"./portal-app.js"', '"' . $pluginUrl . 'assets/js/portal-app.js"', $content);
                 $content = str_replace('"../css/client-portal.css"', '"' . $pluginUrl . 'assets/css/client-portal.css"', $content);
 
-                set_transient('ap_sw_cache', $content, HOUR_IN_SECONDS);
+                // Cache for a long time (Month) in production since the key is versioned.
+                // In debug mode, cache for 30s to allow some testing but quick invalidation.
+                $ttl = $isDebug ? 30 : MONTH_IN_SECONDS;
+                set_transient($cacheKey, $content, $ttl);
+
                 echo $content;
             }
             exit;

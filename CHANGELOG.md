@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.35] – Service Worker Caching**
+
+### **Performance**
+- **Client Portal:** Optimized `PortalController::serve_service_worker` to use a versioned, long-lived cache (`ap_sw_` + version) for the generated Service Worker. This replaces the short-lived (1 hour) cache and eliminates file I/O on nearly every request in production, while respecting `WP_DEBUG` for development.
+
 ## **[1.0.34] – Conditional SPA Debugging**
 
 ### **Frontend**
