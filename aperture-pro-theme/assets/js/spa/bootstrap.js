@@ -26,6 +26,10 @@ export function bootstrapSPA() {
     // Mark as "hydrating" immediately
     component.dataset.spaHydrated = 'hydrating';
 
+    // Debug logging for hydration timing
+    if (reason && window.ApertureSPAConfig?.debug) {
+      console.debug(`[Aperture SPA] Hydrating ${type}. Reason: ${reason} at ${performance.now().toFixed(2)}ms`);
+    }
 
     // Dynamic import of component module
     import(`./components/${type}.js`)
