@@ -160,6 +160,7 @@ add_action('wp_enqueue_scripts', function () {
         'themeUrl' => get_theme_file_uri(),
         'ajaxUrl'  => admin_url('admin-ajax.php'),
         'nonce'    => wp_create_nonce('aperture_spa'),
+        'debug'    => defined('WP_DEBUG') && WP_DEBUG,
 
         // Social branding URLs from Admin Settings → General
         'social'   => [
