@@ -48,10 +48,20 @@ class Crypto
             $parts[] = LOGGED_IN_KEY;
         }
         if (empty($parts)) {
-            // Last resort: use siteurl and DB prefix (less secure)
-            $site = get_option('siteurl') ?: '';
-            $prefix = $GLOBALS['wpdb']->prefix ?? '';
-            $parts[] = $site . '|' . $prefix;
+            // Fallback: use a generated salt stored in the database
+            $salt = get_option('aperture_generated_salt');
+
+            if (!$salt) {
+                // Generate a secure random salt
+                try {
+                    $bytes = random_bytes(32);
+                } catch (\Exception $e) {
+                    $bytes = openssl_random_pseudo_bytes(32);
+                }
+                $salt = bin2hex($bytes);
+                update_option('aperture_generated_salt', $salt);
+            }
+            $parts[] = $salt;
         }
 
         $seed = implode('|', $parts);
