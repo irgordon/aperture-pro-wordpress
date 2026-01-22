@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.36] – Service Worker Debug Optimization**
+
+### **Performance**
+- **Client Portal:** Optimized `PortalController::serve_service_worker` to read from cache even when `WP_DEBUG` is enabled. Previously, debug mode would generate and write the service worker to cache on every request but ignore the cached value, causing unnecessary I/O. Debug mode now uses a short-lived (30s) cache to balance performance with development iteration speed.
+
 ## **[1.0.35] – Service Worker Caching**
 
 ### **Performance**
