@@ -144,13 +144,11 @@ class PortalController
             $cacheKey = 'ap_sw_' . APERTURE_PRO_VERSION;
             $isDebug = defined('WP_DEBUG') && WP_DEBUG;
 
-            // In production, serve from cache aggressively
-            if (!$isDebug) {
-                $cachedContent = get_transient($cacheKey);
-                if ($cachedContent) {
-                    echo $cachedContent;
-                    exit;
-                }
+            // Serve from cache if available (short TTL in debug, long in prod)
+            $cachedContent = get_transient($cacheKey);
+            if ($cachedContent) {
+                echo $cachedContent;
+                exit;
             }
 
             $pluginDir = plugin_dir_path(__DIR__ . '/../../');
@@ -169,7 +167,7 @@ class PortalController
                 $content = str_replace('"../css/client-portal.css"', '"' . $pluginUrl . 'assets/css/client-portal.css"', $content);
 
                 // Cache for a long time (Month) in production since the key is versioned.
-                // In debug mode, cache for 30s to allow some testing but quick invalidation.
+                // In debug mode, use a short 30s cache to allow rapid iteration.
                 $ttl = $isDebug ? 30 : MONTH_IN_SECONDS;
                 set_transient($cacheKey, $content, $ttl);
 
