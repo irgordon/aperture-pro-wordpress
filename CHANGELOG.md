@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.37] – Legacy OTP Fallback Removal**
+
+### **Cleanup**
+- **Auth:** Removed legacy 'code' fallback in `OTPService::generateAndSend` as all email templates now correctly use the `otp_code` placeholder. This eliminates technical debt identified in the codebase.
+
 ## **[1.0.36] – Service Worker Debug Optimization**
 
 ### **Performance**

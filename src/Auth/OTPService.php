@@ -75,7 +75,6 @@ class OTPService
             'otp_code' => $code, // Mapped to new template key
             'client_name' => $clientName,
             'studio_name' => $studioName,
-            'code' => $code, // Legacy fallback
             'context' => ucfirst($context),
             'expires_minutes' => intval(self::TTL / 60),
         ];
