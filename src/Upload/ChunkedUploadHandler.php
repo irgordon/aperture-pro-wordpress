@@ -7,6 +7,7 @@ use AperturePro\Storage\StorageFactory;
 use AperturePro\Helpers\Utils;
 use AperturePro\Email\EmailService;
 use AperturePro\Auth\CookieService;
+use AperturePro\Config\Config;
 
 /**
  * ChunkedUploadHandler
@@ -326,10 +327,10 @@ class ChunkedUploadHandler
         $remoteKey = 'uploads/' . $session['project_id'] . '/' . $uploadId . '/' . basename($remoteKey);
 
         // Upload using streaming where possible
-        $uploadResult = $storage->upload($assembledPath, $remoteKey, ['signed' => true]);
-
-        if (empty($uploadResult['success'])) {
-            Logger::log('error', 'upload', 'Storage upload failed', ['upload_id' => $uploadId, 'remoteKey' => $remoteKey, 'meta' => $uploadResult, 'notify_admin' => true]);
+        try {
+            $uploadResult = $storage->upload($assembledPath, $remoteKey, ['signed' => true]);
+        } catch (\Throwable $e) {
+            Logger::log('error', 'upload', 'Storage upload failed: ' . $e->getMessage(), ['upload_id' => $uploadId, 'remoteKey' => $remoteKey, 'notify_admin' => true]);
             // Keep assembled file for watchdog to retry; do not delete immediately
             return ['success' => false, 'message' => 'Failed to store uploaded file.'];
         }
@@ -342,7 +343,7 @@ class ChunkedUploadHandler
             $imagesTable,
             [
                 'gallery_id' => self::ensure_proof_gallery_for_project($session['project_id']),
-                'storage_key_original' => $uploadResult['key'],
+                'storage_key_original' => $remoteKey,
                 'storage_key_edited' => null,
                 'is_selected' => 0,
                 'client_comments' => null,
@@ -354,8 +355,18 @@ class ChunkedUploadHandler
         );
 
         if ($inserted === false) {
-            Logger::log('error', 'upload', 'Failed to insert image DB row', ['upload_id' => $uploadId, 'remoteKey' => $uploadResult['key'], 'notify_admin' => true]);
-            // Optionally delete remote object? For now, leave it and let admin cleanup
+            Logger::log('error', 'upload', 'Failed to insert image DB row', ['upload_id' => $uploadId, 'remoteKey' => $remoteKey, 'notify_admin' => true]);
+
+            // Auto-cleanup remote object on failure
+            if (Config::get('upload.auto_cleanup_remote_on_failure', true)) {
+                try {
+                    $storage->delete($remoteKey);
+                    Logger::log('info', 'upload', 'Cleaned up orphaned remote object', ['remoteKey' => $remoteKey]);
+                } catch (\Throwable $e) {
+                    Logger::log('warning', 'upload', 'Failed to cleanup orphaned remote object', ['remoteKey' => $remoteKey, 'error' => $e->getMessage()]);
+                }
+            }
+
             return ['success' => false, 'message' => 'Failed to register uploaded image.'];
         }
 
@@ -367,7 +378,7 @@ class ChunkedUploadHandler
         // Remove transient session
         delete_transient(self::SESSION_TRANSIENT_PREFIX . $uploadId);
 
-        Logger::log('info', 'upload', 'Upload assembled and stored', ['upload_id' => $uploadId, 'image_id' => $imageId, 'remoteKey' => $uploadResult['key']]);
+        Logger::log('info', 'upload', 'Upload assembled and stored', ['upload_id' => $uploadId, 'image_id' => $imageId, 'remoteKey' => $remoteKey]);
 
         return ['success' => true, 'message' => 'Upload stored', 'image_id' => $imageId, 'storage' => $uploadResult];
     }

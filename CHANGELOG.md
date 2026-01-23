@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.43] – Automated Upload Cleanup**
+
+### **Fixes**
+- **Upload:** Fixed a logic error in `ChunkedUploadHandler` where the storage driver response was incorrectly expected to be an array, causing valid uploads to report as failures.
+- **Upload:** Implemented automated cleanup of remote storage objects when database insertion fails. This prevents "orphaned" files from accumulating in storage.
+- **Config:** Added `upload.auto_cleanup_remote_on_failure` setting (default: `true`) to allow disabling this behavior for zero-latency failure paths.
+
 ## **[1.0.42] – Secure Portal Render Route**
 
 ### **Security**
