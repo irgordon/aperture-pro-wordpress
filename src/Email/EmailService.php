@@ -35,6 +35,7 @@ class EmailService
     const DEDUPE_WINDOW = 900; // 15 minutes dedupe window for same context
 
     protected static $_tableExists = null;
+    protected static ?bool $adminQueueTableExistsCache = null;
 
     protected static function tableExists(): bool
     {
@@ -48,6 +49,19 @@ class EmailService
         // SHOW TABLES LIKE is robust.
         self::$_tableExists = ($wpdb->get_var("SHOW TABLES LIKE '$table'") === $table);
         return self::$_tableExists;
+    }
+
+    protected static function adminQueueTableExists(): bool
+    {
+        if (self::$adminQueueTableExistsCache !== null) {
+            return self::$adminQueueTableExistsCache;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_admin_notifications';
+        $exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $wpdb->esc_like($table))) === $table;
+        self::$adminQueueTableExistsCache = (bool) $exists;
+        return self::$adminQueueTableExistsCache;
     }
 
     /**
@@ -376,27 +390,168 @@ class EmailService
      */
     public static function enqueueAdminNotification(string $level, string $context, string $message, array $meta = []): void
     {
-        $queue = get_option(self::ADMIN_QUEUE_OPTION, []);
+        global $wpdb;
+
+        // Normalize inputs
+        $level = substr((string) $level, 0, 16);
+        $context = substr((string) $context, 0, 128);
+        $message = (string) $message;
+        $metaJson = wp_json_encode($meta);
+
+        // Configurable: allow operator to choose storage (table preferred)
+        $useTable = self::adminQueueTableExists();
+
+        if ($useTable) {
+            $table = $wpdb->prefix . 'ap_admin_notifications';
+
+            // Best-effort insert; do not throw on DB errors
+            try {
+                $inserted = $wpdb->insert(
+                    $table,
+                    [
+                        'level'      => $level,
+                        'context'    => $context,
+                        'message'    => $message,
+                        'meta'       => $metaJson,
+                        'created_at' => current_time('mysql', true),
+                        'processed'  => 0,
+                    ],
+                    [
+                        '%s', '%s', '%s', '%s', '%s', '%d'
+                    ]
+                );
+
+                if ($inserted !== false) {
+                    // Ensure cron is scheduled
+                    if (!wp_next_scheduled(self::CRON_HOOK)) {
+                        wp_schedule_event(time() + 60, 'minute', self::CRON_HOOK);
+                    }
+                    return;
+                }
+
+                // If inserted is false, log and fall through
+                Logger::log('error', 'email', 'Failed to insert admin notification into DB; falling back to option', [
+                    'level' => $level,
+                    'context' => $context,
+                ]);
+
+            } catch (\Throwable $e) {
+                Logger::log('error', 'email', 'Exception inserting admin notification; falling back to option', [
+                    'error' => $e->getMessage(),
+                    'level' => $level,
+                    'context' => $context,
+                ]);
+            }
+        }
+
+        // Option fallback (legacy): keep behavior but avoid repeated linear scans
+        $optionKey = self::ADMIN_QUEUE_OPTION;
+        $queue = get_option($optionKey, []);
         if (!is_array($queue)) {
             $queue = [];
         }
 
-        $item = [
+        // Convert to keyed map for O(1) dedupe if not already keyed
+        $isKeyed = false;
+        if (!empty($queue) && is_array($queue)) {
+            foreach (array_keys($queue) as $k) {
+                if (!is_int($k)) { $isKeyed = true; break; }
+            }
+        }
+
+        $map = [];
+        if ($isKeyed) {
+            $map = $queue;
+        } else {
+            // Migrate numeric list to keyed map
+            foreach ($queue as $item) {
+                $p = $item['level'] ?? null;
+                $c = $item['context'] ?? null;
+                $m = $item['message'] ?? null;
+
+                // Fallback for legacy items that used 'body' instead of 'message'
+                if ($m === null && isset($item['body'])) {
+                    $m = $item['body'];
+                }
+
+                // Use a stable key; here we use hash of level|context|message
+                if ($p !== null && $c !== null && $m !== null) {
+                    $k = md5("{$p}:{$c}:{$m}");
+                    $map[$k] = $item;
+                } else {
+                    // If we can't key it easily, just append with random key or skip?
+                    // We'll just preserve it with a random key to avoid data loss
+                    $map[uniqid('legacy_', true)] = $item;
+                }
+            }
+        }
+
+        // Dedup key for this item
+        $dedupeKey = md5("{$level}:{$context}:{$message}");
+
+        if (isset($map[$dedupeKey])) {
+            // Already queued
+            return;
+        }
+
+        $map[$dedupeKey] = [
             'level' => $level,
             'context' => $context,
+            'message' => $message, // Changed from subject/body to message for consistency with DB schema
+            // Also keep legacy fields for backward compatibility if we revert
             'subject' => sprintf('[Aperture Pro] %s: %s', strtoupper($level), $context),
             'body' => $message . "\n\n" . print_r($meta, true),
             'meta' => $meta,
             'created_at' => current_time('mysql'),
         ];
 
-        $queue[] = $item;
-        update_option(self::ADMIN_QUEUE_OPTION, $queue, false);
+        // Persist back to option
+        update_option($optionKey, $map, false);
 
         // Ensure cron is scheduled
         if (!wp_next_scheduled(self::CRON_HOOK)) {
             wp_schedule_event(time() + 60, 'minute', self::CRON_HOOK);
         }
+    }
+
+    /**
+     * Migrate items from legacy admin queue to new table.
+     */
+    public static function migrateAdminQueue(): void
+    {
+        if (!self::adminQueueTableExists()) {
+            return;
+        }
+
+        $queue = get_option(self::ADMIN_QUEUE_OPTION, []);
+        if (empty($queue) || !is_array($queue)) {
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_admin_notifications';
+
+        // Check if queue is keyed or list
+        foreach ($queue as $key => $item) {
+            // Basic validation
+            if (!isset($item['level'])) continue;
+
+            $meta = $item['meta'] ?? [];
+            $message = $item['message'] ?? $item['body'] ?? '';
+            // If body was used (legacy), it contained the message.
+
+            $wpdb->insert($table, [
+                'level' => substr((string)$item['level'], 0, 16),
+                'context' => substr((string)($item['context'] ?? 'general'), 0, 128),
+                'message' => (string)$message,
+                'meta' => wp_json_encode($meta),
+                'created_at' => $item['created_at'] ?? current_time('mysql'),
+                'processed' => 0
+            ]);
+        }
+
+        delete_option(self::ADMIN_QUEUE_OPTION);
+        Logger::log('info', 'email_queue', 'Migrated admin notification queue to database', ['count' => count($queue)]);
     }
 
     /**
@@ -411,17 +566,107 @@ class EmailService
         }
         set_transient(self::ADMIN_QUEUE_LOCK, 1, 30);
 
-        $queue = get_option(self::ADMIN_QUEUE_OPTION, []);
-        if (!is_array($queue) || empty($queue)) {
+        // 1. Check for legacy items to migrate
+        if (get_option(self::ADMIN_QUEUE_OPTION) !== false) {
+             self::migrateAdminQueue();
+        }
+
+        if (!self::adminQueueTableExists()) {
+            self::processLegacyAdminQueue();
+            delete_transient(self::ADMIN_QUEUE_LOCK);
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_admin_notifications';
+
+        // Fetch pending items
+        $items = $wpdb->get_results(
+            "SELECT * FROM $table WHERE processed = 0 ORDER BY created_at ASC LIMIT 50",
+            ARRAY_A
+        );
+
+        if (empty($items)) {
             delete_transient(self::ADMIN_QUEUE_LOCK);
             return;
         }
 
         $sentCount = 0;
         $now = time();
-        $sentContexts = [];
+        $lastSent = get_option('ap_admin_email_last_sent', []);
+        if (!is_array($lastSent)) {
+            $lastSent = [];
+        }
 
-        // Load last-sent times to dedupe
+        $limit = self::MAX_PER_RUN;
+
+        foreach ($items as $item) {
+            if ($sentCount >= $limit) {
+                break;
+            }
+
+            $context = $item['context'];
+            $last = isset($lastSent[$context]) ? strtotime($lastSent[$context]) : 0;
+
+            // Deduplication Check
+            if (($now - $last) < self::DEDUPE_WINDOW) {
+                // Throttled. Leave processed=0 to retry/send later?
+                // Legacy behavior: "Skip sending now; keep in queue".
+                continue;
+            }
+
+            $adminEmail = get_option('admin_email');
+            if (empty($adminEmail)) {
+                // Should we keep it? Yes.
+                continue;
+            }
+
+            // Construct email
+            $subject = sprintf('[Aperture Pro] %s: %s', strtoupper($item['level']), $context);
+            $body = $item['message'];
+
+            // Append meta to body if it looks like json or array
+            $meta = !empty($item['meta']) ? json_decode($item['meta'], true) : [];
+            if (!empty($meta) && is_array($meta)) {
+                 $body .= "\n\n" . print_r($meta, true);
+            }
+
+            $headers = ['Content-Type: text/plain; charset=UTF-8'];
+            $sent = @wp_mail($adminEmail, $subject, $body, $headers);
+
+            if ($sent) {
+                $sentCount++;
+                $lastSent[$context] = current_time('mysql');
+                Logger::log('info', 'email_queue', 'Admin notification sent', ['context' => $context]);
+
+                // Mark processed
+                $wpdb->update($table, ['processed' => 1], ['id' => $item['id']]);
+            } else {
+                Logger::log('warning', 'email_queue', 'Failed to send admin notification; will retry', ['context' => $context]);
+            }
+        }
+
+        update_option('ap_admin_email_last_sent', $lastSent, false);
+        delete_transient(self::ADMIN_QUEUE_LOCK);
+    }
+
+    /**
+     * Legacy processor for admin email queue (fallback).
+     */
+    private static function processLegacyAdminQueue(): void
+    {
+        $queue = get_option(self::ADMIN_QUEUE_OPTION, []);
+        if (empty($queue)) {
+            return;
+        }
+
+        // Normalize keyed map to list for legacy processing logic
+        if (!isset($queue[0]) && !empty($queue)) {
+             $queue = array_values($queue);
+        }
+
+        $sentCount = 0;
+        $now = time();
         $lastSent = get_option('ap_admin_email_last_sent', []);
         if (!is_array($lastSent)) {
             $lastSent = [];
@@ -439,39 +684,36 @@ class EmailService
             $last = isset($lastSent[$context]) ? strtotime($lastSent[$context]) : 0;
 
             if (($now - $last) < self::DEDUPE_WINDOW) {
-                // Skip sending now; keep in queue
                 $remaining[] = $item;
                 continue;
             }
 
-            // Send email
             $adminEmail = get_option('admin_email');
             if (empty($adminEmail)) {
-                // Can't send; keep in queue and log
                 Logger::log('warning', 'email_queue', 'No admin email configured; keeping notification in queue', ['context' => $context]);
                 $remaining[] = $item;
                 continue;
             }
 
+            // Legacy items have 'subject' and 'body' prepared.
+            $subject = $item['subject'] ?? sprintf('[Aperture Pro] %s: %s', strtoupper($item['level']), $context);
+            $body = $item['body'] ?? ($item['message'] ?? '');
+
             $headers = ['Content-Type: text/plain; charset=UTF-8'];
-            $sent = @wp_mail($adminEmail, $item['subject'], $item['body'], $headers);
+            $sent = @wp_mail($adminEmail, $subject, $body, $headers);
 
             if ($sent) {
                 $sentCount++;
                 $lastSent[$context] = current_time('mysql');
                 Logger::log('info', 'email_queue', 'Admin notification sent', ['context' => $context]);
             } else {
-                // Failed to send; keep in queue and log
                 Logger::log('warning', 'email_queue', 'Failed to send admin notification; will retry', ['context' => $context]);
                 $remaining[] = $item;
             }
         }
 
-        // Persist remaining queue and lastSent
         update_option(self::ADMIN_QUEUE_OPTION, $remaining, false);
         update_option('ap_admin_email_last_sent', $lastSent, false);
-
-        delete_transient(self::ADMIN_QUEUE_LOCK);
     }
 
     /**

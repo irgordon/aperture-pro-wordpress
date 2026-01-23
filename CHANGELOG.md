@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.52] – Optimized Admin Queue Storage**
+
+### **Performance**
+- **Admin Notifications:** Optimized the admin notification queue to use a dedicated database table (`ap_admin_notifications`) instead of the `wp_options` table. This changes the enqueue operation from O(N) to O(1) complexity, eliminating the performance bottleneck where queueing notifications degraded linearly as the queue grew.
+- **Benchmark:** Achieved ~390x speedup (0.63s -> 0.0016s) for enqueue operations in high-throughput scenarios (1000 items).
+- **Migration:** Added automated migration logic to move existing notification queue items from the legacy option to the new database table.
+- **Fallback:** Implemented a robust fallback mechanism that reverts to option-based storage (with optimized O(1) keyed lookups) if the database table is unavailable or inaccessible.
+
+### **Database**
+- **Schema:** Added `ap_admin_notifications` table definition (Version 1.0.15).
+
 ## **[1.0.51] – Optimized Storage Checks**
 
 ### **Performance**
