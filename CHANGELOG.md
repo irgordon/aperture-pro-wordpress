@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.16] – Admin Queue Optimization 2**
+
+### **Performance**
+- **Admin Queue:** Added a `dedupe_hash` column and index to `ap_admin_notifications` table to optimize duplicate checks from O(N) (string comparison) to O(1) (hash lookup).
+- **Admin Queue:** Updated `enqueueAdminNotification` to use the new hash-based lookup, significantly reducing database load during high-volume notification events.
+- **Migration:** Implemented a schema migration to backfill `dedupe_hash` for existing pending notifications.
+
 ## **[1.0.55] – Admin Queue Optimization**
 
 ### **Performance**

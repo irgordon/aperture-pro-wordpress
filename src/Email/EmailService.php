@@ -407,10 +407,12 @@ class EmailService
             // Best-effort insert; do not throw on DB errors
             try {
                 // Check for duplicate pending item to avoid flooding
-                // We match on context, level, and message.
+                // We use dedupe_hash index for O(1) lookup
+                $dedupeHash = md5($level . '|' . $context . '|' . $message);
+
                 $duplicateId = $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM $table WHERE context = %s AND level = %s AND processed = 0 AND message = %s LIMIT 1",
-                    $context, $level, $message
+                    "SELECT id FROM $table WHERE dedupe_hash = %s AND processed = 0 LIMIT 1",
+                    $dedupeHash
                 ));
 
                 if ($duplicateId) {
@@ -424,11 +426,12 @@ class EmailService
                         'context'    => $context,
                         'message'    => $message,
                         'meta'       => $metaJson,
+                        'dedupe_hash' => $dedupeHash,
                         'created_at' => current_time('mysql', true),
                         'processed'  => 0,
                     ],
                     [
-                        '%s', '%s', '%s', '%s', '%s', '%d'
+                        '%s', '%s', '%s', '%s', '%s', '%s', '%d'
                     ]
                 );
 
@@ -550,12 +553,17 @@ class EmailService
             $meta = $item['meta'] ?? [];
             $message = $item['message'] ?? $item['body'] ?? '';
             // If body was used (legacy), it contained the message.
+            $context = substr((string)($item['context'] ?? 'general'), 0, 128);
+            $level = substr((string)$item['level'], 0, 16);
+            $messageStr = (string)$message;
+            $hash = md5($level . '|' . $context . '|' . $messageStr);
 
             $wpdb->insert($table, [
-                'level' => substr((string)$item['level'], 0, 16),
-                'context' => substr((string)($item['context'] ?? 'general'), 0, 128),
-                'message' => (string)$message,
+                'level' => $level,
+                'context' => $context,
+                'message' => $messageStr,
                 'meta' => wp_json_encode($meta),
+                'dedupe_hash' => $hash,
                 'created_at' => $item['created_at'] ?? current_time('mysql'),
                 'processed' => 0
             ]);
