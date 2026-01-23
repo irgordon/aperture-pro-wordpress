@@ -1,6 +1,6 @@
 <?php
 
-// Mock WordPress functions
+// Mock WordPress functions in global namespace
 namespace {
     if (!function_exists('wp_tempnam')) {
         function wp_tempnam($prefix = '') {
@@ -102,7 +102,7 @@ namespace AperturePro\Storage {
         public function upload(string $source, string $destination, array $options = []): array;
         public function exists(string $path): bool;
         public function existsMany(array $paths): array;
-        public function signMany(array $paths): array; // Ensure interface matches usage
+        public function signMany(array $paths): array;
         public function getLocalPath(string $path): ?string;
     }
 
@@ -114,13 +114,15 @@ namespace AperturePro\Storage {
             return ['url' => "http://example.com/$destination"];
         }
         public function exists(string $path): bool {
-            // For benchmark, assume proof exists if it contains 'proof'
-            return strpos($path, 'proof') !== false;
+            return true;
         }
         public function existsMany(array $paths): array {
+            // Simulate network latency (200ms)
+            usleep(200000);
+
             $results = [];
             foreach ($paths as $p) {
-                $results[$p] = (strpos($p, 'proof') !== false);
+                $results[$p] = true;
             }
             return $results;
         }
@@ -135,7 +137,16 @@ namespace AperturePro\Storage {
     }
 }
 
-// Main Execution
+// Mock Config
+namespace AperturePro\Config {
+    class Config {
+        public static function get($key, $default = null) {
+            return $default;
+        }
+    }
+}
+
+// Main execution
 namespace {
     // Mock $wpdb
     class MockWPDB {
@@ -148,22 +159,6 @@ namespace {
     global $wpdb;
     $wpdb = new MockWPDB();
 
-    // Mock wp_remote_get for the baseline
-    // We simulate network latency
-    if (!function_exists('wp_remote_get')) {
-        function wp_remote_get($url, $args = []) {
-            // Simulate 0.5s latency per request
-            usleep(500000);
-
-            // Write some dummy data to the file if stream is set
-            if (!empty($args['stream']) && !empty($args['filename'])) {
-                file_put_contents($args['filename'], 'fake image data');
-            }
-
-            return ['response' => ['code' => 200]];
-        }
-    }
-
     // Load the classes under test
     require_once __DIR__ . '/../src/Proof/ProofCache.php';
     require_once __DIR__ . '/../src/Proof/ProofQueue.php';
@@ -171,69 +166,69 @@ namespace {
 
     use AperturePro\Proof\ProofService;
     use AperturePro\Storage\MockStorage;
+    use AperturePro\Proof\ProofCache;
 
-    // Benchmark 1: Proof Generation (Sequential)
-    $start = microtime(true);
+    // Setup
     $storage = new MockStorage();
-    $images = [
-        'img1.jpg',
-        'img2.jpg',
-        'img3.jpg',
-        'img4.jpg',
-        'img5.jpg'
-    ];
+    $numImages = 20;
 
-    echo "1. Starting sequential processing of " . count($images) . " images...\n";
+    echo "Benchmarking ProofService::getProofUrls with $numImages images...\n";
+    echo "Storage latency simulated at 200ms per batch check.\n\n";
 
-    foreach ($images as $img) {
-        $proofPath = "proofs/$img";
-        ProofService::generateProofVariant($img, $proofPath, $storage);
-    }
-
-    $end = microtime(true);
-    $duration = $end - $start;
-    echo "   Duration: " . number_format($duration, 4) . " seconds\n\n";
-
-
-    // Benchmark 2: Optimized getProofUrls
-    echo "2. Testing Optimized ProofService::getProofUrls...\n";
-
-    // Generate 50 fake image records
-    $batchImages = [];
-    for ($i = 0; $i < 50; $i++) {
-        $batchImages[] = [
-            'id'   => $i + 100,
-            'path' => "projects/123/img_{$i}.jpg",
+    // --- Run 1: Legacy Data (No has_proof) ---
+    // This should trigger existsMany (slow) AND Lazy Migration
+    $legacyImages = [];
+    for ($i = 0; $i < $numImages; $i++) {
+        $legacyImages[] = [
+            'id'          => $i + 1,
+            'project_id'  => 123,
+            'path'        => "projects/123/img_{$i}.jpg",
+            // has_proof missing
         ];
     }
 
-    // Mock storage where proofs "exist" for these
-    // (Our MockStorage assumes anything with 'proof' in path exists)
+    // Clear static cache in ProofService if possible, or use fresh call?
+    // Use reflection to clear static $requestCache if needed, or just pass new image refs
+    // But ProofService uses ProofCache::generateKey which hashes the array.
+    // Changing the array content changes the key.
 
-    // Cold Cache Run
     $start = microtime(true);
-    $urls = ProofService::getProofUrls($batchImages, $storage);
-    $coldTime = microtime(true) - $start;
+    $urlsLegacy = ProofService::getProofUrls($legacyImages, $storage);
+    $durationLegacy = microtime(true) - $start;
 
-    echo "   Cold Cache Duration: " . number_format($coldTime, 6) . "s\n";
-    echo "   Count: " . count($urls) . "\n";
-
-    // Warm Cache Run (Should hit static request cache or transient cache)
-    $start = microtime(true);
-    $urlsCached = ProofService::getProofUrls($batchImages, $storage);
-    $warmTime = microtime(true) - $start;
-
-    echo "   Warm Cache Duration: " . number_format($warmTime, 6) . "s\n";
-    echo "   Count: " . count($urlsCached) . "\n";
-
-    if ($warmTime < $coldTime) {
-        echo "   SUCCESS: Warm cache is faster.\n";
+    echo "1. Legacy Data (No has_proof): " . number_format($durationLegacy, 4) . " s\n";
+    if ($durationLegacy >= 0.2) {
+         echo "   [PASS] Slow path taken (Lazy Migration triggered)\n";
     } else {
-        echo "   WARNING: Warm cache not faster (could be negligible overhead).\n";
+         echo "   [FAIL] Fast path taken? Should have been slow.\n";
     }
 
-    // Validate result count
-    if (count($urlsCached) !== 50) {
-        echo "ERROR: Warm cache returned " . count($urlsCached) . " items\n";
+    // --- Run 2: Optimized Data (has_proof = 1) ---
+    $optimizedImages = [];
+    for ($i = 0; $i < $numImages; $i++) {
+        $optimizedImages[] = [
+            'id'          => $i + 1,
+            'project_id'  => 123,
+            'path'        => "projects/123/img_{$i}.jpg",
+            'has_proof'   => 1, // Flagged!
+        ];
     }
+
+    $start = microtime(true);
+    $urlsOpt = ProofService::getProofUrls($optimizedImages, $storage);
+    $durationOpt = microtime(true) - $start;
+
+    echo "2. Optimized Data (has_proof=1): " . number_format($durationOpt, 4) . " s\n";
+    if ($durationOpt < 0.1) {
+         echo "   [PASS] Fast path taken (Skipped existsMany)\n";
+    } else {
+         echo "   [FAIL] Slow path taken?\n";
+    }
+
+    // --- Run 3: Warm Cache ---
+    $start = microtime(true);
+    $urlsCached = ProofService::getProofUrls($optimizedImages, $storage);
+    $durationCached = microtime(true) - $start;
+
+    echo "3. Warm Cache: " . number_format($durationCached, 6) . " s\n";
 }

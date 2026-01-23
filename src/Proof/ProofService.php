@@ -85,9 +85,46 @@ class ProofService
             return [];
         }
 
-        // 3. Batch check existence
-        $pathsToCheck = array_unique(array_values($proofPaths));
-        $existenceMap = $storage->existsMany($pathsToCheck);
+        // 3. Batch check existence (Optimized)
+        // We only check storage for items that are not already flagged as existing in DB.
+        $pathsToCheck = [];
+        $verifiedPaths = [];
+
+        foreach ($proofPaths as $key => $path) {
+            if (!empty($images[$key]['has_proof'])) {
+                $verifiedPaths[$path] = true;
+            } else {
+                $pathsToCheck[] = $path;
+            }
+        }
+
+        $pathsToCheck = array_unique($pathsToCheck);
+        $existenceMap = [];
+
+        if (!empty($pathsToCheck)) {
+            $existenceMap = $storage->existsMany($pathsToCheck);
+
+            // Lazy Migration: If we found proofs that weren't flagged in DB, flag them now.
+            $foundIds = [];
+            foreach ($images as $key => $image) {
+                // If this image was checked (not verified initially) AND exists in storage
+                $pPath = $proofPaths[$key] ?? '';
+                if (empty($image['has_proof']) && !empty($existenceMap[$pPath])) {
+                    if (isset($image['id']) && is_numeric($image['id'])) {
+                        $foundIds[] = (int) $image['id'];
+                    }
+                }
+            }
+
+            if (!empty($foundIds)) {
+                ProofQueue::markProofsAsExisting($foundIds);
+            }
+        }
+
+        // Merge verified results
+        foreach ($verifiedPaths as $path => $exists) {
+            $existenceMap[$path] = true;
+        }
 
         // 4. Identify Existing vs Missing
         $toEnqueue = [];

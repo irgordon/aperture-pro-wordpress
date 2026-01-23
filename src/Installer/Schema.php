@@ -11,7 +11,7 @@ final class Schema
      * Bump this when schema changes.
      * Keep it aligned with your release tags when schema changes ship.
      */
-    public const DB_VERSION = '1.0.13';
+    public const DB_VERSION = '1.0.14';
 
     /**
      * Run on activation and on every request (cheap) to ensure schema is current.
@@ -50,6 +50,10 @@ final class Schema
         // Incremental migrations. Add new blocks as versions advance.
         if (version_compare($from, '1.0.9', '<')) {
             self::migrate_to_109_payments();
+        }
+
+        if (version_compare($from, '1.0.14', '<')) {
+            self::migrate_to_1014_proof_tracking();
         }
 
         // Ensure FK constraints last (optional and safe).
@@ -139,6 +143,7 @@ final class Schema
                 storage_key_original VARCHAR(500) NULL,
                 storage_key_edited VARCHAR(500) NULL,
                 is_selected TINYINT(1) NOT NULL DEFAULT 0,
+                has_proof TINYINT(1) NOT NULL DEFAULT 0,
                 client_comments JSON NULL,
                 sort_order INT NOT NULL DEFAULT 0,
                 created_at DATETIME NOT NULL,
@@ -277,6 +282,13 @@ final class Schema
               AND payment_amount_received IS NOT NULL
               AND payment_amount_received != 0
         ");
+    }
+
+    private static function migrate_to_1014_proof_tracking(): void
+    {
+        global $wpdb;
+        $images = $wpdb->prefix . 'ap_images';
+        self::add_column_if_missing($images, 'has_proof', "TINYINT(1) NOT NULL DEFAULT 0");
     }
 
     private static function create_payment_tables(): void
