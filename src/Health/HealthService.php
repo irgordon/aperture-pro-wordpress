@@ -90,6 +90,15 @@ class HealthService
         $watchdog = get_transient('ap_upload_watchdog_health');
         $results['checks']['upload_watchdog'] = $watchdog ?: ['ok' => true];
 
+        // Check Image Libraries
+        $hasImagick = extension_loaded('imagick');
+        $hasGD = extension_loaded('gd');
+        $results['checks']['image_processing'] = $hasImagick || $hasGD;
+
+        if (!$hasImagick && !$hasGD) {
+            $results['overall_status'] = 'warning';
+        }
+
         try {
             // Optional: check if we can log
             // Logger::log('info', 'health_check', 'Health check executed.');

@@ -174,6 +174,9 @@ class AdminUI
 
         // Custom proof placeholder
         add_settings_field('custom_placeholder_url', 'Custom Proof Placeholder URL', [self::class, 'field_custom_placeholder_url'], self::PAGE_SLUG, 'aperture_pro_section_general');
+
+        // Proof fallback behavior
+        add_settings_field('proof_allow_original_fallback', 'Allow Original Fallback', [self::class, 'field_proof_allow_original_fallback'], self::PAGE_SLUG, 'aperture_pro_section_general');
     }
 
     /**
@@ -293,6 +296,9 @@ class AdminUI
 
         // Custom placeholder URL
         $out['custom_placeholder_url'] = esc_url_raw($input['custom_placeholder_url'] ?? '');
+
+        // Allow original fallback (Security)
+        $out['proof_allow_original_fallback'] = !empty($input['proof_allow_original_fallback']) ? 1 : 0;
 
         // Log non-sensitive metadata
         Logger::log('info', 'admin_settings', 'Aperture Pro settings updated', [
@@ -757,6 +763,20 @@ class AdminUI
                value="<?php echo esc_attr($value); ?>"
                class="regular-text" />
         <p class="description">Optional. URL to a custom placeholder image for processing proofs. Leave empty to use the default.</p>
+        <?php
+    }
+
+    public static function field_proof_allow_original_fallback()
+    {
+        $opts = self::get_options();
+        $value = !empty($opts['proof_allow_original_fallback']);
+        ?>
+        <label style="color: #d63638;">
+            <input type="checkbox" name="<?php echo esc_attr(self::OPTION_KEY); ?>[proof_allow_original_fallback]"
+                   value="1" <?php checked($value); ?> />
+            Allow using high-res original if image libraries are missing (Insecure)
+        </label>
+        <p class="description">If enabled, the original full-resolution image will be used as the proof if GD/Imagick fails. <br><strong>Warning:</strong> This exposes your originals to clients.</p>
         <?php
     }
 }
