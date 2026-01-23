@@ -99,11 +99,20 @@ class ProofService
             if (!$exists) {
                 // OFFLOAD: Do not generate synchronously. Queue it.
                 $originalPath = $originalPaths[$key];
+                $imageRecord  = $images[$key] ?? [];
 
-                $toEnqueue[] = [
+                $queueItem = [
                     'original_path' => $originalPath,
                     'proof_path'    => $proofPath,
                 ];
+
+                // Pass IDs if available (for optimized queue)
+                if (isset($imageRecord['project_id'], $imageRecord['id'])) {
+                    $queueItem['project_id'] = $imageRecord['project_id'];
+                    $queueItem['image_id']   = $imageRecord['id'];
+                }
+
+                $toEnqueue[] = $queueItem;
 
                 // Return placeholder
                 $urls[$key] = self::getPlaceholderUrl();
@@ -127,7 +136,15 @@ class ProofService
 
         // 6. Batch enqueue missing proofs
         if (!empty($toEnqueue)) {
-            ProofQueue::enqueueBatch($toEnqueue);
+            // Optimized: Use ID-based adding if available in context
+            foreach ($toEnqueue as $item) {
+                if (isset($item['project_id'], $item['image_id'])) {
+                    ProofQueue::add((int)$item['project_id'], (int)$item['image_id']);
+                } else {
+                    // Fallback to path-based legacy enqueue
+                    ProofQueue::enqueue($item['original_path'], $item['proof_path']);
+                }
+            }
         }
 
         // Cache the result
@@ -181,6 +198,14 @@ class ProofService
      * Example:
      *  original: projects/123/image-1.jpg
      *  proof:    proofs/123/image-1_proof.jpg
+     */
+    public static function getProofPathForOriginal(string $originalPath): string
+    {
+        return self::getProofPath($originalPath);
+    }
+
+    /**
+     * Internal helper. Use getProofPathForOriginal externally.
      */
     protected static function getProofPath(string $originalPath): string
     {

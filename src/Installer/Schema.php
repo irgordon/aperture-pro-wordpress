@@ -11,7 +11,7 @@ final class Schema
      * Bump this when schema changes.
      * Keep it aligned with your release tags when schema changes ship.
      */
-    public const DB_VERSION = '1.0.12';
+    public const DB_VERSION = '1.0.13';
 
     /**
      * Run on activation and on every request (cheap) to ensure schema is current.
@@ -226,6 +226,22 @@ final class Schema
             ) {$charset};
         ";
         dbDelta($email_queue);
+
+        // ap_proof_queue (Performance Optimization)
+        // Replaces option-based queue with robust DB table.
+        $proof_queue = "
+            CREATE TABLE {$p}ap_proof_queue (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                project_id BIGINT UNSIGNED NOT NULL,
+                image_id BIGINT UNSIGNED NOT NULL,
+                attempts INT NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uniq_project_image (project_id, image_id),
+                KEY idx_created_at (created_at)
+            ) {$charset};
+        ";
+        dbDelta($proof_queue);
 
         // Create other core tables here with dbDelta as needed...
         self::create_payment_tables();

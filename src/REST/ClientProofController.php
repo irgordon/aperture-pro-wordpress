@@ -324,6 +324,7 @@ class ClientProofController extends BaseController
         return [
             [
                 'id'          => 1,
+                'project_id'  => $project_id, // Ensure project_id is available for optimized queue
                 'filename'    => 'image-1.jpg',
                 'path'        => 'projects/' . $project_id . '/image-1.jpg',
                 'is_selected' => false,
@@ -331,6 +332,7 @@ class ClientProofController extends BaseController
             ],
             [
                 'id'          => 2,
+                'project_id'  => $project_id, // Ensure project_id is available for optimized queue
                 'filename'    => 'image-2.jpg',
                 'path'        => 'projects/' . $project_id . '/image-2.jpg',
                 'is_selected' => true,
