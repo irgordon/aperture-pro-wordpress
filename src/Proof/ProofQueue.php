@@ -332,6 +332,8 @@ class ProofQueue
         // Correlate results back to queue IDs
         $successfulImageIds = [];
 
+        $generatedProofs = [];
+
         foreach ($toGenerate as $t) {
             $proofPath = $t['proof_path'];
             $qid       = $t['queue_id'];
@@ -339,10 +341,17 @@ class ProofQueue
             if (!empty($results[$proofPath])) {
                 $queueIdsToRemove[] = $qid;
                 $successfulImageIds[] = $t['image_id'];
-                Logger::log('info', 'proof_queue', 'Generated proof', ['proof' => $proofPath]);
+                $generatedProofs[] = $proofPath;
             } else {
                 $failedQueueIds[] = $qid;
             }
+        }
+
+        if (!empty($generatedProofs)) {
+            Logger::log('info', 'proof_queue', 'Generated proofs batch', [
+                'count'  => count($generatedProofs),
+                'proofs' => $generatedProofs,
+            ]);
         }
 
         // Cleanup success
