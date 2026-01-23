@@ -166,12 +166,6 @@ namespace {
 
     echo "Upload destination: " . $destination . "\n";
 
-    // Expected behavior AFTER fix:
-    // destination should be 'uploads/123/test_orphan_session/photo.jpg' or based on storage_key?
-    // In ChunkedUploadHandler::assembleAndStore:
-    // $remoteKey = $session['meta']['storage_key'] ?? ...
-    // $remoteKey = 'uploads/' . $session['project_id'] . '/' . $uploadId . '/' . basename($remoteKey);
-
     $expectedKeyBase = 'uploads/123/' . $uploadId . '/photo.jpg';
 
     if ($destination === $expectedKeyBase) {
@@ -182,6 +176,7 @@ namespace {
         if (strpos($destination, 'orphaned/' . $uploadId) !== false) {
             echo "Reason: Watchdog used fallback orphaned path.\n";
         }
+        exit(1);
     }
 
     // Verify Cleanup
@@ -189,6 +184,7 @@ namespace {
         echo "FAILURE: Session directory was not cleaned up.\n";
         $files = scandir($sessionDir);
         echo "Remaining files: " . implode(', ', $files) . "\n";
+        exit(1);
     } else {
         echo "SUCCESS: Session directory cleaned up.\n";
     }
@@ -214,6 +210,10 @@ namespace {
     Watchdog::run();
 
     $storage = StorageFactory::$mockStorage;
+    if (empty($storage->uploaded)) {
+        echo "FAILED: No upload attempted in fallback.\n";
+        exit(1);
+    }
     $lastUpload = end($storage->uploaded);
     $destination = $lastUpload['destination'];
 
@@ -222,6 +222,7 @@ namespace {
         echo "SUCCESS: Watchdog used fallback for missing metadata.\n";
     } else {
         echo "FAILURE: Watchdog did not use fallback. Got: $destination\n";
+        exit(1);
     }
 
     cleanup_test_dir();
