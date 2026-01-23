@@ -88,6 +88,54 @@ class ProofQueue
     }
 
     /**
+     * Add multiple items to the queue.
+     *
+     * @param array $items Array of ['project_id' => int, 'image_id' => int]
+     * @return bool
+     */
+    public static function addBatch(array $items): bool
+    {
+        if (empty($items)) {
+            return false;
+        }
+
+        // 1. Try DB Table (Optimized)
+        if (self::tableExists()) {
+            global $wpdb;
+            $table = $wpdb->prefix . self::TABLE_NAME;
+
+            $values = [];
+            $placeholders = [];
+            $now = current_time('mysql');
+
+            foreach ($items as $item) {
+                if (isset($item['project_id'], $item['image_id'])) {
+                    $placeholders[] = "(%d, %d, %s)";
+                    $values[] = $item['project_id'];
+                    $values[] = $item['image_id'];
+                    $values[] = $now;
+                }
+            }
+
+            if (empty($placeholders)) {
+                return false;
+            }
+
+            $query = "INSERT IGNORE INTO {$table} (project_id, image_id, created_at) VALUES " . implode(',', $placeholders);
+            $result = $wpdb->query($wpdb->prepare($query, ...$values));
+
+            if ($result !== false) {
+                self::scheduleCronIfNeeded();
+                return true;
+            }
+            Logger::log('error', 'proof_queue', 'Failed to batch insert into DB queue', ['error' => $wpdb->last_error]);
+        }
+
+        // 2. Fallback to Legacy Option
+        return self::addToLegacyQueueBatchIds($items);
+    }
+
+    /**
      * Helper to get legacy queue as a keyed map.
      * Normalized to [project_id:image_id => item].
      *
@@ -160,15 +208,23 @@ class ProofQueue
     {
         // If items have IDs, redirect to optimized add()
         // If items are just paths (legacy), go to legacy option.
+        $idItems = [];
         $legacyItems = [];
 
         foreach ($items as $item) {
             // If caller provided IDs (future-proofing refactor)
             if (isset($item['project_id'], $item['image_id'])) {
-                self::add((int)$item['project_id'], (int)$item['image_id']);
+                $idItems[] = [
+                    'project_id' => (int)$item['project_id'],
+                    'image_id'   => (int)$item['image_id']
+                ];
             } else {
                 $legacyItems[] = $item;
             }
+        }
+
+        if (!empty($idItems)) {
+            self::addBatch($idItems);
         }
 
         if (!empty($legacyItems)) {
@@ -532,6 +588,42 @@ class ProofQueue
 
         update_option(self::QUEUE_OPTION, $queue, false);
         self::scheduleCronIfNeeded();
+        return true;
+    }
+
+    /**
+     * Batch add to legacy queue.
+     */
+    protected static function addToLegacyQueueBatchIds(array $items): bool
+    {
+        $migrated = false;
+        $queue = self::getLegacyQueueAsMap($migrated);
+        $changed = false;
+        $now = current_time('mysql');
+
+        foreach ($items as $item) {
+            $projectId = $item['project_id'] ?? 0;
+            $imageId = $item['image_id'] ?? 0;
+
+            if (!$projectId || !$imageId) continue;
+
+            $key = "{$projectId}:{$imageId}";
+            if (!isset($queue[$key])) {
+                $queue[$key] = [
+                    'project_id' => $projectId,
+                    'image_id'   => $imageId,
+                    'created_at' => $now,
+                    'attempts'   => 0
+                ];
+                $changed = true;
+            }
+        }
+
+        if ($changed || $migrated) {
+            update_option(self::QUEUE_OPTION, $queue, false);
+            self::scheduleCronIfNeeded();
+        }
+
         return true;
     }
 
