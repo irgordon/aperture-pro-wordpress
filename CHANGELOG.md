@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.46] – Secure Image Library Fallback**
+
+### **Security**
+- **Proofs:** Fixed an insecure fallback mechanism in `ProofService::createWatermarkedLowRes` where missing image processing libraries (GD/Imagick) caused the original high-resolution image to be exposed as a proof.
+- **Proofs:** Implemented a secure fallback that generates a lightweight SVG placeholder ("Preview Unavailable") when image libraries are missing.
+- **Proofs:** Added an opt-in configuration setting (`proof.allow_original_fallback`) to restore the legacy behavior if strictly necessary (defaults to `false` for security).
+
+### **Health**
+- **Health:** Added a new check to `HealthService` that warns if both GD and Imagick are missing from the server environment.
+
 ## **[1.0.45] – High-Performance Proof Queue**
 
 ### **Performance**

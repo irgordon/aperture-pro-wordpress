@@ -562,13 +562,28 @@ class ProofService
         $quality = self::getConfiguredQuality();
 
         if (!extension_loaded('imagick') && !extension_loaded('gd')) {
-            // As a fallback, just copy the file (not ideal, but avoids hard failure).
-            $tmp = wp_tempnam('ap-proof-');
-            if (!$tmp) {
-                return null;
+            // Fallback: Check if user explicitly allows original exposure (INSECURE)
+            $allowOriginal = Config::get('proofing.allow_original_fallback', false);
+
+            if ($allowOriginal) {
+                Logger::log('warning', 'proofs', 'Generating proof by copying original (Missing Image Libs)', [
+                    'original' => $localOriginal
+                ]);
+
+                $tmp = wp_tempnam('ap-proof-');
+                if (!$tmp) {
+                    return null;
+                }
+                copy($localOriginal, $tmp);
+                return $tmp;
             }
-            copy($localOriginal, $tmp);
-            return $tmp;
+
+            // Secure Fallback: Return a low-res placeholder (SVG)
+            Logger::log('error', 'proofs', 'Missing GD/Imagick. Returning placeholder proof.', [
+                'original' => $localOriginal
+            ]);
+
+            return self::generateSVGPlaceholder($localOriginal);
         }
 
         $tmp = wp_tempnam('ap-proof-');
@@ -726,5 +741,35 @@ class ProofService
         }
 
         return $value;
+    }
+
+    /**
+     * Generate a placeholder SVG image when image libraries are missing.
+     *
+     * @param string $path Context (filename) for logging or embedding (optional)
+     * @return string|null Path to temp SVG file
+     */
+    protected static function generateSVGPlaceholder(string $path): ?string
+    {
+        $tmp = wp_tempnam('ap-proof-');
+        if (!$tmp) {
+            return null;
+        }
+
+        // Simple SVG with text
+        $svg = <<<SVG
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+ <rect width="100%" height="100%" fill="#f0f0f0"/>
+ <text x="50%" y="50%" font-family="Arial" font-size="24" fill="#666" text-anchor="middle" dy=".3em">Preview Unavailable</text>
+ <text x="50%" y="55%" font-family="Arial" font-size="14" fill="#999" text-anchor="middle" dy="1.2em">(Processing Error)</text>
+</svg>
+SVG;
+
+        if (file_put_contents($tmp, $svg) === false) {
+            @unlink($tmp);
+            return null;
+        }
+
+        return $tmp;
     }
 }

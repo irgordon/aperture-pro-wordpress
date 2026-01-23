@@ -151,6 +151,7 @@ class Config
 
             'proofing' => [
                 'placeholder_url' => $settings['custom_placeholder_url'] ?? '',
+                'allow_original_fallback' => !empty($settings['proof_allow_original_fallback']),
             ],
 
             'theme_overrides' => !empty($settings['theme_overrides']),
