@@ -36,6 +36,7 @@ class HealthService
             'ap_magic_links',
             'ap_download_tokens',
             'ap_logs',
+            'ap_proof_queue',
         ];
 
         $results['checks']['tables'] = [];
@@ -146,6 +147,12 @@ class HealthService
             'available' => null,
         ];
 
+        // -----------------------------------------
+        // QUEUE METRICS
+        // -----------------------------------------
+        // Use full namespace reference or import
+        $queueStats = \AperturePro\Proof\ProofQueue::getStats();
+
         try {
             $driver = StorageFactory::make();
             $stats  = $driver->getStats();
@@ -162,6 +169,7 @@ class HealthService
         return [
             'performance' => $performance,
             'storage'     => $storage,
+            'queue'       => $queueStats,
         ];
     }
 }
