@@ -102,6 +102,9 @@ class ChunkedUploadHandler
             return ['success' => false, 'message' => 'Unable to create upload session.'];
         }
 
+        // Persist session metadata to disk
+        self::persistSessionToDisk($sessionDir, $session);
+
         Logger::log('info', 'upload', 'Upload session created', ['upload_id' => $uploadId, 'project_id' => $projectId]);
 
         return ['success' => true, 'upload_id' => $uploadId, 'expires_at' => $expiresAt];
@@ -193,6 +196,7 @@ class ChunkedUploadHandler
         $session['chunks']['received'][$chunkIndex] = time();
         $session['updated_at'] = time();
         set_transient($sessionKey, $session, self::SESSION_TTL);
+        self::persistSessionToDisk($sessionDir, $session);
 
         // Compute progress
         $receivedCount = count($session['chunks']['received']);
@@ -211,6 +215,7 @@ class ChunkedUploadHandler
             $session['status'] = 'completed';
             $session['updated_at'] = time();
             set_transient($sessionKey, $session, self::SESSION_TTL);
+            self::persistSessionToDisk($sessionDir, $session);
 
             return ['success' => true, 'message' => 'Upload complete', 'progress' => 100.0];
         }
@@ -391,7 +396,7 @@ class ChunkedUploadHandler
     /**
      * Cleanup session files (chunks and assembled).
      */
-    protected static function cleanupSessionFiles(string $sessionDir): void
+    public static function cleanupSessionFiles(string $sessionDir): void
     {
         if (!is_dir($sessionDir)) {
             return;
@@ -402,6 +407,15 @@ class ChunkedUploadHandler
             @unlink($file->getPathname());
         }
         @rmdir($sessionDir);
+    }
+
+    /**
+     * Persist session metadata to disk for resilience against transient loss.
+     */
+    protected static function persistSessionToDisk(string $sessionDir, array $session): void
+    {
+        $file = $sessionDir . 'session.json';
+        @file_put_contents($file, json_encode($session));
     }
 
     /**

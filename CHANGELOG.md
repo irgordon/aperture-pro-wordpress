@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.39] – Watchdog Metadata Resilience**
+
+### **Fixes**
+- **Watchdog:** Fixed an issue where the `Watchdog` service would guess the remote key for orphaned upload sessions (`orphaned/{id}/assembled.bin`) when the session transient was missing.
+- **Watchdog:** Implemented fallback logic to read session metadata from a persisted `session.json` file in the upload directory, ensuring the correct remote key is used for recovery even after transient expiration.
+- **Watchdog:** Fixed a regression where `Watchdog` failed to clean up orphaned sessions because `ChunkedUploadHandler::cleanupSessionFiles` was protected. It is now public.
+- **Upload:** Updated `ChunkedUploadHandler` to persist session metadata to disk (`session.json`) alongside the transient, providing a durable recovery source for the Watchdog.
+
 ## **[1.0.38] – Secure Crypto Fallback**
 
 ### **Security**

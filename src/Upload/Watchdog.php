@@ -78,8 +78,23 @@ class Watchdog
                         if (!$storage) {
                             $storage = \AperturePro\Storage\StorageFactory::make();
                         }
-                        // Determine a remote key placeholder (we don't have session metadata)
-                        $remoteKey = 'orphaned/' . $uploadId . '/' . basename($assembled);
+
+                        // Try to recover session metadata from disk
+                        $sessionFile = $sessionDir . 'session.json';
+                        $diskSession = null;
+                        if (file_exists($sessionFile)) {
+                            $diskSession = json_decode(file_get_contents($sessionFile), true);
+                        }
+
+                        if ($diskSession && !empty($diskSession['project_id'])) {
+                            // Use persisted metadata to reconstruct the correct remote key
+                            $remoteKey = $diskSession['meta']['storage_key'] ?? ('projects/' . $diskSession['project_id'] . '/' . ($diskSession['meta']['original_filename'] ?? 'upload.bin'));
+                            $remoteKey = 'uploads/' . $diskSession['project_id'] . '/' . $uploadId . '/' . basename($remoteKey);
+                        } else {
+                            // Fallback: Determine a remote key placeholder (we don't have session metadata)
+                            $remoteKey = 'orphaned/' . $uploadId . '/' . basename($assembled);
+                        }
+
                         $res = $storage->upload($assembled, $remoteKey, ['signed' => true]);
                         $summary['retry_attempts']++;
                         if (empty($res['success'])) {
