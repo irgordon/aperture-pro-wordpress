@@ -173,7 +173,8 @@ class ProofService
 
         // 6. Batch enqueue missing proofs
         if (!empty($toEnqueue)) {
-            // Optimized: Use batch enqueue to reduce DB calls from O(N) to O(1)
+            // Optimized: Use batch enqueue to reduce DB calls from O(N) to O(1).
+            // This replaces the legacy iterative loop to ensure high throughput.
             ProofQueue::enqueueBatch($toEnqueue);
         }
 
