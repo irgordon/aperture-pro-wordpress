@@ -154,6 +154,11 @@ class Config
                 'allow_original_fallback' => !empty($settings['proof_allow_original_fallback']),
             ],
 
+            'client_portal' => [
+                'enable_logging'   => !empty($settings['enable_client_logging']),
+                'log_max_per_page' => (int) ($settings['client_log_max_per_page'] ?? 100),
+            ],
+
             'theme_overrides' => !empty($settings['theme_overrides']),
 
             'upload' => [
