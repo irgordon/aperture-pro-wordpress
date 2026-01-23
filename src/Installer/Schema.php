@@ -11,7 +11,7 @@ final class Schema
      * Bump this when schema changes.
      * Keep it aligned with your release tags when schema changes ship.
      */
-    public const DB_VERSION = '1.0.14';
+    public const DB_VERSION = '1.0.15';
 
     /**
      * Run on activation and on every request (cheap) to ensure schema is current.
@@ -54,6 +54,10 @@ final class Schema
 
         if (version_compare($from, '1.0.14', '<')) {
             self::migrate_to_1014_proof_tracking();
+        }
+
+        if (version_compare($from, '1.0.15', '<')) {
+            self::migrate_to_1015_admin_queue();
         }
 
         // Ensure FK constraints last (optional and safe).
@@ -248,6 +252,22 @@ final class Schema
         ";
         dbDelta($proof_queue);
 
+        // ap_admin_notifications
+        $admin_notifications = "
+            CREATE TABLE {$p}ap_admin_notifications (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                level VARCHAR(16) NOT NULL,
+                context VARCHAR(128) NOT NULL,
+                message TEXT NOT NULL,
+                meta JSON NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                processed TINYINT(1) NOT NULL DEFAULT 0,
+                PRIMARY KEY (id),
+                KEY idx_processed_created (processed, created_at)
+            ) {$charset};
+        ";
+        dbDelta($admin_notifications);
+
         // Create other core tables here with dbDelta as needed...
         self::create_payment_tables();
     }
@@ -289,6 +309,13 @@ final class Schema
         global $wpdb;
         $images = $wpdb->prefix . 'ap_images';
         self::add_column_if_missing($images, 'has_proof', "TINYINT(1) NOT NULL DEFAULT 0");
+    }
+
+    private static function migrate_to_1015_admin_queue(): void
+    {
+        if (class_exists('\AperturePro\Email\EmailService') && method_exists('\AperturePro\Email\EmailService', 'migrateAdminQueue')) {
+            \AperturePro\Email\EmailService::migrateAdminQueue();
+        }
     }
 
     private static function create_payment_tables(): void
