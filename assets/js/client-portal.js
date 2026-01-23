@@ -492,6 +492,7 @@
         this.initDownloadFlow();
         this.initUploadControls();
         this.refreshPaymentState();
+        this.cacheProofImages();
       });
     },
 
@@ -503,6 +504,17 @@
       this.openProofsBtn = document.getElementById('ap-open-proofs');
       this.approveProofsBtn = document.getElementById('ap-approve-proofs');
       this.portal = document.querySelector('.ap-portal');
+      this.proofImagesData = [];
+    },
+
+    cacheProofImages() {
+      const allImages = Array.from(document.querySelectorAll('.ap-proof-item img'));
+      this.proofImagesData = allImages.map(img => ({
+        src: img.getAttribute('src'),
+        alt: img.getAttribute('alt'),
+        id: img.closest('.ap-proof-item').dataset.imageId,
+        el: img
+      }));
     },
 
     bind() {
@@ -680,15 +692,9 @@
     },
 
     handleProofClick(imgEl) {
-      const allImages = Array.from(document.querySelectorAll('.ap-proof-item img'));
-      const imagesData = allImages.map(img => ({
-        src: img.getAttribute('src'),
-        alt: img.getAttribute('alt'),
-        id: img.closest('.ap-proof-item').dataset.imageId
-      }));
-      const index = allImages.indexOf(imgEl);
+      const index = this.proofImagesData.findIndex(data => data.el === imgEl);
       if (index >= 0) {
-        new Lightbox(imagesData).open(index);
+        new Lightbox(this.proofImagesData).open(index);
       }
     },
 
