@@ -173,15 +173,8 @@ class ProofService
 
         // 6. Batch enqueue missing proofs
         if (!empty($toEnqueue)) {
-            // Optimized: Use ID-based adding if available in context
-            foreach ($toEnqueue as $item) {
-                if (isset($item['project_id'], $item['image_id'])) {
-                    ProofQueue::add((int)$item['project_id'], (int)$item['image_id']);
-                } else {
-                    // Fallback to path-based legacy enqueue
-                    ProofQueue::enqueue($item['original_path'], $item['proof_path']);
-                }
-            }
+            // Optimized: Use batch enqueue to reduce DB calls from O(N) to O(1)
+            ProofQueue::enqueueBatch($toEnqueue);
         }
 
         // Cache the result
