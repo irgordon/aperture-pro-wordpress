@@ -11,7 +11,7 @@ final class Schema
      * Bump this when schema changes.
      * Keep it aligned with your release tags when schema changes ship.
      */
-    public const DB_VERSION = '1.0.15';
+    public const DB_VERSION = '1.0.16';
 
     /**
      * Run on activation and on every request (cheap) to ensure schema is current.
@@ -58,6 +58,10 @@ final class Schema
 
         if (version_compare($from, '1.0.15', '<')) {
             self::migrate_to_1015_admin_queue();
+        }
+
+        if (version_compare($from, '1.0.16', '<')) {
+            self::migrate_to_1016_admin_queue_optimization();
         }
 
         // Ensure FK constraints last (optional and safe).
@@ -260,10 +264,12 @@ final class Schema
                 context VARCHAR(128) NOT NULL,
                 message TEXT NOT NULL,
                 meta JSON NULL,
+                dedupe_hash CHAR(32) NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 processed TINYINT(1) NOT NULL DEFAULT 0,
                 PRIMARY KEY (id),
-                KEY idx_processed_created (processed, created_at)
+                KEY idx_processed_created (processed, created_at),
+                KEY idx_dedupe (dedupe_hash, processed)
             ) {$charset};
         ";
         dbDelta($admin_notifications);
@@ -316,6 +322,22 @@ final class Schema
         if (class_exists('\AperturePro\Email\EmailService') && method_exists('\AperturePro\Email\EmailService', 'migrateAdminQueue')) {
             \AperturePro\Email\EmailService::migrateAdminQueue();
         }
+    }
+
+    private static function migrate_to_1016_admin_queue_optimization(): void
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_admin_notifications';
+
+        self::add_column_if_missing($table, 'dedupe_hash', "CHAR(32) NULL");
+        self::add_index_if_missing($table, 'idx_dedupe', 'dedupe_hash, processed');
+
+        // Backfill hashes for pending items
+        $wpdb->query("
+            UPDATE {$table}
+            SET dedupe_hash = MD5(CONCAT(level, '|', context, '|', message))
+            WHERE dedupe_hash IS NULL
+        ");
     }
 
     private static function create_payment_tables(): void
