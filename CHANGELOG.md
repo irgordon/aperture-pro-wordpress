@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.57] – Watchdog Robustness**
+
+### **Fixes**
+- **Watchdog:** Verified and hardened the `Watchdog` metadata recovery logic to ensure it correctly prioritizes the `session.json` file when reconstructing storage keys for orphaned uploads. This prevents data loss or incorrect key generation if the session transient expires or is missing.
+- **Tests:** Updated `tests/test_watchdog_metadata.php` to serve as a regression test for this recovery behavior.
+
 ## **[1.0.16] – Admin Queue Optimization 2**
 
 ### **Performance**
