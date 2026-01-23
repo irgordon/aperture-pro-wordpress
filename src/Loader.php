@@ -26,6 +26,12 @@ class Loader
     protected string $version;
 
     /**
+     * Plugin directory path.
+     * Reserved for future service injection.
+     */
+    protected string $path;
+
+    /**
      * Plugin environment context.
      */
     protected Environment $environment;
@@ -49,6 +55,7 @@ class Loader
     {
         $this->environment = $environment;
         $this->version = $environment->getVersion();
+        $this->path = $environment->getPath();
     }
 
     /**
@@ -139,10 +146,47 @@ class Loader
 
         $args = [];
         foreach ($constructor->getParameters() as $param) {
+            $name = $param->getName();
             $type = $param->getType();
-            if ($type instanceof \ReflectionNamedType && !$type->isBuiltin() && $type->getName() === Environment::class) {
-                $args[] = $this->environment;
-            } elseif ($param->isOptional()) {
+
+            // Handle built-in types (specifically string for path)
+            if ($type instanceof \ReflectionNamedType && $type->isBuiltin()) {
+                if ($type->getName() === 'string' && ($name === 'path' || $name === 'pluginPath')) {
+                    $args[] = $this->path;
+                } elseif ($param->isOptional()) {
+                    $args[] = $param->getDefaultValue();
+                }
+                continue;
+            }
+
+            // Handle class dependencies
+            if ($type instanceof \ReflectionNamedType && !$type->isBuiltin()) {
+                $dependencyClass = $type->getName();
+
+                // 1. Environment Injection
+                if ($dependencyClass === Environment::class) {
+                    $args[] = $this->environment;
+                    continue;
+                }
+
+                // 2. Existing Service Injection
+                if (isset($this->services[$dependencyClass])) {
+                    $args[] = $this->services[$dependencyClass];
+                    continue;
+                }
+
+                // 3. Recursive Registration
+                if (class_exists($dependencyClass)) {
+                    $this->registerService($dependencyClass);
+                    if (isset($this->services[$dependencyClass])) {
+                        $args[] = $this->services[$dependencyClass];
+                        continue;
+                    }
+                }
+            }
+
+            // Fallback for optional parameters
+            if ($param->isOptional()) {
                 $args[] = $param->getDefaultValue();
             } else {
                 // Argument cannot be resolved.
