@@ -378,6 +378,156 @@
   // Modal System
   const Modal = window.ApertureModal;
 
+  // Selection Manager for batching/debounce
+  class SelectionManager {
+    constructor({ restBase, galleryId, debounceMs = 800, maxBatch = 100, debug = false }) {
+      this.restBase = restBase;
+      this.galleryId = galleryId;
+      this.debounceMs = debounceMs;
+      this.maxBatch = maxBatch;
+      this.debug = debug;
+
+      // Map<imageId, selected>
+      this.pending = new Map();
+
+      // timer id for debounce flush
+      this._flushTimer = null;
+
+      // persistent fallback so selections survive reloads
+      this.storageKey = `ap_pending_selections_${galleryId}`;
+      this._loadFromStorage();
+
+      // flush on unload
+      window.addEventListener('beforeunload', () => this._flushOnUnload());
+    }
+
+    // Called by checkbox handler
+    setSelection(imageId, selected) {
+      this.pending.set(String(imageId), selected ? 1 : 0);
+      this._saveToStorage();
+      this._scheduleFlush();
+    }
+
+    // Debounce scheduling
+    _scheduleFlush() {
+      if (this._flushTimer) clearTimeout(this._flushTimer);
+      this._flushTimer = setTimeout(() => this.flush(), this.debounceMs);
+    }
+
+    // Public flush (returns a Promise)
+    async flush() {
+      if (this._flushTimer) {
+        clearTimeout(this._flushTimer);
+        this._flushTimer = null;
+      }
+
+      if (this.pending.size === 0) return;
+
+      // Build batch payload (limit size to avoid huge requests)
+      const entries = Array.from(this.pending.entries()).slice(0, this.maxBatch);
+      const payload = entries.map(([image_id, selected]) => ({ image_id, selected }));
+
+      const url = `${this.restBase}/proofs/${this.galleryId}/select-batch`;
+
+      // Optimistic: remove from pending immediately to avoid duplicate UI state
+      entries.forEach(([id]) => this.pending.delete(id));
+      this._saveToStorage();
+
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-WP-Nonce': ApertureClient.nonce || ''
+          },
+          body: JSON.stringify({ selections: payload }),
+          credentials: 'same-origin',
+        });
+
+        if (!res.ok) {
+          // On failure, requeue entries and optionally retry once
+          entries.forEach(([id, sel]) => this.pending.set(id, sel));
+          this._saveToStorage();
+          if (this.debug) console.warn('Selection batch failed, will retry later', res.status);
+          // schedule retry with backoff
+          setTimeout(() => this._scheduleFlush(), 2000);
+        } else {
+          if (this.debug) console.log('Selection batch saved', payload.length);
+          // If there are more pending items beyond this batch, schedule another flush
+          if (this.pending.size > 0) this._scheduleFlush();
+        }
+      } catch (err) {
+        // Network error: requeue and schedule retry
+        entries.forEach(([id, sel]) => this.pending.set(id, sel));
+        this._saveToStorage();
+        if (this.debug) console.warn('Selection batch error', err);
+        setTimeout(() => this._scheduleFlush(), 2000);
+      }
+    }
+
+    // Use sendBeacon or fetch keepalive on unload
+    _flushOnUnload() {
+      if (this.pending.size === 0) return;
+
+      const entries = Array.from(this.pending.entries()).map(([image_id, selected]) => ({ image_id, selected }));
+      const url = `${this.restBase}/proofs/${this.galleryId}/select-batch`;
+      const body = JSON.stringify({ selections: entries });
+
+      try {
+        if (navigator.sendBeacon) {
+          const blob = new Blob([body], { type: 'application/json' });
+          navigator.sendBeacon(url, blob);
+          // best-effort: clear storage
+          this.pending.clear();
+          this._saveToStorage();
+          return;
+        }
+      } catch (e) {
+        if (this.debug) console.warn('sendBeacon failed', e);
+      }
+
+      // Fallback to synchronous fetch with keepalive (may still be best-effort)
+      try {
+        fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-WP-Nonce': ApertureClient.nonce || ''
+          },
+          body,
+          keepalive: true,
+          credentials: 'same-origin',
+        });
+        this.pending.clear();
+        this._saveToStorage();
+      } catch (e) {
+        if (this.debug) console.warn('unload fetch failed', e);
+      }
+    }
+
+    _saveToStorage() {
+      try {
+        const obj = Object.fromEntries(this.pending);
+        localStorage.setItem(this.storageKey, JSON.stringify(obj));
+      } catch (e) {
+        // ignore storage errors
+      }
+    }
+
+    _loadFromStorage() {
+      try {
+        const raw = localStorage.getItem(this.storageKey);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') {
+          Object.entries(obj).forEach(([k, v]) => this.pending.set(k, v));
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+  }
+
   // Lightbox System
   class Lightbox {
     constructor(images) {
@@ -650,25 +800,34 @@
       if (el) el.scrollIntoView({ behavior: 'smooth' });
     },
 
+    getSelectionManager(galleryId) {
+      if (!this.selectionManagers) this.selectionManagers = {};
+      if (!this.selectionManagers[galleryId]) {
+        this.selectionManagers[galleryId] = new SelectionManager({
+          restBase: ApertureClient.restBase,
+          galleryId: galleryId,
+          debug: ApertureClient.debug || false
+        });
+      }
+      return this.selectionManagers[galleryId];
+    },
+
     async handleSelectCheckbox(checkbox) {
       const item = checkbox.closest('.ap-proof-item');
       const imageId = item ? item.dataset.imageId : null;
       const galleryEl = item ? item.closest('.ap-proofs') : null;
-      const galleryId = galleryEl ? galleryEl.datasetGalleryId || null : null;
+      // Robustly get gallery ID via dataset or attribute
+      const galleryId = galleryEl ? (galleryEl.dataset.galleryId || galleryEl.getAttribute('data-gallery-id')) : null;
+
+      if (!galleryId || !imageId) {
+        log('Missing galleryId or imageId for selection');
+        return;
+      }
 
       const selected = checkbox.checked ? 1 : 0;
-      try {
-        const url = `${ApertureClient.restBase}/proofs/${galleryId}/select`;
-        await fetchJson(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_id: imageId, selected }),
-        });
-        // update UI
-      } catch (e) {
-        Modal.alert('Failed to update selection. Please try again.');
-        checkbox.checked = !checkbox.checked;
-      }
+
+      // Use SelectionManager for batching/debouncing
+      this.getSelectionManager(galleryId).setSelection(imageId, selected);
     },
 
     async handleCommentButton(button) {

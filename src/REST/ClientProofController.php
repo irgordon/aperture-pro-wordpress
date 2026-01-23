@@ -48,6 +48,14 @@ class ClientProofController extends BaseController
             ],
         ]);
 
+        register_rest_route('aperture/v1', '/proofs/(?P<gallery_id>\d+)/select-batch', [
+            [
+                'methods'             => 'POST',
+                'callback'            => [$this, 'select_batch'],
+                'permission_callback' => [$this, 'check_client_access'],
+            ],
+        ]);
+
         register_rest_route('aperture/v1', '/proofs/(?P<gallery_id>\d+)/comment', [
             [
                 'methods'             => 'POST',
@@ -208,6 +216,73 @@ class ClientProofController extends BaseController
             'gallery_id' => $gallery_id,
             'image_id'   => $image_id,
             'selected'   => $selected,
+        ], 200);
+    }
+
+    /**
+     * Batch select images.
+     */
+    public function select_batch(WP_REST_Request $request)
+    {
+        $gallery_id = (int) $request['gallery_id'];
+        $selections = $request->get_param('selections');
+
+        if ($gallery_id <= 0 || !is_array($selections)) {
+            return new WP_Error('invalid_params', 'Invalid gallery ID or selections format', ['status' => 400]);
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_images';
+
+        $updated_count = 0;
+        $errors = [];
+
+        // Start transaction for consistency
+        $wpdb->query('START TRANSACTION');
+
+        foreach ($selections as $item) {
+            $image_id = (int) ($item['image_id'] ?? 0);
+            $selected = isset($item['selected']) && $item['selected'] ? 1 : 0;
+
+            if ($image_id <= 0) {
+                continue;
+            }
+
+            $result = $wpdb->update(
+                $table,
+                [
+                    'is_selected' => $selected,
+                    'updated_at'  => current_time('mysql', 1),
+                ],
+                [
+                    'id'         => $image_id,
+                    'gallery_id' => $gallery_id,
+                ]
+            );
+
+            if ($result === false) {
+                $errors[] = $image_id;
+            } else {
+                $updated_count++;
+            }
+        }
+
+        // Commit regardless of partial failures to save what we can
+        $wpdb->query('COMMIT');
+
+        if (!empty($errors)) {
+            Logger::log('warning', 'select_batch', 'Some selections failed to update', [
+                'gallery_id' => $gallery_id,
+                'failed_ids' => $errors,
+                'db_error'   => $wpdb->last_error,
+            ]);
+        }
+
+        return new WP_REST_Response([
+            'gallery_id' => $gallery_id,
+            'updated'    => $updated_count,
+            'failed'     => count($errors),
+            'failed_ids' => $errors
         ], 200);
     }
 
