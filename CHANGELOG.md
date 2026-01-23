@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.59] – Get Project Images Refactor**
+
+### **Verification**
+- **Client Portal:** Verified and refactored `ClientProofController::get_project_images` to ensure it fetches real data from the database via `ProjectRepository`, replacing previous placeholder comments.
+- **Tests:** Added `tests/verify_get_project_images.php` to verify the method logic and DB query structure.
+
 ## **[1.0.58] – Proof Queue Logging**
 
 ### **Performance**
