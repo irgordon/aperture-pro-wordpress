@@ -40,11 +40,11 @@ $dummySwPath = __DIR__ . '/sw_benchmark_tmp.js';
 file_put_contents($dummySwPath, "console.log('./portal-app.js');");
 
 
-function legacy_logic($isDebug) {
+function baseline_logic($isDebug) {
     global $dummySwPath;
     $cacheKey = 'ap_sw_' . APERTURE_PRO_VERSION;
 
-    // Legacy Issue: Cache was skipped in debug mode
+    // Baseline: Cache skipped in debug mode (simulated)
     if (!$isDebug) {
         $cachedContent = get_transient($cacheKey);
         if ($cachedContent) {
@@ -101,22 +101,22 @@ $isDebug = true; // We are simulating the problem scenario
 echo "Simulating Debug Mode (WP_DEBUG=true)\n";
 echo "-------------------------------------\n";
 
-// 1. Legacy Logic
+// 1. Baseline Logic
 // Clear cache initially
 global $mock_transients;
 $mock_transients = [];
 
 // Prime the cache (simulating a previous request)
-legacy_logic($isDebug);
-// Note: legacy_logic writes to cache even in debug!
+baseline_logic($isDebug);
+// Note: baseline_logic writes to cache even in debug!
 
 $start = microtime(true);
 for ($i = 0; $i < $iterations; $i++) {
-    legacy_logic($isDebug);
+    baseline_logic($isDebug);
 }
 $end = microtime(true);
-$legacyTime = $end - $start;
-echo "Legacy Logic Time (Hit Cache but Ignored): " . number_format($legacyTime, 5) . "s\n";
+$baselineTime = $end - $start;
+echo "Baseline Logic Time (Hit Cache but Ignored): " . number_format($baselineTime, 5) . "s\n";
 
 
 // 2. Current Logic
@@ -136,7 +136,7 @@ echo "Current Logic Time (Hit Cache): " . number_format($currentTime, 5) . "s\n"
 
 
 if ($currentTime > 0) {
-    echo "Improvement: " . number_format($legacyTime / $currentTime, 1) . "x faster\n";
+    echo "Improvement: " . number_format($baselineTime / $currentTime, 1) . "x faster\n";
 }
 
 // Cleanup
