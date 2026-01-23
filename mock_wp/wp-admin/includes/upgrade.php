@@ -7,5 +7,8 @@
         if (strpos($sql, "ap_payment_events") !== false) {
              echo "  - Found table: ap_payment_events\n";
         }
+        if (strpos($sql, "ap_email_queue") !== false) {
+             echo "  - Found table: ap_email_queue\n";
+        }
     }
 } ?>

@@ -11,7 +11,7 @@ final class Schema
      * Bump this when schema changes.
      * Keep it aligned with your release tags when schema changes ship.
      */
-    public const DB_VERSION = '1.0.11';
+    public const DB_VERSION = '1.0.12';
 
     /**
      * Run on activation and on every request (cheap) to ensure schema is current.
@@ -205,6 +205,27 @@ final class Schema
             ) {$charset};
         ";
         dbDelta($logs);
+
+        // ap_email_queue
+        $email_queue = "
+            CREATE TABLE {$p}ap_email_queue (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                to_address VARCHAR(255) NOT NULL,
+                subject VARCHAR(255) NOT NULL,
+                body LONGTEXT NOT NULL,
+                headers TEXT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                retries INT NOT NULL DEFAULT 0,
+                priority INT NOT NULL DEFAULT 10,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                PRIMARY KEY (id),
+                KEY status (status),
+                KEY priority (priority),
+                KEY created_at (created_at)
+            ) {$charset};
+        ";
+        dbDelta($email_queue);
 
         // Create other core tables here with dbDelta as needed...
         self::create_payment_tables();
