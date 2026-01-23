@@ -154,6 +154,10 @@ class Config
             ],
 
             'theme_overrides' => !empty($settings['theme_overrides']),
+
+            'upload' => [
+                'auto_cleanup_remote_on_failure' => $settings['upload_auto_cleanup_failure'] ?? true,
+            ],
         ];
 
         return self::$cache;
