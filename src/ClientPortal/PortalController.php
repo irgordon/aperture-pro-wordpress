@@ -6,6 +6,7 @@ use AperturePro\ClientPortal\PortalRenderer;
 use AperturePro\Auth\CookieService;
 use AperturePro\Helpers\Nonce;
 use AperturePro\Helpers\Logger;
+use AperturePro\Config\Config;
 
 /**
  * PortalController
@@ -83,11 +84,18 @@ class PortalController
         $nonce = Nonce::create('aperture_pro');
         $session = CookieService::getClientSession();
 
+        // Retrieve client logging config
+        $enableLogging = Config::get('client_portal.enable_logging', false);
+        $logMax = Config::get('client_portal.log_max_per_page', 100);
+
         $initial = [
             'restBase' => rest_url('aperture/v1'),
             'nonce' => $nonce,
             'session' => $session ?: null,
             'swUrl' => site_url('?aperture_sw=1'),
+            'enableClientLogging' => $enableLogging,
+            'clientLogMaxPerPage' => $logMax,
+            'debug' => (defined('WP_DEBUG') && WP_DEBUG),
             'strings' => [
                 'loading' => 'Loading…',
                 'no_project' => 'No project selected. If you were given a link, please open it again or contact your photographer.',

@@ -9,6 +9,7 @@ use AperturePro\Storage\StorageFactory;
 use AperturePro\Proof\ProofService;
 use AperturePro\Helpers\Logger;
 use AperturePro\Auth\CookieService;
+use AperturePro\Config\Config;
 
 /**
  * ClientProofController
@@ -59,6 +60,14 @@ class ClientProofController extends BaseController
             [
                 'methods'             => 'POST',
                 'callback'            => [$this, 'approve_proofs'],
+                'permission_callback' => [$this, 'check_client_access'],
+            ],
+        ]);
+
+        register_rest_route('aperture/v1', '/client/log', [
+            [
+                'methods'             => 'POST',
+                'callback'            => [$this, 'client_log'],
                 'permission_callback' => [$this, 'check_client_access'],
             ],
         ]);
@@ -349,5 +358,74 @@ class ClientProofController extends BaseController
         $table = $wpdb->prefix . 'ap_galleries';
         $pid = $wpdb->get_var($wpdb->prepare("SELECT project_id FROM $table WHERE id = %d", $gallery_id));
         return $pid ? (int)$pid : null;
+    }
+
+    /**
+     * Handle client-side log reports.
+     *
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response
+     */
+    public function client_log(WP_REST_Request $request)
+    {
+        // Enforce opt-in at the server level
+        if (!Config::get('client_portal.enable_logging', false)) {
+             return $this->respond_error('logging_disabled', 'Client logging is disabled.', 403);
+        }
+
+        $level = sanitize_text_field($request->get_param('level') ?? 'info');
+        $context = sanitize_text_field($request->get_param('context') ?? 'client');
+        $message = sanitize_text_field($request->get_param('message') ?? '');
+        $meta = $request->get_param('meta');
+
+        if (!is_array($meta)) {
+            $meta = [];
+        }
+
+        // Validate level
+        $allowedLevels = ['debug', 'info', 'warning', 'error', 'critical'];
+        // Fix: JS often sends 'warn', normalize to 'warning'
+        if ($level === 'warn') {
+            $level = 'warning';
+        }
+        if (!in_array($level, $allowedLevels, true)) {
+            $level = 'info';
+        }
+
+        // Add client session info to meta for correlation
+        $session = CookieService::getClientSession();
+        $clientId = $session['client_id'] ?? 0;
+        $projectId = $session['project_id'] ?? 0;
+
+        if ($clientId) {
+            // Server-side Rate Limiting (per client session)
+            // Use time-windowed key for accurate 1-minute limits
+            $window = floor(time() / 60);
+            $rateKey = 'ap_log_limit_' . $clientId . '_' . $window;
+            $currentCount = (int) get_transient($rateKey);
+            $limit = 60; // 60 logs per minute
+
+            if ($currentCount >= $limit) {
+                return $this->respond_error('rate_limit_exceeded', 'Too many log requests.', 429);
+            }
+
+            // Increment counter
+            set_transient($rateKey, $currentCount + 1, 120); // 2 min TTL to allow window to expire naturally
+        }
+
+        if ($session) {
+            $meta['client_id'] = $clientId;
+            $meta['project_id'] = $projectId;
+        }
+
+        // Truncate message to avoid huge payloads
+        if (strlen($message) > 1024) {
+             $message = substr($message, 0, 1024) . '... (truncated)';
+        }
+
+        // Log to database
+        Logger::log($level, $context, $message, $meta);
+
+        return $this->respond_success(['logged' => true]);
     }
 }

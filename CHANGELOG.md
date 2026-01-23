@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.48] – Client Logging System**
+
+### **Added**
+- **Client Portal:** Implemented a robust client-side logging system (`ApertureClient.clientLog`) using `navigator.sendBeacon` for reliability and low overhead.
+- **Client Portal:** Added rate limiting, deduplication, and safe metadata enrichment to client logs.
+- **REST:** Added `/client/log` endpoint to ingest client-side diagnostics securely.
+- **Config:** Added `client_portal.enable_logging` (default: false) and `client_portal.log_max_per_page` configuration settings.
+
 ## **[1.0.47] – Loader DI Support**
 
 ### **Architecture**

@@ -826,16 +826,98 @@
 
     // Optional: client-side logging to server for diagnostics
     async clientLog(level, context, message, meta = {}) {
+      // Opt-in toggle; default false. Set ApertureClient.enableClientLogging = true in config to enable.
+      if (!ApertureClient.enableClientLogging) {
+        return;
+      }
+
+      // Basic validation and normalization
+      const allowedLevels = new Set(['debug', 'info', 'warn', 'error']);
+      level = String(level || 'info').toLowerCase();
+      if (!allowedLevels.has(level)) level = 'info';
+
+      context = String(context || 'client');
+      message = String(message || '');
+
+      // Lightweight in-memory dedupe to avoid spamming identical logs
+      this._clientLogCache = this._clientLogCache || new Map();
+      const cacheKey = `${level}|${context}|${message}`;
+      const now = Date.now();
+      const dedupeWindowMs = 5000; // suppress identical messages for 5s
+      const last = this._clientLogCache.get(cacheKey) || 0;
+      if (now - last < dedupeWindowMs) {
+        return;
+      }
+      this._clientLogCache.set(cacheKey, now);
+
+      // Enrich meta with safe, non-sensitive context
+      const payload = {
+        level,
+        context,
+        message,
+        meta: {
+          ...meta,
+          page: window.location.pathname || '',
+          href: window.location.href || '',
+          userAgent: navigator.userAgent || '',
+          ts: new Date().toISOString()
+        }
+      };
+
+      // Respect a per-page rate limit counter to avoid floods
+      this._clientLogCounter = (this._clientLogCounter || 0) + 1;
+      const maxPerPage = ApertureClient.clientLogMaxPerPage || 100;
+      if (this._clientLogCounter > maxPerPage) {
+        // Optionally keep a single "rate limited" marker
+        if (!this._clientLogRateLimited) {
+          this._clientLogRateLimited = true;
+          // send a single rate-limit notice (best-effort)
+          payload.level = 'warn';
+          payload.context = 'client';
+          payload.message = 'client_log_rate_limited';
+          payload.meta = { count: this._clientLogCounter, ts: payload.meta.ts };
+        } else {
+          return;
+        }
+      }
+
       const url = `${ApertureClient.restBase}/client/log`;
+
+      // Prepare body as JSON
+      const body = JSON.stringify(payload);
+
+      // Try sendBeacon for unload-safe delivery and low overhead
       try {
-        await fetchJson(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ level, context, message, meta }),
-        });
+        if (navigator.sendBeacon) {
+          const blob = new Blob([body], { type: 'application/json' });
+          // sendBeacon returns boolean; we don't rely on it for success
+          navigator.sendBeacon(url, blob);
+          return;
+        }
       } catch (e) {
-        // fallback to console
-        log('clientLog failed', e);
+        // swallow and fall back to fetch
+        if (ApertureClient.debug) console.warn('sendBeacon failed', e);
+      }
+
+      // Fallback to fetch with keepalive for background/unload scenarios
+      try {
+        await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // If you use a nonce or auth header for REST, include it here:
+             'X-WP-Nonce': ApertureClient.nonce || ''
+          },
+          body,
+          keepalive: true,
+          credentials: 'same-origin'
+        });
+      } catch (err) {
+        // Best-effort only; do not throw. Optionally log to console in debug.
+        if (ApertureClient.debug) {
+          // eslint-disable-next-line no-console
+          console.warn('clientLog failed', err);
+        }
       }
     },
   };
