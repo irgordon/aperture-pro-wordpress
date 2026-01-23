@@ -10,6 +10,7 @@ use AperturePro\Proof\ProofService;
 use AperturePro\Helpers\Logger;
 use AperturePro\Auth\CookieService;
 use AperturePro\Config\Config;
+use AperturePro\Repositories\ProjectRepository;
 
 /**
  * ClientProofController
@@ -404,27 +405,8 @@ class ClientProofController extends BaseController
      */
     protected function get_project_images(int $project_id): array
     {
-        // Replace with real data access.
-        return [
-            [
-                'id'          => 1,
-                'project_id'  => $project_id, // Ensure project_id is available for optimized queue
-                'filename'    => 'image-1.jpg',
-                'path'        => 'projects/' . $project_id . '/image-1.jpg',
-                'is_selected' => false,
-                'comments'    => [],
-            ],
-            [
-                'id'          => 2,
-                'project_id'  => $project_id, // Ensure project_id is available for optimized queue
-                'filename'    => 'image-2.jpg',
-                'path'        => 'projects/' . $project_id . '/image-2.jpg',
-                'is_selected' => true,
-                'comments'    => [
-                    ['author' => 'Client', 'text' => 'Love this one!'],
-                ],
-            ],
-        ];
+        $repository = new ProjectRepository();
+        return $repository->get_images_for_project($project_id);
     }
 
     protected function get_project_id_for_gallery(int $gallery_id): ?int
