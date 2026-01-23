@@ -207,16 +207,18 @@
       this._restoreInert();
 
       /* Remove after animation */
-      overlay.addEventListener(
-        'transitionend',
-        () => overlay.remove(),
-        { once: true }
-      );
+      let timerId = null;
+
+      const cleanup = () => {
+        if (timerId) clearTimeout(timerId);
+        overlay.removeEventListener('transitionend', cleanup);
+        if (overlay.parentNode) overlay.remove();
+      };
+
+      overlay.addEventListener('transitionend', cleanup, { once: true });
 
       /* Fallback */
-      setTimeout(() => {
-        if (overlay.parentNode) overlay.remove();
-      }, 400);
+      timerId = setTimeout(cleanup, 400);
 
       Modal.activeOverlay = null;
     }
