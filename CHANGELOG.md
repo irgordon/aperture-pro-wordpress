@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.60] – Proof Queue Optimization**
+
+### **Performance**
+- **Proof Queue:** Implemented `ProofQueue::addBatch` to insert multiple queue items in a single database transaction (`INSERT IGNORE ... VALUES (...)`).
+- **Proof Queue:** Optimized `ProofQueue::enqueueBatch` and `ProofService::getProofUrls` to use the new batch insertion method.
+- **Proof Queue:** Optimized legacy queue fallback to read the option once, merge all items, and write once per batch, reducing option API calls from O(N) to O(1).
+- **Benchmark:** Achieved ~90x speedup (0.116s -> 0.0013s for 100 items) for batch enqueue operations.
+
 ## **[1.0.59] – Get Project Images Refactor**
 
 ### **Verification**
