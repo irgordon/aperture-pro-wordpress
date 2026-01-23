@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.68] – Batch Selection Optimization**
+
+### **Performance**
+- **Client Portal:** Re-optimized `ClientProofController::select_batch` to use a single `UPDATE` query with a `CASE` statement, confirming the resolution of the N+1 query issue.
+- **Benchmark:** Validated performance improvement: 1 query vs 500 updates (0.0014s vs 0.10s) for a batch of 500 items.
+
 ## **[1.0.67] – Proof Queue Insertion Optimization**
 
 ### **Performance**

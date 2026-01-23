@@ -239,6 +239,8 @@ class ClientProofController extends BaseController
         $case_when_sql = '';
         $case_params = [];
 
+        // OPTIMIZATION: Prepare a CASE statement to update all rows in a single query.
+        // This avoids N+1 database roundtrips.
         foreach ($selections as $item) {
             $image_id = (int) ($item['image_id'] ?? 0);
             $selected = isset($item['selected']) && $item['selected'] ? 1 : 0;
