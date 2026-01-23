@@ -110,16 +110,34 @@ class PortalController
         register_rest_route('aperture/v1', '/client/portal', [
             'methods' => 'GET',
             'callback' => [self::class, 'restRenderPortal'],
-            'permission_callback' => '__return_true',
+            'permission_callback' => [self::class, 'permissionCallback'],
             'args' => [
                 'project_id' => ['required' => false],
             ],
         ]);
     }
 
+    public static function permissionCallback(\WP_REST_Request $request): bool
+    {
+        $session = CookieService::getClientSession();
+        if (!$session || empty($session['project_id'])) {
+            return false;
+        }
+
+        $requestedProjectId = $request->get_param('project_id');
+        if ($requestedProjectId && (int) $requestedProjectId !== (int) $session['project_id']) {
+            return false;
+        }
+
+        return true;
+    }
+
     public static function restRenderPortal(\WP_REST_Request $request)
     {
-        $projectId = (int) $request->get_param('project_id');
+        // Permission callback ensures session exists.
+        $session = CookieService::getClientSession();
+        $projectId = (int) $session['project_id'];
+
         try {
             $renderer = new PortalRenderer();
             $html = $renderer->renderPortal($projectId);
