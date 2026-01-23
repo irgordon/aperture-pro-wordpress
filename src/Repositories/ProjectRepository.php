@@ -7,10 +7,19 @@ class ProjectRepository
 {
     public function find(int $id)
     {
+        $cached = wp_cache_get($id, 'ap_projects');
+        if (false !== $cached) {
+            return $cached;
+        }
+
         global $wpdb;
         $table = $wpdb->prefix . 'ap_projects';
         $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $id));
-        return $row ?: null;
+        $result = $row ?: null;
+
+        wp_cache_set($id, $result, 'ap_projects');
+
+        return $result;
     }
 
     public function update(int $id, array $data): void
@@ -18,6 +27,7 @@ class ProjectRepository
         global $wpdb;
         $table = $wpdb->prefix . 'ap_projects';
         $wpdb->update($table, $data, ['id' => $id]);
+        wp_cache_delete($id, 'ap_projects');
     }
 
     public function get_images_for_project(int $project_id): array
