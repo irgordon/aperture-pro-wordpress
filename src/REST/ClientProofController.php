@@ -235,55 +235,63 @@ class ClientProofController extends BaseController
         global $wpdb;
         $table = $wpdb->prefix . 'ap_images';
 
-        $updated_count = 0;
-        $errors = [];
-
-        // Start transaction for consistency
-        $wpdb->query('START TRANSACTION');
+        $image_ids = [];
+        $case_when_sql = '';
+        $case_params = [];
 
         foreach ($selections as $item) {
             $image_id = (int) ($item['image_id'] ?? 0);
             $selected = isset($item['selected']) && $item['selected'] ? 1 : 0;
 
-            if ($image_id <= 0) {
-                continue;
-            }
-
-            $result = $wpdb->update(
-                $table,
-                [
-                    'is_selected' => $selected,
-                    'updated_at'  => current_time('mysql', 1),
-                ],
-                [
-                    'id'         => $image_id,
-                    'gallery_id' => $gallery_id,
-                ]
-            );
-
-            if ($result === false) {
-                $errors[] = $image_id;
-            } else {
-                $updated_count++;
+            if ($image_id > 0) {
+                $image_ids[] = $image_id;
+                $case_when_sql .= " WHEN %d THEN %d";
+                $case_params[] = $image_id;
+                $case_params[] = $selected;
             }
         }
 
-        // Commit regardless of partial failures to save what we can
-        $wpdb->query('COMMIT');
+        $valid_selections = count($image_ids);
+        if ($valid_selections === 0) {
+            return new WP_Error('invalid_params', 'No valid image selections provided.', ['status' => 400]);
+        }
 
-        if (!empty($errors)) {
-            Logger::log('warning', 'select_batch', 'Some selections failed to update', [
+        // Create a string of '%d' placeholders for the IN clause
+        $id_placeholders = implode(', ', array_fill(0, $valid_selections, '%d'));
+
+        $time = current_time('mysql', 1);
+
+        $query = "
+            UPDATE {$table}
+            SET
+                is_selected = CASE id{$case_when_sql} END,
+                updated_at = %s
+            WHERE
+                id IN ({$id_placeholders})
+                AND gallery_id = %d
+        ";
+
+        // Combine all parameters for the prepare statement
+        $all_params = array_merge($case_params, [$time], $image_ids, [$gallery_id]);
+
+        $result = $wpdb->query($wpdb->prepare($query, ...$all_params));
+
+        if ($result === false) {
+            Logger::log('error', 'select_batch', 'Batch selection update failed in DB', [
                 'gallery_id' => $gallery_id,
-                'failed_ids' => $errors,
                 'db_error'   => $wpdb->last_error,
             ]);
+            return new WP_Error('db_error', 'Could not update selections', ['status' => 500]);
         }
+
+        $updated_count = (int) $result;
+        $failed_count = $valid_selections - $updated_count;
 
         return new WP_REST_Response([
             'gallery_id' => $gallery_id,
             'updated'    => $updated_count,
-            'failed'     => count($errors),
-            'failed_ids' => $errors
+            'failed'     => $failed_count,
+            'failed_ids' => []
         ], 200);
     }
 

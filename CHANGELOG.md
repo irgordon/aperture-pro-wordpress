@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.64] – DB Optimization**
+
+### **Performance**
+- **DB:** Optimized `ClientProofController::select_batch` to use a single, bulk `UPDATE` query with a `CASE` statement. This eliminates the N+1 query problem, where each image selection in a batch would trigger a separate database query.
+
 ## **[1.0.63] – Parallel Fallback Optimization**
 
 ### **Performance**
