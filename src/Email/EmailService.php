@@ -24,12 +24,31 @@ class EmailService
     const ADMIN_QUEUE_OPTION = 'ap_admin_email_queue';
     const ADMIN_QUEUE_LOCK = 'ap_admin_email_queue_lock';
     const CRON_HOOK = 'aperture_pro_send_admin_emails';
+
+    // Legacy option constant kept for backward compatibility
     const TRANSACTIONAL_QUEUE_OPTION = 'ap_transactional_email_queue';
+
     const TRANSACTIONAL_CRON_HOOK = 'aperture_pro_send_transactional_emails';
     const TRANSACTIONAL_QUEUE_LOCK = 'ap_transactional_queue_lock';
     const TRANSACTIONAL_MAX_PER_RUN = 5;
     const MAX_PER_RUN = 3; // send up to 3 admin emails per cron run
     const DEDUPE_WINDOW = 900; // 15 minutes dedupe window for same context
+
+    protected static $_tableExists = null;
+
+    protected static function tableExists(): bool
+    {
+        if (self::$_tableExists !== null) {
+            return self::$_tableExists;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_email_queue';
+        // Check using a cheap query that hits information_schema or just check if table name is correct?
+        // SHOW TABLES LIKE is robust.
+        self::$_tableExists = ($wpdb->get_var("SHOW TABLES LIKE '$table'") === $table);
+        return self::$_tableExists;
+    }
 
     /**
      * Send a templated email to client(s).
@@ -93,21 +112,37 @@ class EmailService
      */
     public static function enqueueTransactionalEmail(string $to, string $subject, string $body, array $headers = []): void
     {
-        $queue = get_option(self::TRANSACTIONAL_QUEUE_OPTION, []);
-        if (!is_array($queue)) {
-            $queue = [];
+        global $wpdb;
+
+        if (!self::tableExists()) {
+            // Fallback to legacy behavior if table missing
+            $queue = get_option(self::TRANSACTIONAL_QUEUE_OPTION, []);
+            if (!is_array($queue)) $queue = [];
+            $queue[] = [
+                'to' => $to,
+                'subject' => $subject,
+                'body' => $body,
+                'headers' => $headers,
+                'retries' => 0,
+                'created_at' => current_time('mysql'),
+            ];
+            update_option(self::TRANSACTIONAL_QUEUE_OPTION, $queue, false);
+        } else {
+            // Optimized storage
+            $table = $wpdb->prefix . 'ap_email_queue';
+            $wpdb->insert(
+                $table,
+                [
+                    'to_address' => $to,
+                    'subject'    => $subject,
+                    'body'       => $body,
+                    'headers'    => !empty($headers) ? json_encode($headers) : null,
+                    'status'     => 'pending',
+                    'created_at' => current_time('mysql'),
+                    'updated_at' => current_time('mysql'),
+                ]
+            );
         }
-
-        $queue[] = [
-            'to' => $to,
-            'subject' => $subject,
-            'body' => $body,
-            'headers' => $headers,
-            'retries' => 0,
-            'created_at' => current_time('mysql'),
-        ];
-
-        update_option(self::TRANSACTIONAL_QUEUE_OPTION, $queue, false);
 
         if (!wp_next_scheduled(self::TRANSACTIONAL_CRON_HOOK)) {
             wp_schedule_single_event(time(), self::TRANSACTIONAL_CRON_HOOK);
@@ -124,20 +159,37 @@ class EmailService
         }
         set_transient(self::TRANSACTIONAL_QUEUE_LOCK, 1, 60);
 
-        $queue = get_option(self::TRANSACTIONAL_QUEUE_OPTION, []);
-        if (!is_array($queue) || empty($queue)) {
+        if (!self::tableExists()) {
+            self::processOptionQueue();
             delete_transient(self::TRANSACTIONAL_QUEUE_LOCK);
             return;
         }
 
-        // Process in batches to avoid timeout
-        $batch = array_splice($queue, 0, self::TRANSACTIONAL_MAX_PER_RUN);
-        $remaining = $queue; // The rest of the queue (if any)
-        $maxRetries = 3;
+        // Migrate any legacy items to the table
+        self::migrateLegacyQueue();
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_email_queue';
+
+        // Fetch pending items
+        $items = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM $table WHERE status = %s ORDER BY priority DESC, created_at ASC LIMIT %d",
+                'pending',
+                self::TRANSACTIONAL_MAX_PER_RUN
+            ),
+            ARRAY_A
+        );
+
+        if (empty($items)) {
+            delete_transient(self::TRANSACTIONAL_QUEUE_LOCK);
+            return;
+        }
 
         $startTime = microtime(true);
         $maxExecTime = (int)ini_get('max_execution_time');
-        $timeLimit = $maxExecTime ? ($maxExecTime * 0.8) : 45; // Default to 45s safety margin (under 60s lock)
+        $timeLimit = $maxExecTime ? ($maxExecTime * 0.8) : 45;
+        $maxRetries = 3;
 
         // Optimization: Use SMTP KeepAlive to reuse connection
         $keepAliveInit = function ($mailer) {
@@ -154,33 +206,43 @@ class EmailService
         };
         add_action('phpmailer_init', $captureInstance);
 
-        foreach ($batch as $item) {
-            // Check for timeout
-            if ((microtime(true) - $startTime) > $timeLimit) {
-                Logger::log('warning', 'email_queue', 'Time limit reached, deferring remaining emails', ['processed' => $processedCount, 'remaining' => count($batch) - $processedCount]);
-                // Prepend unprocessed items back to remaining queue to preserve order
-                $unprocessed = array_slice($batch, $processedCount);
-                $remaining = array_merge($unprocessed, $remaining);
+        foreach ($items as $item) {
+             // Check for timeout
+             if ((microtime(true) - $startTime) > $timeLimit) {
+                Logger::log('warning', 'email_queue', 'Time limit reached', ['processed' => $processedCount]);
                 break;
             }
 
-            $retries = $item['retries'] ?? 0;
+            $headers = !empty($item['headers']) ? json_decode($item['headers'], true) : [];
+            if (!is_array($headers)) $headers = [];
 
-            if ($retries >= $maxRetries) {
-                Logger::log('error', 'email_queue', 'Transactional email failed after max retries', ['to' => $item['to'], 'subject' => $item['subject'], 'notify_admin' => true]);
-                // Notify admin about the persistent failure
-                self::enqueueAdminNotification('error', 'email_queue', 'Transactional email failed permanently', ['item' => $item]);
-                $processedCount++;
-                continue; // Drop from queue
-            }
-
-            $sent = @wp_mail($item['to'], $item['subject'], $item['body'], $item['headers']);
+            $sent = @wp_mail($item['to_address'], $item['subject'], $item['body'], $headers);
 
             if ($sent) {
-                Logger::log('info', 'email_queue', 'Transactional email sent via queue', ['to' => $item['to']]);
+                Logger::log('info', 'email_queue', 'Transactional email sent via queue', ['to' => $item['to_address']]);
+                $wpdb->update(
+                    $table,
+                    ['status' => 'sent', 'updated_at' => current_time('mysql')],
+                    ['id' => $item['id']]
+                );
             } else {
-                $item['retries'] = $retries + 1;
-                $remaining[] = $item;
+                $retries = $item['retries'] + 1;
+                $newStatus = ($retries >= $maxRetries) ? 'failed_permanently' : 'pending';
+
+                $wpdb->update(
+                    $table,
+                    [
+                        'status' => $newStatus,
+                        'retries' => $retries,
+                        'updated_at' => current_time('mysql')
+                    ],
+                    ['id' => $item['id']]
+                );
+
+                if ($newStatus === 'failed_permanently') {
+                    Logger::log('error', 'email_queue', 'Transactional email failed after max retries', ['to' => $item['to_address'], 'subject' => $item['subject'], 'notify_admin' => true]);
+                    self::enqueueAdminNotification('error', 'email_queue', 'Transactional email failed permanently', ['item_id' => $item['id']]);
+                }
             }
             $processedCount++;
         }
@@ -192,16 +254,116 @@ class EmailService
         remove_action('phpmailer_init', $keepAliveInit);
         remove_action('phpmailer_init', $captureInstance);
 
-        update_option(self::TRANSACTIONAL_QUEUE_OPTION, $remaining, false);
+        // Check if there are more pending items
+        $remainingCount = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table WHERE status = %s", 'pending'));
 
-        // If items remain, ensure processing continues
-        if (!empty($remaining)) {
+        if ($remainingCount > 0) {
             if (!wp_next_scheduled(self::TRANSACTIONAL_CRON_HOOK)) {
                 wp_schedule_single_event(time() + 10, self::TRANSACTIONAL_CRON_HOOK);
             }
         }
 
         delete_transient(self::TRANSACTIONAL_QUEUE_LOCK);
+    }
+
+    /**
+     * Migrate items from the legacy option queue to the new database table.
+     */
+    private static function migrateLegacyQueue(): void
+    {
+        $queue = get_option(self::TRANSACTIONAL_QUEUE_OPTION, []);
+        if (!is_array($queue) || empty($queue)) {
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_email_queue';
+
+        // Transactional integrity is ideal, but for now we just insert one by one
+        // and delete option at the end.
+        foreach ($queue as $item) {
+             $wpdb->insert(
+                $table,
+                [
+                    'to_address' => $item['to'],
+                    'subject'    => $item['subject'],
+                    'body'       => $item['body'],
+                    'headers'    => !empty($item['headers']) ? json_encode($item['headers']) : null,
+                    'status'     => 'pending',
+                    'retries'    => $item['retries'] ?? 0,
+                    'created_at' => $item['created_at'] ?? current_time('mysql'),
+                    'updated_at' => current_time('mysql'),
+                ]
+            );
+        }
+
+        delete_option(self::TRANSACTIONAL_QUEUE_OPTION);
+        Logger::log('info', 'email_queue', 'Migrated legacy email queue to database', ['count' => count($queue)]);
+    }
+
+    /**
+     * Process legacy option-based queue.
+     * Restores original processing logic for fallback scenarios.
+     */
+    private static function processOptionQueue(): void
+    {
+        $queue = get_option(self::TRANSACTIONAL_QUEUE_OPTION, []);
+        if (!is_array($queue) || empty($queue)) {
+            return;
+        }
+
+        $batch = array_splice($queue, 0, self::TRANSACTIONAL_MAX_PER_RUN);
+        $remaining = $queue;
+        $maxRetries = 3;
+
+        $startTime = microtime(true);
+        $maxExecTime = (int)ini_get('max_execution_time');
+        $timeLimit = $maxExecTime ? ($maxExecTime * 0.8) : 45;
+
+        // Same SMTP optimization logic
+        $keepAliveInit = function ($mailer) { $mailer->SMTPKeepAlive = true; };
+        add_action('phpmailer_init', $keepAliveInit);
+
+        $phpmailerInstance = null;
+        $captureInstance = function ($mailer) use (&$phpmailerInstance) { $phpmailerInstance = $mailer; };
+        add_action('phpmailer_init', $captureInstance);
+
+        $processedCount = 0;
+        foreach ($batch as $item) {
+             if ((microtime(true) - $startTime) > $timeLimit) {
+                $unprocessed = array_slice($batch, $processedCount);
+                $remaining = array_merge($unprocessed, $remaining);
+                break;
+            }
+
+            $retries = $item['retries'] ?? 0;
+            if ($retries >= $maxRetries) {
+                // Fail permenently
+                 self::enqueueAdminNotification('error', 'email_queue', 'Transactional email failed permanently', ['item' => $item]);
+                 $processedCount++;
+                 continue;
+            }
+
+            $sent = @wp_mail($item['to'], $item['subject'], $item['body'], $item['headers'] ?? []);
+
+            if (!$sent) {
+                $item['retries'] = $retries + 1;
+                $remaining[] = $item;
+            }
+            $processedCount++;
+        }
+
+        if ($phpmailerInstance) { $phpmailerInstance->smtpClose(); }
+        remove_action('phpmailer_init', $keepAliveInit);
+        remove_action('phpmailer_init', $captureInstance);
+
+        update_option(self::TRANSACTIONAL_QUEUE_OPTION, $remaining, false);
+
+        if (!empty($remaining)) {
+            if (!wp_next_scheduled(self::TRANSACTIONAL_CRON_HOOK)) {
+                wp_schedule_single_event(time() + 10, self::TRANSACTIONAL_CRON_HOOK);
+            }
+        }
     }
 
     /**

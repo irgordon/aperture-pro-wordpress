@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.41] – Optimized Email Queue Storage**
+
+### **Performance**
+- **Emails:** Optimized `EmailService` to store queued emails in a dedicated database table (`ap_email_queue`) instead of the `wp_options` table. This changes the enqueue operation from O(N) to O(1) complexity, eliminating the performance bottleneck where queueing speed degraded linearly as the queue grew.
+- **Emails:** Refactored `processTransactionalQueue` to consume items from the new table with efficient `SELECT` and `UPDATE` operations, reducing memory usage and serialization overhead during processing.
+- **Schema:** Added `ap_email_queue` table definition to `Schema::create_core_tables`.
+
 ## **[1.0.40] – Modal Robustness**
 
 ### **Fixes**
