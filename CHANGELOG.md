@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.53] – Optimized Proof Selection**
+
+### **Performance**
+- **Client Portal:** Implemented a `SelectionManager` with debounce (800ms) and batching logic to optimize user selection interactions. This replaces N+1 network requests (one per click) with a single batched request, significantly reducing server load and improved UI responsiveness.
+- **REST:** Added `POST /proofs/{id}/select-batch` endpoint to process multiple selection updates in a single database transaction.
+- **Reliability:** Added `sendBeacon`/`keepalive` fallback to ensure pending selections are flushed reliably even if the user navigates away or closes the tab.
+- **Resilience:** Implemented local storage persistence for pending selections to survive page reloads and network failures.
+
 ## **[1.0.52] – Optimized Admin Queue Storage**
 
 ### **Performance**
