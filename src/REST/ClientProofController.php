@@ -398,7 +398,7 @@ class ClientProofController extends BaseController
     }
 
     /**
-     * Placeholder: fetch project images.
+     * Fetch project images from the repository.
      *
      * SECURITY:
      *  - Ensure this only returns images belonging to the authenticated client.
