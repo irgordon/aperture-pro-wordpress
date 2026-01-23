@@ -88,6 +88,50 @@ class ProofQueue
     }
 
     /**
+     * Helper to get legacy queue as a keyed map.
+     * Normalized to [project_id:image_id => item].
+     *
+     * @param bool $migrated Reference to track if migration occurred.
+     * @return array
+     */
+    protected static function getLegacyQueueAsMap(&$migrated = false): array
+    {
+        $option = get_option(self::QUEUE_OPTION, []);
+        $map = [];
+
+        // If already keyed, return as-is
+        $isKeyed = false;
+        if (!empty($option) && is_array($option)) {
+            foreach (array_keys($option) as $k) {
+                if (!is_int($k)) {
+                    $isKeyed = true;
+                    break;
+                }
+            }
+        }
+        if ($isKeyed) {
+            $migrated = false;
+            return $option;
+        }
+
+        // Convert numeric list to map
+        foreach ($option as $item) {
+            $p = isset($item['project_id']) ? (int) $item['project_id'] : 0;
+            $i = isset($item['image_id']) ? (int) $item['image_id'] : 0;
+            if ($p > 0 && $i > 0) {
+                $map["{$p}:{$i}"] = [
+                    'project_id' => $p,
+                    'image_id'   => $i,
+                    'created_at' => $item['created_at'] ?? current_time('mysql', true),
+                    'attempts'   => $item['attempts'] ?? 0,
+                ];
+            }
+        }
+        $migrated = true;
+        return $map;
+    }
+
+    /**
      * Legacy enqueue method for backward compatibility.
      * Should be updated to use add() by callers where possible.
      *
@@ -329,22 +373,42 @@ class ProofQueue
             $storage = StorageFactory::create();
             $results = ProofService::generateBatch($batch, $storage);
 
-            foreach ($batch as $item) {
+            foreach ($batch as $key => $item) {
                 $proofPath = $item['proof_path'] ?? '';
                 if (empty($results[$proofPath])) {
                     // Failed? Retry logic (legacy)
                     $item['attempts'] = ($item['attempts'] ?? 0) + 1;
                     if ($item['attempts'] < 3) {
-                        $remaining[] = $item;
+                        if (is_string($key)) {
+                            $remaining[$key] = $item;
+                        } else {
+                            $p = $item['project_id'] ?? 0;
+                            $i = $item['image_id'] ?? 0;
+                            if ($p && $i) {
+                                $remaining["{$p}:{$i}"] = $item;
+                            } else {
+                                $remaining[] = $item;
+                            }
+                        }
                     }
                 }
             }
         } catch (\Throwable $e) {
             // Put back batch on error
-             foreach ($batch as $item) {
+            foreach ($batch as $key => $item) {
                 $item['attempts'] = ($item['attempts'] ?? 0) + 1;
                 if ($item['attempts'] < 3) {
-                    $remaining[] = $item;
+                    if (is_string($key)) {
+                        $remaining[$key] = $item;
+                    } else {
+                        $p = $item['project_id'] ?? 0;
+                        $i = $item['image_id'] ?? 0;
+                        if ($p && $i) {
+                            $remaining["{$p}:{$i}"] = $item;
+                        } else {
+                            $remaining[] = $item;
+                        }
+                    }
                 }
             }
         }
@@ -413,15 +477,20 @@ class ProofQueue
      */
     protected static function addToLegacyQueue(int $projectId, int $imageId): bool
     {
-        $queue = get_option(self::QUEUE_OPTION, []);
-        // Dedup check O(N) - painful but necessary for legacy
-        foreach ($queue as $item) {
-            if (($item['project_id'] ?? 0) === $projectId && ($item['image_id'] ?? 0) === $imageId) {
-                return true;
+        $migrated = false;
+        $queue = self::getLegacyQueueAsMap($migrated);
+        $key = "{$projectId}:{$imageId}";
+
+        // O(1) Lookup
+        if (isset($queue[$key])) {
+            // Ensure we persist the migration even if no new item is added
+            if ($migrated) {
+                update_option(self::QUEUE_OPTION, $queue, false);
             }
+            return true;
         }
 
-        $queue[] = [
+        $queue[$key] = [
             'project_id' => $projectId,
             'image_id'   => $imageId,
             'created_at' => current_time('mysql'),

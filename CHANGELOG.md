@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.49] – Queue Performance**
+
+### **Performance**
+- **Proof Queue:** Optimized legacy queue lookups from O(N) to O(1) by migrating the underlying data structure from a linear list to a keyed map. This eliminates significant CPU overhead when checking for duplicates in large queues.
+- **Proof Queue:** Implemented a helper (`getLegacyQueueAsMap`) to transparently migrate existing queue data to the optimized format on the fly.
+- **Proof Queue:** Updated `addToLegacyQueue` and `processLegacyQueue` to preserve O(1) keyed access during retries and batch operations.
+
 ## **[1.0.48] – Client Logging System**
 
 ### **Added**
