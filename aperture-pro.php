@@ -106,17 +106,35 @@ add_action('admin_init', function (): void {
  * Plugin Boot
  * ------------------------------------------------------------------------- */
 
-$environment = new \AperturePro\Environment(
-    APERTURE_PRO_DIR,
-    APERTURE_PRO_URL,
-    APERTURE_PRO_VERSION
-);
+try {
+    $environment = new \AperturePro\Environment(
+        APERTURE_PRO_DIR,
+        APERTURE_PRO_URL,
+        APERTURE_PRO_VERSION
+    );
 
-$loader = new \AperturePro\Loader(
-    $environment
-);
+    $loader = new \AperturePro\Loader(
+        $environment
+    );
 
-$loader->boot();
+    $loader->boot();
+} catch (\Throwable $e) {
+    // Fail-safe: Log catastrophic boot failures to PHP error log
+    error_log(sprintf(
+        '[Aperture Pro] Boot failure: %s in %s:%d',
+        $e->getMessage(),
+        $e->getFile(),
+        $e->getLine()
+    ));
+
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        add_action('admin_notices', function () use ($e) {
+            echo '<div class="notice notice-error"><p>';
+            echo '<strong>Aperture Pro Error:</strong> ' . esc_html($e->getMessage());
+            echo '</p></div>';
+        });
+    }
+}
 
 /* -------------------------------------------------------------------------
  * Global accessor (legacy convenience)
@@ -129,6 +147,7 @@ $loader->boot();
  * This is a lightweight convenience wrapper.
  * Core services should be accessed via dependency injection where possible.
  *
+ * @deprecated 1.0.36 Prefer dependency injection via Loader/Environment
  * @return object
  */
 function aperture_pro()
