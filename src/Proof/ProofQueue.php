@@ -303,6 +303,7 @@ class ProofQueue
 
             $toGenerate[] = [
                 'queue_id'      => $item->id,
+                'image_id'      => $imageId,
                 'original_path' => $originalPath,
                 'proof_path'    => $proofPath,
             ];
@@ -329,12 +330,15 @@ class ProofQueue
         $results = ProofService::generateBatch($genItems, $storage);
 
         // Correlate results back to queue IDs
+        $successfulImageIds = [];
+
         foreach ($toGenerate as $t) {
             $proofPath = $t['proof_path'];
             $qid       = $t['queue_id'];
 
             if (!empty($results[$proofPath])) {
                 $queueIdsToRemove[] = $qid;
+                $successfulImageIds[] = $t['image_id'];
                 Logger::log('info', 'proof_queue', 'Generated proof', ['proof' => $proofPath]);
             } else {
                 $failedQueueIds[] = $qid;
@@ -343,6 +347,7 @@ class ProofQueue
 
         // Cleanup success
         self::removeBatch($queueIdsToRemove);
+        self::markProofsAsExisting($successfulImageIds);
 
         // Handle failure (increment attempts)
         if (!empty($failedQueueIds)) {
@@ -444,6 +449,25 @@ class ProofQueue
             }
         }
         return $map;
+    }
+
+    /**
+     * Mark proofs as existing in the database (Performance Optimization).
+     *
+     * @param array $imageIds
+     */
+    public static function markProofsAsExisting(array $imageIds): void
+    {
+        if (empty($imageIds)) {
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_images';
+        $idsIn = implode(',', array_map('intval', $imageIds));
+
+        // Use update instead of complex logic
+        $wpdb->query("UPDATE {$table} SET has_proof = 1 WHERE id IN ({$idsIn})");
     }
 
     /**
