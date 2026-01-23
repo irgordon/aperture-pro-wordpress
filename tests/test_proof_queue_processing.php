@@ -14,6 +14,14 @@ namespace AperturePro\Storage {
     }
 }
 
+namespace AperturePro\Proof {
+    // Override function_exists to disable parallel downloads in test
+    function function_exists($func) {
+        if ($func === 'curl_multi_init') return false;
+        return \function_exists($func);
+    }
+}
+
 namespace {
     $mock_options = [];
     function get_option($option, $default = false) {
@@ -89,11 +97,28 @@ namespace AperturePro\Test {
         public function getStats(): array { return []; }
         public function existsMany(array $targets): array { return []; }
         public function getLocalPath(string $path): ?string { return null; }
+        public function sign(string $path): ?string { return 'signed_' . $path; }
+        public function signMany(array $paths): array {
+            $r = [];
+            foreach ($paths as $p) $r[$p] = 'signed_' . $p;
+            return $r;
+        }
     }
 
     // Setup
+    // Mock WPDB
+    $wpdb = new class {
+        public $prefix = 'wp_';
+        public function prepare($query, ...$args) { return $query; }
+        public function get_var($query) { return null; }
+        public function esc_like($text) { return $text; }
+        public function query($query) { return true; }
+        public function get_results($query) { return []; }
+    };
+    $GLOBALS['wpdb'] = $wpdb;
+
     $dummyFile = tempnam(sys_get_temp_dir(), 'test_orig');
-    file_put_contents($dummyFile, 'dummy data');
+    file_put_contents($dummyFile, base64_decode('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA='));
 
     $storage = new MockQueueStorage();
     $storage->dummyFile = $dummyFile;
