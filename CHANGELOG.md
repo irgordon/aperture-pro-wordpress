@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Admin Queue:** Optimized `processAdminQueue` to mark throttled notifications as "processed" instead of leaving them pending. This resolves a critical issue where a flood of throttled items could block the queue processing loop, preventing new notifications from being sent.
 - **Benchmark:** Validated performance with 0.002s insert time for 1000 items (mocked) and verified non-blocking behavior under load.
 
+## **[1.0.56] – Benchmark Clarification**
+
+### **Tests**
+- **Benchmarks:** Updated `tests/benchmark_sw_optimization.php` to clarify the benchmark logic. Renamed `legacy_logic` to `baseline_logic` and updated comments to explicitly state that the debug mode cache skipping is a simulated baseline, preventing it from being flagged as an active issue.
+
 ## **[1.0.54] – Benchmark Fixes**
 
 ### **Tests**
