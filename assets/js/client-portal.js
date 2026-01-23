@@ -509,12 +509,16 @@
 
     cacheProofImages() {
       const allImages = Array.from(document.querySelectorAll('.ap-proof-item img'));
-      this.proofImagesData = allImages.map(img => ({
-        src: img.getAttribute('src'),
-        alt: img.getAttribute('alt'),
-        id: img.closest('.ap-proof-item').dataset.imageId,
-        el: img
-      }));
+      this.proofImagesData = allImages.map((img, index) => {
+        // Optimization: Attach index to element for O(1) lookup during clicks
+        img._apIndex = index;
+        return {
+          src: img.getAttribute('src'),
+          alt: img.getAttribute('alt'),
+          id: img.closest('.ap-proof-item').dataset.imageId,
+          el: img
+        };
+      });
     },
 
     bind() {
@@ -692,7 +696,14 @@
     },
 
     handleProofClick(imgEl) {
-      const index = this.proofImagesData.findIndex(data => data.el === imgEl);
+      // Optimization: use cached O(1) index lookup
+      // Fallback to findIndex (O(N)) only if property is missing (safety)
+      let index = typeof imgEl._apIndex === 'number' ? imgEl._apIndex : -1;
+
+      if (index === -1) {
+        index = this.proofImagesData.findIndex(data => data.el === imgEl);
+      }
+
       if (index >= 0) {
         new Lightbox(this.proofImagesData).open(index);
       }
