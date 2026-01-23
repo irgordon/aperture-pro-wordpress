@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.61] – Proof Download Optimization**
+
+### **Performance**
+- **Proof Service:** Optimized `ProofService::performParallelDownloads` fallback logic to use a persistent `curl` handle (Keep-Alive) when `curl_multi` is unavailable. This eliminates the overhead of establishing a new TCP/TLS connection for each file download in sequential fallback mode.
+- **Benchmark:** Achieved ~4.4x speedup (2.56s -> 0.58s for 5 requests) for sequential downloads from the same host.
+
 ## **[1.0.60] – Proof Queue Optimization**
 
 ### **Performance**

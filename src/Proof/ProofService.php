@@ -456,6 +456,42 @@ class ProofService
         if (!function_exists('curl_multi_init')) {
             // Fallback to sequential
             $results = [];
+
+            // OPTIMIZATION: Use persistent curl handle if available to enable keep-alive
+            if (function_exists('curl_init')) {
+                $ch = curl_init();
+                curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+
+                // Only enable follow location if open_basedir is not set to avoid warnings
+                if (ini_get('open_basedir') === '' || ini_get('open_basedir') === false) {
+                    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                }
+
+                foreach ($urls as $key => $url) {
+                    $tmp = wp_tempnam('ap-proof-');
+                    $fp = fopen($tmp, 'w+');
+                    if (!$fp) {
+                        continue;
+                    }
+
+                    curl_setopt($ch, CURLOPT_URL, $url);
+                    curl_setopt($ch, CURLOPT_FILE, $fp);
+
+                    $success = curl_exec($ch);
+                    $info = curl_getinfo($ch);
+
+                    fclose($fp);
+
+                    if ($success && $info['http_code'] == 200) {
+                        $results[$key] = $tmp;
+                    } else {
+                        @unlink($tmp);
+                    }
+                }
+                curl_close($ch);
+                return $results;
+            }
+
             foreach ($urls as $key => $url) {
                 $tmp = wp_tempnam('ap-proof-');
                 $response = wp_remote_get($url, [

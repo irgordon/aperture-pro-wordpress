@@ -20,6 +20,34 @@ namespace AperturePro\Proof {
         if ($func === 'curl_multi_init') return false;
         return \function_exists($func);
     }
+
+    // Mock Curl for the new optimization path
+    function curl_init($url = null) {
+        $ch = new \stdClass();
+        if ($url) $ch->url = $url;
+        return $ch;
+    }
+    function curl_setopt($ch, $opt, $val) {
+        // Map constants to properties for testing
+        if ($opt === CURLOPT_URL) $ch->url = $val;
+        if ($opt === CURLOPT_FILE) $ch->fp = $val;
+        return true;
+    }
+    function curl_exec($ch) {
+        if (isset($ch->url) && isset($ch->fp)) {
+            // Mimic download: copy source to target stream
+            // In this test, url is a local path
+            if (file_exists($ch->url)) {
+                $content = file_get_contents($ch->url);
+                fwrite($ch->fp, $content);
+                return true;
+            }
+        }
+        return false;
+    }
+    function curl_getinfo($ch) { return ['http_code' => 200]; }
+    function curl_close($ch) {}
+    function curl_error($ch) { return ''; }
 }
 
 namespace {
