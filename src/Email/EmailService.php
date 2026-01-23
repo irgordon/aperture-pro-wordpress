@@ -406,6 +406,17 @@ class EmailService
 
             // Best-effort insert; do not throw on DB errors
             try {
+                // Check for duplicate pending item to avoid flooding
+                // We match on context, level, and message.
+                $duplicateId = $wpdb->get_var($wpdb->prepare(
+                    "SELECT id FROM $table WHERE context = %s AND level = %s AND processed = 0 AND message = %s LIMIT 1",
+                    $context, $level, $message
+                ));
+
+                if ($duplicateId) {
+                    return;
+                }
+
                 $inserted = $wpdb->insert(
                     $table,
                     [
@@ -610,8 +621,8 @@ class EmailService
 
             // Deduplication Check
             if (($now - $last) < self::DEDUPE_WINDOW) {
-                // Throttled. Leave processed=0 to retry/send later?
-                // Legacy behavior: "Skip sending now; keep in queue".
+                // Throttled. Mark as processed to prevent queue blocking.
+                $wpdb->update($table, ['processed' => 1], ['id' => $item['id']]);
                 continue;
             }
 
