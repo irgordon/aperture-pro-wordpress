@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.62] – Loader Refactor**
+
+### **Architecture**
+- **Loader:** Refactored `Loader` to remove redundant properties and use `Environment` as the canonical source for paths and versioning.
+- **Loader:** Removed deprecated constructor arguments and internal state, ensuring cleaner dependency injection and separation of concerns.
+- **Boot:** Wrapped the plugin boot process (`Environment` -> `Loader` -> `boot`) in a robust `try...catch` boundary to log catastrophic failures to the error log and display a safe admin notice if `WP_DEBUG` is enabled.
+- **Legacy:** Marked the global `aperture_pro()` accessor function as `@deprecated` to encourage the use of dependency injection.
+
 ## **[1.0.61] – Proof Download Optimization**
 
 ### **Performance**

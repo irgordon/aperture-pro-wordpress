@@ -18,20 +18,6 @@ use AperturePro\Services\ServiceInterface;
 class Loader
 {
     /**
-     * Plugin version string.
-     * Reserved for cache-busting and diagnostics.
-     *
-     * @deprecated Use $environment->getVersion()
-     */
-    protected string $version;
-
-    /**
-     * Plugin directory path.
-     * Reserved for future service injection.
-     */
-    protected string $path;
-
-    /**
      * Plugin environment context.
      */
     protected Environment $environment;
@@ -54,8 +40,6 @@ class Loader
     public function __construct(Environment $environment)
     {
         $this->environment = $environment;
-        $this->version = $environment->getVersion();
-        $this->path = $environment->getPath();
     }
 
     /**
@@ -152,7 +136,7 @@ class Loader
             // Handle built-in types (specifically string for path)
             if ($type instanceof \ReflectionNamedType && $type->isBuiltin()) {
                 if ($type->getName() === 'string' && ($name === 'path' || $name === 'pluginPath')) {
-                    $args[] = $this->path;
+                    $args[] = $this->environment->getPath();
                 } elseif ($param->isOptional()) {
                     $args[] = $param->getDefaultValue();
                 }
@@ -226,7 +210,7 @@ class Loader
     {
         if (class_exists(Logger::class)) {
             Logger::log($level, 'loader', $message, [
-                'version' => $this->version,
+                'version' => $this->environment->getVersion(),
             ]);
         }
     }
