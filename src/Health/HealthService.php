@@ -162,6 +162,35 @@ class HealthService
         // Use full namespace reference or import
         $queueStats = \AperturePro\Proof\ProofQueue::getStats();
 
+        // -----------------------------------------
+        // LOGGING METRICS
+        // -----------------------------------------
+        $logging = [
+            'total'       => 0,
+            'errors_24h'  => 0,
+            'last_entry'  => '—',
+        ];
+
+        $logsTable = $wpdb->prefix . 'ap_logs';
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $logsTable)) === $logsTable) {
+            $logging['total'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$logsTable}");
+
+            $yesterday = date('Y-m-d H:i:s', time() - 24 * 3600);
+            $logging['errors_24h'] = (int) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$logsTable} WHERE level = %s AND created_at > %s",
+                    'error',
+                    $yesterday
+                )
+            );
+
+            $lastEntry = $wpdb->get_var("SELECT created_at FROM {$logsTable} ORDER BY id DESC LIMIT 1");
+            if ($lastEntry) {
+                // Human readable difference roughly
+                $logging['last_entry'] = $lastEntry;
+            }
+        }
+
         try {
             $driver = StorageFactory::make();
             $stats  = $driver->getStats();
@@ -179,6 +208,7 @@ class HealthService
             'performance' => $performance,
             'storage'     => $storage,
             'queue'       => $queueStats,
+            'logging'     => $logging,
         ];
     }
 }

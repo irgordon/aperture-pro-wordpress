@@ -34,8 +34,7 @@ const ApertureSPA = (() => {
         "performance-card": () => import("./components/PerformanceCard.js"),
         "storage-card": () => import("./components/StorageCard.js"),
         "payment-card": () => import("./components/PaymentCard.js"),
-        // Future cards:
-        // "logging-card": () => import("./components/LoggingCard.js"),
+        "logging-card": () => import("./components/LoggingCard.js"),
     };
 
     /**
