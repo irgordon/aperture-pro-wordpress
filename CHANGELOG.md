@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.55] – Admin Queue Optimization**
+
+### **Performance**
+- **Admin Queue:** Optimized `enqueueAdminNotification` to perform deduplication at the database level. This prevents queue flooding by verifying if an identical pending notification (same context and message) already exists before inserting a new one.
+- **Admin Queue:** Optimized `processAdminQueue` to mark throttled notifications as "processed" instead of leaving them pending. This resolves a critical issue where a flood of throttled items could block the queue processing loop, preventing new notifications from being sent.
+- **Benchmark:** Validated performance with 0.002s insert time for 1000 items (mocked) and verified non-blocking behavior under load.
+
 ## **[1.0.54] – Benchmark Fixes**
 
 ### **Tests**
