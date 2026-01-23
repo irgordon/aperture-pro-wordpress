@@ -20,8 +20,15 @@ class Loader
     /**
      * Plugin version string.
      * Reserved for cache-busting and diagnostics.
+     *
+     * @deprecated Use $environment->getVersion()
      */
     protected string $version;
+
+    /**
+     * Plugin environment context.
+     */
+    protected Environment $environment;
 
     /**
      * Registered service instances keyed by class name.
@@ -36,11 +43,12 @@ class Loader
     protected bool $booted = false;
 
     /**
-     * @param string $version Plugin version
+     * @param Environment $environment Plugin environment
      */
-    public function __construct(string $version)
+    public function __construct(Environment $environment)
     {
-        $this->version = $version;
+        $this->environment = $environment;
+        $this->version = $environment->getVersion();
     }
 
     /**
@@ -89,7 +97,7 @@ class Loader
         }
 
         try {
-            $service = new $class();
+            $service = $this->resolveService($class);
 
             // Prefer explicit interface when available
             if ($service instanceof ServiceInterface) {
@@ -114,6 +122,38 @@ class Loader
     }
 
     /**
+     * Resolve service instance with dependency injection.
+     *
+     * @param string $class Fully qualified class name
+     * @return object
+     * @throws \ReflectionException
+     */
+    protected function resolveService(string $class): object
+    {
+        $reflection = new \ReflectionClass($class);
+        $constructor = $reflection->getConstructor();
+
+        if (!$constructor) {
+            return new $class();
+        }
+
+        $args = [];
+        foreach ($constructor->getParameters() as $param) {
+            $type = $param->getType();
+            if ($type instanceof \ReflectionNamedType && !$type->isBuiltin() && $type->getName() === Environment::class) {
+                $args[] = $this->environment;
+            } elseif ($param->isOptional()) {
+                $args[] = $param->getDefaultValue();
+            } else {
+                // Argument cannot be resolved.
+                // We rely on new $class() triggering the error naturally if arguments are missing.
+            }
+        }
+
+        return $reflection->newInstanceArgs($args);
+    }
+
+    /**
      * Retrieve all registered services.
      *
      * Useful for diagnostics, testing, or admin health checks.
@@ -123,6 +163,16 @@ class Loader
     public function getServices(): array
     {
         return $this->services;
+    }
+
+    /**
+     * Get the plugin environment.
+     *
+     * @return Environment
+     */
+    public function getEnvironment(): Environment
+    {
+        return $this->environment;
     }
 
     /**

@@ -106,8 +106,14 @@ add_action('admin_init', function (): void {
  * Plugin Boot
  * ------------------------------------------------------------------------- */
 
-$loader = new \AperturePro\Loader(
+$environment = new \AperturePro\Environment(
+    APERTURE_PRO_DIR,
+    APERTURE_PRO_URL,
     APERTURE_PRO_VERSION
+);
+
+$loader = new \AperturePro\Loader(
+    $environment
 );
 
 $loader->boot();

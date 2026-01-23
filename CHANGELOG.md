@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.44] – Environment DI**
+
+### **Architecture**
+- **Loader:** Refactored `Loader` to accept an `Environment` object instead of a raw version string. This prepares the plugin for cleaner dependency injection.
+- **Environment:** Introduced `AperturePro\Environment` class to encapsulate plugin context (path, URL, version).
+- **DI:** Updated `Loader::registerService` to support auto-injection of `Environment` into service constructors.
+
 ## **[1.0.43] – Automated Upload Cleanup**
 
 ### **Fixes**
