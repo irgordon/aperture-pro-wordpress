@@ -454,8 +454,32 @@ class ProofService
     protected static function performParallelDownloads(array $urls): array
     {
         if (!function_exists('curl_multi_init')) {
-            // Fallback to sequential
             $results = [];
+
+            // OPTIMIZATION: Try PHP streams for parallel downloads if curl_multi is unavailable
+            // This avoids the severe performance penalty of sequential blocking requests.
+            // We use this path optimistically for HTTP/HTTPS URLs.
+            // Any complex requests (redirects, chunked) will be skipped and handled by the sequential fallback.
+            if (function_exists('stream_socket_client')) {
+                $canUseStreams = true;
+                foreach ($urls as $url) {
+                    if (strncasecmp($url, 'http', 4) !== 0) {
+                        $canUseStreams = false;
+                        break;
+                    }
+                }
+                if ($canUseStreams) {
+                    $results = self::performParallelDownloadsStreams($urls);
+                }
+            }
+
+            // If we successfully downloaded everything, return early.
+            if (count($results) === count($urls)) {
+                return $results;
+            }
+
+            // Fallback to sequential for any items that failed or were skipped by streams
+            $remainingUrls = array_diff_key($urls, $results);
 
             // OPTIMIZATION: Use persistent curl handle if available to enable keep-alive
             if (function_exists('curl_init')) {
@@ -467,7 +491,7 @@ class ProofService
                     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
                 }
 
-                foreach ($urls as $key => $url) {
+                foreach ($remainingUrls as $key => $url) {
                     $tmp = wp_tempnam('ap-proof-');
                     $fp = fopen($tmp, 'w+');
                     if (!$fp) {
@@ -489,22 +513,22 @@ class ProofService
                     }
                 }
                 curl_close($ch);
-                return $results;
-            }
-
-            foreach ($urls as $key => $url) {
-                $tmp = wp_tempnam('ap-proof-');
-                $response = wp_remote_get($url, [
-                    'timeout'  => 60,
-                    'stream'   => true,
-                    'filename' => $tmp,
-                ]);
-                if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
-                    $results[$key] = $tmp;
-                } else {
-                    @unlink($tmp);
+            } else {
+                foreach ($remainingUrls as $key => $url) {
+                    $tmp = wp_tempnam('ap-proof-');
+                    $response = wp_remote_get($url, [
+                        'timeout'  => 60,
+                        'stream'   => true,
+                        'filename' => $tmp,
+                    ]);
+                    if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+                        $results[$key] = $tmp;
+                    } else {
+                        @unlink($tmp);
+                    }
                 }
             }
+
             return $results;
         }
 
@@ -566,6 +590,176 @@ class ProofService
         }
 
         curl_multi_close($mh);
+
+        return $results;
+    }
+
+    /**
+     * Parallel download fallback using PHP Streams (no curl_multi).
+     *
+     * @param array $urls Map of key => URL
+     * @return array Map of key => localTempPath
+     */
+    protected static function performParallelDownloadsStreams(array $urls): array
+    {
+        $sockets = [];
+        $files = [];
+        $results = [];
+
+        // 1. Initialize Sockets
+        foreach ($urls as $key => $url) {
+            $parts = parse_url($url);
+            $host = $parts['host'] ?? '';
+            $port = $parts['port'] ?? 80;
+            $scheme = $parts['scheme'] ?? 'http';
+            $path = ($parts['path'] ?? '/') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+
+            if ($scheme === 'https') {
+                $host = 'ssl://' . $host;
+                if ($port === 80) $port = 443;
+            }
+
+            $errno = 0;
+            $errstr = '';
+            // Connect asynchronously
+            // SECURITY: Default SSL context verifies peers. Do not disable it.
+            $ctx = stream_context_create();
+            $fp = @stream_socket_client(
+                "$host:$port",
+                $errno,
+                $errstr,
+                30,
+                STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT,
+                $ctx
+            );
+
+            if ($fp) {
+                stream_set_blocking($fp, false);
+                $sockets[$key] = $fp;
+
+                $tmp = wp_tempnam('ap-proof-');
+                $files[$key] = [
+                    'path' => $tmp,
+                    'fp' => fopen($tmp, 'w+'),
+                    'req' => "GET $path HTTP/1.1\r\nHost: {$parts['host']}\r\nConnection: close\r\nUser-Agent: AperturePro\r\n\r\n",
+                    'state' => 'connecting',
+                ];
+            } else {
+                 Logger::log('error', 'proofs', 'Stream connect failed', ['url' => $url, 'error' => $errstr]);
+            }
+        }
+
+        if (empty($sockets)) {
+            return [];
+        }
+
+        // 2. Event Loop
+        $start = time();
+        while (!empty($sockets) && (time() - $start < 60)) {
+            $read = [];
+            $write = [];
+            $except = [];
+
+            foreach ($sockets as $key => $socket) {
+                if ($files[$key]['state'] === 'connecting' || $files[$key]['state'] === 'writing') {
+                    $write[] = $socket;
+                }
+                $read[] = $socket;
+            }
+
+            if (empty($read) && empty($write)) {
+                break;
+            }
+
+            if (@stream_select($read, $write, $except, 1) === false) {
+                break;
+            }
+
+            // Handle Writes
+            foreach ($write as $socket) {
+                $key = array_search($socket, $sockets, true);
+                if ($key !== false && isset($files[$key])) {
+                     if ($files[$key]['state'] === 'connecting') {
+                         $files[$key]['state'] = 'writing';
+                     }
+
+                     if ($files[$key]['state'] === 'writing') {
+                         $req = $files[$key]['req'];
+                         $bytes = @fwrite($socket, $req);
+                         if ($bytes === false) {
+                             fclose($socket);
+                             unset($sockets[$key]);
+                         } else {
+                             $files[$key]['req'] = substr($req, $bytes);
+                             if (empty($files[$key]['req'])) {
+                                 $files[$key]['state'] = 'reading';
+                             }
+                         }
+                     }
+                }
+            }
+
+            // Handle Reads
+            foreach ($read as $socket) {
+                $key = array_search($socket, $sockets, true);
+                if ($key !== false && isset($files[$key])) {
+                    $data = @fread($socket, 8192);
+
+                    if ($data === false || ($data === '' && feof($socket))) {
+                        fclose($socket);
+                        unset($sockets[$key]);
+                    } elseif ($data !== '') {
+                        if (!isset($files[$key]['headers_done'])) {
+                            $content = (isset($files[$key]['buffer']) ? $files[$key]['buffer'] : '') . $data;
+                            $pos = strpos($content, "\r\n\r\n");
+                            if ($pos !== false) {
+                                // Check headers for complex features that require fallback
+                                $headerStr = substr($content, 0, $pos);
+                                // Detect Chunked Transfer or Redirects (3xx)
+                                if (stripos($headerStr, 'Transfer-Encoding: chunked') !== false ||
+                                    preg_match('|^HTTP/[\d\.]+ 3\d\d|', $headerStr)) {
+                                    // Complex response, abort and fallback
+                                    fclose($socket);
+                                    unset($sockets[$key]);
+                                    @unlink($files[$key]['path']);
+                                    unset($files[$key]);
+                                    continue;
+                                }
+
+                                $body = substr($content, $pos + 4);
+                                fwrite($files[$key]['fp'], $body);
+                                $files[$key]['headers_done'] = true;
+                                unset($files[$key]['buffer']);
+
+                                if (preg_match('|^HTTP/[\d\.]+ (\d+)|', $content, $m)) {
+                                    $files[$key]['status'] = (int)$m[1];
+                                }
+                            } else {
+                                $files[$key]['buffer'] = $content;
+                            }
+                        } else {
+                            fwrite($files[$key]['fp'], $data);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Finalize
+        foreach ($files as $key => $file) {
+            if (is_resource($file['fp'])) {
+                fclose($file['fp']);
+            }
+            if (isset($file['status']) && $file['status'] >= 200 && $file['status'] < 300 && filesize($file['path']) > 0) {
+                $results[$key] = $file['path'];
+            } else {
+                @unlink($file['path']);
+            }
+            // Cleanup remaining sockets
+            if (isset($sockets[$key]) && is_resource($sockets[$key])) {
+                @fclose($sockets[$key]);
+            }
+        }
 
         return $results;
     }
