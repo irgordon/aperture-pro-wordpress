@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.42] – Secure Portal Render Route**
+
+### **Security**
+- **Client Portal:** Implemented secure `permission_callback` for the optional server-render route. It now strictly validates that the requestor has an active client session and that the requested project ID matches the session.
+- **Client Portal:** Updated `restRenderPortal` to prioritize the session's project ID, ensuring clients cannot render arbitrary project fragments by manipulating parameters.
+
 ## **[1.0.41] – Optimized Email Queue Storage**
 
 ### **Performance**
