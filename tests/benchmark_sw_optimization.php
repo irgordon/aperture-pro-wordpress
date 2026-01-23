@@ -40,11 +40,11 @@ $dummySwPath = __DIR__ . '/sw_benchmark_tmp.js';
 file_put_contents($dummySwPath, "console.log('./portal-app.js');");
 
 
-function current_logic($isDebug) {
+function legacy_logic($isDebug) {
     global $dummySwPath;
     $cacheKey = 'ap_sw_' . APERTURE_PRO_VERSION;
 
-    // Current Issue: Cache is skipped in debug mode
+    // Legacy Issue: Cache was skipped in debug mode
     if (!$isDebug) {
         $cachedContent = get_transient($cacheKey);
         if ($cachedContent) {
@@ -68,7 +68,7 @@ function current_logic($isDebug) {
     return '';
 }
 
-function optimized_logic($isDebug) {
+function current_logic($isDebug) {
     global $dummySwPath;
     $cacheKey = 'ap_sw_' . APERTURE_PRO_VERSION;
 
@@ -101,14 +101,30 @@ $isDebug = true; // We are simulating the problem scenario
 echo "Simulating Debug Mode (WP_DEBUG=true)\n";
 echo "-------------------------------------\n";
 
-// 1. Current Logic
+// 1. Legacy Logic
 // Clear cache initially
 global $mock_transients;
 $mock_transients = [];
 
 // Prime the cache (simulating a previous request)
+legacy_logic($isDebug);
+// Note: legacy_logic writes to cache even in debug!
+
+$start = microtime(true);
+for ($i = 0; $i < $iterations; $i++) {
+    legacy_logic($isDebug);
+}
+$end = microtime(true);
+$legacyTime = $end - $start;
+echo "Legacy Logic Time (Hit Cache but Ignored): " . number_format($legacyTime, 5) . "s\n";
+
+
+// 2. Current Logic
+// Clear cache initially
+$mock_transients = [];
+
+// Prime the cache
 current_logic($isDebug);
-// Note: current_logic writes to cache even in debug!
 
 $start = microtime(true);
 for ($i = 0; $i < $iterations; $i++) {
@@ -116,27 +132,11 @@ for ($i = 0; $i < $iterations; $i++) {
 }
 $end = microtime(true);
 $currentTime = $end - $start;
-echo "Current Logic Time (Hit Cache but Ignored): " . number_format($currentTime, 5) . "s\n";
+echo "Current Logic Time (Hit Cache): " . number_format($currentTime, 5) . "s\n";
 
 
-// 2. Optimized Logic
-// Clear cache initially
-$mock_transients = [];
-
-// Prime the cache
-optimized_logic($isDebug);
-
-$start = microtime(true);
-for ($i = 0; $i < $iterations; $i++) {
-    optimized_logic($isDebug);
-}
-$end = microtime(true);
-$optimizedTime = $end - $start;
-echo "Optimized Logic Time (Hit Cache): " . number_format($optimizedTime, 5) . "s\n";
-
-
-if ($optimizedTime > 0) {
-    echo "Improvement: " . number_format($currentTime / $optimizedTime, 1) . "x faster\n";
+if ($currentTime > 0) {
+    echo "Improvement: " . number_format($legacyTime / $currentTime, 1) . "x faster\n";
 }
 
 // Cleanup

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.54] – Benchmark Fixes**
+
+### **Tests**
+- **Benchmarks:** Updated `tests/benchmark_sw_optimization.php` to correctly reflect the optimized Service Worker caching logic. The benchmark previously contained outdated logic labeled as "current", which led to false positives when verifying performance improvements.
+
 ## **[1.0.53] – Optimized Proof Selection**
 
 ### **Performance**
