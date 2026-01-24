@@ -73,6 +73,32 @@ if (!function_exists('current_time')) {
 
 use AperturePro\Proof\ProofQueue;
 
+// Mock WPDB
+class MockWPDB {
+    public $prefix = 'wp_';
+    public function prepare($query, ...$args) { return $query; }
+    public function get_var($query) { return null; } // Simulate table does NOT exist to force legacy fallback? Or exist?
+    // If table exists, addBatch tries DB insert.
+    // If I want to test "Batching" in general, I should support both.
+    // But this test originally tested Options-based queue performance or overhead?
+    // "Benchmark for ProofQueue Enqueue Performance (N+1 Writes vs Batch)"
+    // The previous test was comparing enqueue loop vs enqueueBatch (legacy).
+    // Now I am testing addBatch.
+
+    // Let's make it simple: Simulate table does NOT exist so it falls back to legacy logic which is what uses options?
+    // Wait, addBatch fallback is addToLegacyQueueBatchIds.
+    // addToLegacyQueueBatchIds uses getLegacyQueueAsMap (read option), updates array, writes option.
+    // So if table does not exist, it tests option batching.
+    // If table DOES exist, it tests DB batching.
+
+    // The 'benchmark_proof_queue_insert.php' tests DB batching.
+    // This 'benchmark_proof_queue.php' seems to focus on Option latency (usleep(500) in update_option).
+
+    public function esc_like($text) { return $text; }
+    public function query($query) { return true; }
+}
+$GLOBALS['wpdb'] = new MockWPDB();
+
 // --- Benchmark Configuration ---
 $itemCount = 100; // reduced to 100 for quicker test, but enough to show trend.
 // Wait, prompt said 1000 items. Let's do 200 to be safe on time but clear on impact.
@@ -100,9 +126,9 @@ echo sprintf("Average per item: %.4f seconds\n", $duration / $itemCount);
 $baselineDuration = $duration;
 
 
-// --- Optimized Test (Future) ---
-if (method_exists(ProofQueue::class, 'enqueueBatch')) {
-    echo "\n--- Optimized: ProofQueue::enqueueBatch() ---\n";
+// --- Optimized Test ---
+if (method_exists(ProofQueue::class, 'addBatch')) {
+    echo "\n--- Optimized: ProofQueue::addBatch() ---\n";
 
     // Reset queue
     $mock_options[ProofQueue::QUEUE_OPTION] = [];
@@ -112,11 +138,13 @@ if (method_exists(ProofQueue::class, 'enqueueBatch')) {
         $batch[] = [
             'original_path' => "original_$i.jpg",
             'proof_path'    => "proof_$i.jpg",
+            'project_id'    => 1,
+            'image_id'      => $i + 1
         ];
     }
 
     $start = microtime(true);
-    ProofQueue::enqueueBatch($batch);
+    ProofQueue::addBatch($batch);
     $end = microtime(true);
     $durationOpt = $end - $start;
 
@@ -132,5 +160,5 @@ if (method_exists(ProofQueue::class, 'enqueueBatch')) {
     }
 
 } else {
-    echo "\n[Info] enqueueBatch not yet implemented.\n";
+    echo "\n[Info] addBatch not yet implemented.\n";
 }

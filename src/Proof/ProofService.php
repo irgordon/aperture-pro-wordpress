@@ -173,9 +173,30 @@ class ProofService
 
         // 6. Batch enqueue missing proofs
         if (!empty($toEnqueue)) {
-            // Optimized: Use batch enqueue to reduce DB calls from O(N) to O(1).
-            // This replaces the legacy iterative loop to ensure high throughput.
-            ProofQueue::enqueueBatch($toEnqueue);
+            // Split items into those with IDs (optimized) and legacy items (paths only)
+            $batchIds = [];
+            $legacyItems = [];
+
+            foreach ($toEnqueue as $item) {
+                if (isset($item['project_id'], $item['image_id'])) {
+                    $batchIds[] = [
+                        'project_id' => $item['project_id'],
+                        'image_id'   => $item['image_id'],
+                    ];
+                } else {
+                    $legacyItems[] = $item;
+                }
+            }
+
+            // Optimized batch insert for items with IDs
+            if (!empty($batchIds)) {
+                ProofQueue::addBatch($batchIds);
+            }
+
+            // Iterative enqueue for legacy items
+            foreach ($legacyItems as $item) {
+                ProofQueue::enqueue($item['original_path'], $item['proof_path']);
+            }
         }
 
         // Cache the result
