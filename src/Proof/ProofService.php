@@ -212,7 +212,11 @@ class ProofService
 
         // Ensure proof exists; if missing, queue and return placeholder.
         if (!$storage->exists($proofPath)) {
-            ProofQueue::enqueue($originalPath, $proofPath);
+            if (isset($image['project_id'], $image['id']) && is_numeric($image['project_id']) && is_numeric($image['id'])) {
+                ProofQueue::add((int) $image['project_id'], (int) $image['id']);
+            } else {
+                ProofQueue::enqueue($originalPath, $proofPath);
+            }
             return self::getPlaceholderUrl();
         }
 

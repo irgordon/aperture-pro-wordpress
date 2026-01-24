@@ -5,9 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## **[1.0.71] – Proof Queue Performance Verification**
+## **[1.0.71] – Proof Queue ID Optimization**
 
 ### **Performance**
+- **Proof Service:** Updated `ProofService::getProofUrlForImage` to use `ProofQueue::add` when project and image IDs are available, enabling optimized O(1) database insertion.
+- **Proof Service:** Refactored `ProofService::getProofUrls` to explicitly use `ProofQueue::addBatch` for items with IDs, avoiding legacy fallback logic and adhering to deprecation notices.
 - **Proof Queue:** Re-verified the batch insertion optimization in `ProofService`. Confirmed that the implementation correctly uses `ProofQueue::enqueueBatch`, reducing database queries from O(N) to O(1).
 - **Benchmark:** Validated performance improvement: 1.22s (1000 queries) vs 0.0024s (1 query) for a batch of 1000 items, representing a ~99.8% reduction in execution time.
 
