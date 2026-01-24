@@ -173,8 +173,29 @@ class ProofService
 
         // 6. Batch enqueue missing proofs
         if (!empty($toEnqueue)) {
-            // Optimized: Use batch enqueue to reduce DB calls from O(N) to O(1)
-            ProofQueue::enqueueBatch($toEnqueue);
+            $batchIds = [];
+            $legacyItems = [];
+
+            foreach ($toEnqueue as $item) {
+                // $item contains 'image_id' mapped from 'id' during construction of $toEnqueue
+                if (isset($item['project_id'], $item['image_id'])) {
+                    $batchIds[] = [
+                        'project_id' => (int) $item['project_id'],
+                        'image_id'   => (int) $item['image_id'],
+                    ];
+                } else {
+                    $legacyItems[] = $item;
+                }
+            }
+
+            if (!empty($batchIds)) {
+                ProofQueue::addBatch($batchIds);
+            }
+
+            if (!empty($legacyItems)) {
+                // Fallback to legacy enqueue for items without IDs
+                ProofQueue::enqueueBatch($legacyItems);
+            }
         }
 
         // Cache the result
@@ -211,7 +232,11 @@ class ProofService
 
         // Ensure proof exists; if missing, queue and return placeholder.
         if (!$storage->exists($proofPath)) {
-            ProofQueue::enqueue($originalPath, $proofPath);
+            if (isset($image['project_id'], $image['id']) && is_numeric($image['project_id']) && is_numeric($image['id'])) {
+                ProofQueue::add((int) $image['project_id'], (int) $image['id']);
+            } else {
+                ProofQueue::enqueue($originalPath, $proofPath);
+            }
             return self::getPlaceholderUrl();
         }
 
