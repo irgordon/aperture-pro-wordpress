@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.72] – Proof Service Deprecation Cleanup**
+
+### **Maintenance**
+- **Proof Service:** Refactored `ProofService::getProofUrls` to replace the deprecated `ProofQueue::enqueueBatch` call with explicit logic. It now uses `ProofQueue::addBatch` for items with IDs (optimized) and iterates with `enqueue` for legacy items.
+- **Tests:** Updated `tests/benchmark_proof_queue_insert.php` and `tests/benchmark_proof_queue.php` to use the optimized `addBatch` method and include IDs in test data where necessary.
+- **Tests:** Removed outdated test case in `tests/test_proof_queue_batch.php` that relied on undefined constants.
+
 ## **[1.0.71] – Proof Queue ID Optimization**
 
 ### **Performance**

@@ -117,7 +117,7 @@ namespace AperturePro\Test {
     // --- Optimized: Batch insert ---
     $start = microtime(true);
 
-    ProofQueue::enqueueBatch($items);
+    ProofQueue::addBatch($items);
 
     $optimizedTime = microtime(true) - $start;
     $optimizedQueries = $wpdb->query_count;
