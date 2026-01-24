@@ -173,29 +173,9 @@ class ProofService
 
         // 6. Batch enqueue missing proofs
         if (!empty($toEnqueue)) {
-            $batchIds = [];
-            $legacyItems = [];
-
-            foreach ($toEnqueue as $item) {
-                // $item contains 'image_id' mapped from 'id' during construction of $toEnqueue
-                if (isset($item['project_id'], $item['image_id'])) {
-                    $batchIds[] = [
-                        'project_id' => (int) $item['project_id'],
-                        'image_id'   => (int) $item['image_id'],
-                    ];
-                } else {
-                    $legacyItems[] = $item;
-                }
-            }
-
-            if (!empty($batchIds)) {
-                ProofQueue::addBatch($batchIds);
-            }
-
-            if (!empty($legacyItems)) {
-                // Fallback to legacy enqueue for items without IDs
-                ProofQueue::enqueueBatch($legacyItems);
-            }
+            // Optimized: Use batch enqueue to reduce DB calls from O(N) to O(1).
+            // This replaces the legacy iterative loop to ensure high throughput.
+            ProofQueue::enqueueBatch($toEnqueue);
         }
 
         // Cache the result
