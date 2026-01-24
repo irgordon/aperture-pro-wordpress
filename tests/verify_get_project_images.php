@@ -119,11 +119,9 @@ $wpdb->results_to_return = [
         'path' => 'projects/123/img2.jpg',
         'filename' => 'img2.jpg',
         'is_selected' => '1',
-        'client_comments' => 'json_encoded_array' // This might cause json_decode to fail if not valid json, checking handling.
+        'client_comments' => json_encode([['text' => 'Nice']])
     ]
 ];
-// Fix the mock data for json
-$wpdb->results_to_return[1]['client_comments'] = json_encode([['text' => 'Nice']]);
 
 
 // Call the method

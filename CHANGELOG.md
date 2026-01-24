@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.73] – Mock Data Fix**
+
+### **Tests**
+- **Verification:** Fixed mock data structure in `tests/verify_get_project_images.php` to correctly initialize JSON comments in the `$wpdb->results_to_return` array, removing the need for a post-definition patch.
+
 ## **[1.0.72] – Proof Service Deprecation Cleanup**
 
 ### **Maintenance**
