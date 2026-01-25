@@ -191,7 +191,7 @@ class ProofQueue
         // For now, this just uses the legacy array format in the option
         // because the new table requires IDs.
         // Ideally, callers are updated to pass IDs.
-        self::enqueueBatch([
+        self::addToLegacyQueueBatch([
             [
                 'original_path' => $originalPath,
                 'proof_path'    => $proofPath,

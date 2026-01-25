@@ -32,7 +32,9 @@ namespace AperturePro\Test {
         ['original_path' => 'orig1.jpg', 'proof_path' => 'proof1.jpg'],
         ['original_path' => 'orig2.jpg', 'proof_path' => 'proof2.jpg'],
     ];
-    ProofQueue::enqueueBatch($items);
+    foreach ($items as $item) {
+        ProofQueue::enqueue($item['original_path'], $item['proof_path']);
+    }
 
     $queue = \get_option(ProofQueue::QUEUE_OPTION);
     if (count($queue) === 2 && $queue[0]['proof_path'] === 'proof1.jpg') {
@@ -50,7 +52,9 @@ namespace AperturePro\Test {
         ['original_path' => 'orig2.jpg', 'proof_path' => 'proof2.jpg'], // Duplicate
         ['original_path' => 'orig3.jpg', 'proof_path' => 'proof3.jpg'], // New
     ];
-    ProofQueue::enqueueBatch($items2);
+    foreach ($items2 as $item) {
+        ProofQueue::enqueue($item['original_path'], $item['proof_path']);
+    }
 
     $queue = \get_option(ProofQueue::QUEUE_OPTION);
     if (count($queue) === 3 && $queue[2]['proof_path'] === 'proof3.jpg') {
@@ -67,10 +71,28 @@ namespace AperturePro\Test {
         ['original_path' => 'orig4.jpg', 'proof_path' => 'proof4.jpg'],
         ['original_path' => 'orig4.jpg', 'proof_path' => 'proof4.jpg'], // Duplicate in batch
     ];
-    ProofQueue::enqueueBatch($items3);
+    foreach ($items3 as $item) {
+        ProofQueue::enqueue($item['original_path'], $item['proof_path']);
+    }
 
     $queue = \get_option(ProofQueue::QUEUE_OPTION);
     if (count($queue) === 4 && $queue[3]['proof_path'] === 'proof4.jpg') {
+        echo "PASS\n";
+    } else {
+        echo "FAIL\n";
+        print_r($queue);
+        exit(1);
+    }
+
+    // 4. Test Legacy enqueueBatch (Backward Compatibility)
+    echo "Test 4: Legacy enqueueBatch\n";
+    $items4 = [
+        ['original_path' => 'orig5.jpg', 'proof_path' => 'proof5.jpg'],
+    ];
+    ProofQueue::enqueueBatch($items4);
+
+    $queue = \get_option(ProofQueue::QUEUE_OPTION);
+    if (count($queue) === 5 && $queue[4]['proof_path'] === 'proof5.jpg') {
         echo "PASS\n";
     } else {
         echo "FAIL\n";

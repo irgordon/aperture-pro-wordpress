@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.76] – Proof Queue Enqueue Refactor**
+
+### **Maintenance**
+- **Proof Queue:** Refactored `ProofQueue::enqueue` to call `addToLegacyQueueBatch` directly, removing the internal dependency on the deprecated `enqueueBatch` method.
+- **Tests:** Updated `tests/test_proof_queue_batch.php` to use a loop of `ProofQueue::enqueue` calls instead of the deprecated `enqueueBatch`, ensuring the legacy path is correctly tested and validating the migration guide for consumers.
+
 ## **[1.0.75] – Proof Generation Optimization**
 
 ### **Performance**
