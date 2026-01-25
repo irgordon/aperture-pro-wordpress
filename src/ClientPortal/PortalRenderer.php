@@ -6,6 +6,7 @@ use AperturePro\Storage\StorageFactory;
 use AperturePro\Auth\CookieService;
 use AperturePro\Helpers\Utils;
 use AperturePro\Helpers\Logger;
+use AperturePro\Repositories\ProjectRepository;
 
 /**
  * PortalRenderer
@@ -74,8 +75,9 @@ class PortalRenderer
         }
 
         // Fetch project
-        $projectsTable = $wpdb->prefix . 'ap_projects';
-        $project = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$projectsTable} WHERE id = %d LIMIT 1", $projectId));
+        $projectRepo = new ProjectRepository();
+        $project = $projectRepo->find($projectId);
+
         if (!$project) {
             $context['messages'][] = 'Project not found.';
             return $context;
