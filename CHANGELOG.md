@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.80] – Proof Download Stream Optimization**
+
+### **Performance**
+- **Proofs:** Optimized `ProofService::performParallelDownloads` to use `php://temp` streams for buffering HTTP responses instead of in-memory string concatenation. This changes the buffering complexity from O(N^2) to O(N), significantly reducing memory usage and CPU overhead when processing large headers or many chunks.
+- **Proofs:** Implemented efficient stream-based header parsing that only scans the tail of the incoming data stream, avoiding repeated full-buffer scans.
+- **Benchmark:** Validated correctness and robustness with simulated slow/chunked server responses.
+
 ## **[1.0.79] – Proof Generation Fallback Optimization**
 
 ### **Performance**
