@@ -123,8 +123,31 @@ namespace {
     @unlink($gifFile);
 
 
-    // 3. Verify Large File Safety Check
-    echo "Testing Large File Safety Check (>50MB)...\n";
+    // 3. Verify WBMP Loading
+    if (function_exists('imagecreatefromwbmp') && function_exists('imagewbmp')) {
+        $wbmpFile = tempnam(sys_get_temp_dir(), 'test_wbmp') . '.wbmp';
+        $im = imagecreatetruecolor(100, 100);
+        $black = imagecolorallocate($im, 0, 0, 0);
+        $white = imagecolorallocate($im, 255, 255, 255);
+        imagefilledrectangle($im, 0, 0, 99, 99, $white); // WBMP needs high contrast
+        imagewbmp($im, $wbmpFile);
+        imagedestroy($im);
+
+        echo "Testing WBMP optimization...\n";
+        $proof = TestableProofService::testCreateWatermarkedLowRes($wbmpFile);
+        if ($proof && file_exists($proof)) {
+            echo "PASS: WBMP Proof generated.\n";
+            unlink($proof);
+        } else {
+            echo "FAIL: WBMP Proof failed.\n";
+        }
+        @unlink($wbmpFile);
+    } else {
+        echo "SKIP: WBMP not supported in this environment.\n";
+    }
+
+    // 4. Verify Unsupported/Large File Safety Check
+    echo "Testing Unsupported/Large File Safety Check (>50MB)...\n";
     $largeFile = tempnam(sys_get_temp_dir(), 'test_large') . '.bin';
 
     // Create sparse file (fast) or just write zeros.
@@ -143,19 +166,19 @@ namespace {
         $logs = \AperturePro\Helpers\Logger::$logs;
         $found = false;
         foreach ($logs as $log) {
-            if (strpos($log, 'Image too large for fallback string loading') !== false) {
+            if (strpos($log, 'Unsupported image type or loader failure') !== false) {
                 $found = true;
                 break;
             }
         }
 
         if ($found) {
-            echo "PASS: Large file rejected and logged.\n";
+            echo "PASS: Large/Unsupported file rejected and logged.\n";
         } else {
-            echo "FAIL: Large file rejected but not logged properly.\nLogs: " . implode("\n", $logs) . "\n";
+            echo "FAIL: File rejected but not logged properly.\nLogs: " . implode("\n", $logs) . "\n";
         }
     } else {
-        echo "FAIL: Large file was processed (should be rejected).\n";
+        echo "FAIL: File was processed (should be rejected).\n";
         @unlink($proof);
     }
 

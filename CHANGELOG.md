@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.79] – Proof Generation Fallback Optimization**
+
+### **Performance**
+- **Proofs:** Optimized `ProofService::createWatermarkedLowRes` to natively support `WBMP`, `XBM`, and `AVIF` image formats, removing the memory-intensive `file_get_contents` fallback for these types.
+- **Proofs:** Removed the legacy string-loading fallback entirely to prevent potential "Allowed memory size exhausted" errors when processing large unsupported files.
+- **Benchmark:** Validated performance improvement: Peak memory usage for WBMP files reduced from ~0.49 MB to ~0.01 MB (delta), eliminating the file-size-dependent memory penalty.
+
 ## **[1.0.78] – Legacy Queue Migration Optimization**
 
 ### **Performance**

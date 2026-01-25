@@ -937,29 +937,29 @@ class ProofService
                             $src = imagecreatefrombmp($localOriginal);
                         }
                         break;
-                }
-            }
-
-            // Fallback to string loading if type not detected or specific loader failed/not supported
-            if (!$src) {
-                // Safety: Avoid loading huge files into string memory if they failed specific loaders
-                $fsize = filesize($localOriginal);
-                $limit = 50 * 1024 * 1024; // 50MB hard limit for fallback string loading
-
-                if ($fsize !== false && $fsize > $limit) {
-                    Logger::log('error', 'proofs', 'Image too large for fallback string loading', [
-                        'file' => $localOriginal,
-                        'size' => $fsize
-                    ]);
-                } else {
-                    $srcData = file_get_contents($localOriginal);
-                    if ($srcData !== false) {
-                        $src = imagecreatefromstring($srcData);
-                    }
+                    case IMAGETYPE_WBMP:
+                        if (function_exists('imagecreatefromwbmp')) {
+                            $src = imagecreatefromwbmp($localOriginal);
+                        }
+                        break;
+                    case IMAGETYPE_XBM:
+                        if (function_exists('imagecreatefromxbm')) {
+                            $src = imagecreatefromxbm($localOriginal);
+                        }
+                        break;
+                    case 19: // IMAGETYPE_AVIF
+                        if (function_exists('imagecreatefromavif')) {
+                            $src = imagecreatefromavif($localOriginal);
+                        }
+                        break;
                 }
             }
 
             if (!$src) {
+                Logger::log('error', 'proofs', 'Unsupported image type or loader failure. Fallback disabled for performance safety.', [
+                    'file' => $localOriginal,
+                    'type' => $size[2] ?? 'unknown'
+                ]);
                 @unlink($tmp);
                 return null;
             }
