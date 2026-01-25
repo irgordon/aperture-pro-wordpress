@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.78] – Legacy Queue Migration Optimization**
+
+### **Performance**
+- **Proof Queue:** Optimized the legacy queue migration process. The `processLegacyQueue` method now auto-detects if the optimized database table exists and migrates all eligible items in a single batch operation using `INSERT IGNORE`.
+- **Proof Queue:** Updated `migrateLegacyQueue` to use `addBatch`, reducing database writes from O(N) to O(1) during migration.
+- **Benchmark:** Validated performance: The legacy queue is now fully emptied/migrated in a single pass (0.0044s) compared to the previous behavior where items remained in the option indefinitely (or were processed slowly in small batches).
+
 ## **[1.0.77] – Service Worker Optimization**
 
 ### **Performance**

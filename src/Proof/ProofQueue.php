@@ -431,6 +431,11 @@ class ProofQueue
      */
     protected static function processLegacyQueue(): void
     {
+        // 1. Attempt Migration to DB Table
+        if (self::tableExists()) {
+            self::migrateLegacyQueue();
+        }
+
         $queue = get_option(self::QUEUE_OPTION, []);
         if (!is_array($queue) || empty($queue)) {
             return;
@@ -697,17 +702,29 @@ class ProofQueue
             return 0;
         }
 
-        $moved = 0;
+        $migratable = [];
         $remaining = [];
 
         foreach ($queue as $item) {
             // We can only migrate if we have IDs.
             // Older legacy items might only have paths. We cannot easily recover IDs without lookup.
             if (isset($item['project_id'], $item['image_id'])) {
-                self::add((int)$item['project_id'], (int)$item['image_id']);
-                $moved++;
+                $migratable[] = [
+                    'project_id' => (int)$item['project_id'],
+                    'image_id'   => (int)$item['image_id']
+                ];
             } else {
                 $remaining[] = $item;
+            }
+        }
+
+        $moved = 0;
+        if (!empty($migratable)) {
+            if (self::addBatch($migratable)) {
+                $moved = count($migratable);
+            } else {
+                // Batch insert failed. Abort migration to preserve data.
+                return 0;
             }
         }
 
