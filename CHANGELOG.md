@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.75] – Proof Generation Optimization**
+
+### **Performance**
+- **Proofs:** Optimized `ProofService::createWatermarkedLowRes` to use native image loaders (`imagecreatefromgif`, `imagecreatefrombmp`) for GIF and BMP files. This prevents the legacy fallback mechanism from loading entire files into a PHP string variable, significantly reducing memory usage for these formats.
+- **Safety:** Added a safety check to the proof generation fallback path. Files larger than 50MB are now skipped (with an error log) instead of being loaded into memory, preventing potential "Allowed memory size of ... bytes exhausted" fatal errors.
+- **Benchmark:** Validated performance improvement for BMP files: Peak memory usage reduced from ~11.85 MB to ~0.39 MB, and execution time reduced by ~60%.
+
 ## **[1.0.74] – Portal Project Fetch Optimization**
 
 ### **Performance**

@@ -928,14 +928,34 @@ class ProofService
                             $src = imagecreatefromwebp($localOriginal);
                         }
                         break;
+                    case IMAGETYPE_GIF:
+                        $src = imagecreatefromgif($localOriginal);
+                        break;
+                    case IMAGETYPE_BMP:
+                        // PHP 7.2+
+                        if (function_exists('imagecreatefrombmp')) {
+                            $src = imagecreatefrombmp($localOriginal);
+                        }
+                        break;
                 }
             }
 
             // Fallback to string loading if type not detected or specific loader failed/not supported
             if (!$src) {
-                $srcData = file_get_contents($localOriginal);
-                if ($srcData !== false) {
-                    $src = imagecreatefromstring($srcData);
+                // Safety: Avoid loading huge files into string memory if they failed specific loaders
+                $fsize = filesize($localOriginal);
+                $limit = 50 * 1024 * 1024; // 50MB hard limit for fallback string loading
+
+                if ($fsize !== false && $fsize > $limit) {
+                    Logger::log('error', 'proofs', 'Image too large for fallback string loading', [
+                        'file' => $localOriginal,
+                        'size' => $fsize
+                    ]);
+                } else {
+                    $srcData = file_get_contents($localOriginal);
+                    if ($srcData !== false) {
+                        $src = imagecreatefromstring($srcData);
+                    }
                 }
             }
 
