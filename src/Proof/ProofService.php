@@ -662,6 +662,9 @@ class ProofService
                     'fp' => fopen($tmp, 'w+'),
                     'req' => "GET $path HTTP/1.1\r\nHost: {$parts['host']}\r\nConnection: close\r\nUser-Agent: AperturePro\r\n\r\n",
                     'state' => 'connecting',
+                    // Optimization: Use stream for header buffering instead of string concatenation
+                    'header_stream' => fopen('php://temp', 'w+'),
+                    'tail' => '',
                 ];
             } else {
                  Logger::log('error', 'proofs', 'Stream connect failed', ['url' => $url, 'error' => $errstr]);
@@ -727,34 +730,72 @@ class ProofService
                     if ($data === false || ($data === '' && feof($socket))) {
                         fclose($socket);
                         unset($sockets[$key]);
+                        // Cleanup header stream if incomplete
+                        if (isset($files[$key]['header_stream'])) {
+                            fclose($files[$key]['header_stream']);
+                        }
                     } elseif ($data !== '') {
                         if (!isset($files[$key]['headers_done'])) {
-                            $content = (isset($files[$key]['buffer']) ? $files[$key]['buffer'] : '') . $data;
-                            $pos = strpos($content, "\r\n\r\n");
+                            // Buffer to temp stream
+                            fwrite($files[$key]['header_stream'], $data);
+
+                            // Check for \r\n\r\n in (tail + data)
+                            $check = $files[$key]['tail'] . $data;
+                            $pos = strpos($check, "\r\n\r\n");
+
                             if ($pos !== false) {
-                                // Check headers for complex features that require fallback
-                                $headerStr = substr($content, 0, $pos);
-                                // Detect Chunked Transfer or Redirects (3xx)
-                                if (stripos($headerStr, 'Transfer-Encoding: chunked') !== false ||
-                                    preg_match('|^HTTP/[\d\.]+ 3\d\d|', $headerStr)) {
-                                    // Complex response, abort and fallback
-                                    fclose($socket);
-                                    unset($sockets[$key]);
-                                    @unlink($files[$key]['path']);
-                                    unset($files[$key]);
-                                    continue;
-                                }
+                                // Headers completed
 
-                                $body = substr($content, $pos + 4);
-                                fwrite($files[$key]['fp'], $body);
-                                $files[$key]['headers_done'] = true;
-                                unset($files[$key]['buffer']);
+                                // Reconstruct full headers to parse them
+                                rewind($files[$key]['header_stream']);
+                                $fullBuffer = stream_get_contents($files[$key]['header_stream']);
 
-                                if (preg_match('|^HTTP/[\d\.]+ (\d+)|', $content, $m)) {
-                                    $files[$key]['status'] = (int)$m[1];
+                                // Calculate header length
+                                // The position in $check needs to be mapped to the whole stream.
+                                // But since we have the full content in $fullBuffer (headers + partial body),
+                                // we can just search in $fullBuffer.
+                                $headerEndPos = strpos($fullBuffer, "\r\n\r\n");
+
+                                if ($headerEndPos !== false) {
+                                    $headerStr = substr($fullBuffer, 0, $headerEndPos);
+
+                                    // Detect Chunked Transfer or Redirects (3xx)
+                                    if (stripos($headerStr, 'Transfer-Encoding: chunked') !== false ||
+                                        preg_match('|^HTTP/[\d\.]+ 3\d\d|', $headerStr)) {
+                                        // Complex response, abort and fallback
+                                        fclose($socket);
+                                        unset($sockets[$key]);
+                                        @unlink($files[$key]['path']);
+                                        fclose($files[$key]['header_stream']);
+                                        unset($files[$key]);
+                                        continue;
+                                    }
+
+                                    if (preg_match('|^HTTP/[\d\.]+ (\d+)|', $headerStr, $m)) {
+                                        $files[$key]['status'] = (int)$m[1];
+                                    }
+
+                                    // Write body part to file
+                                    $body = substr($fullBuffer, $headerEndPos + 4);
+                                    if ($body !== '') {
+                                        fwrite($files[$key]['fp'], $body);
+                                    }
+
+                                    $files[$key]['headers_done'] = true;
+
+                                    // Free memory
+                                    fclose($files[$key]['header_stream']);
+                                    unset($files[$key]['header_stream']);
+                                    unset($files[$key]['tail']);
                                 }
                             } else {
-                                $files[$key]['buffer'] = $content;
+                                // Update tail (last 3 chars)
+                                $len = strlen($data);
+                                if ($len >= 3) {
+                                    $files[$key]['tail'] = substr($data, -3);
+                                } else {
+                                    $files[$key]['tail'] = substr($files[$key]['tail'] . $data, -3);
+                                }
                             }
                         } else {
                             fwrite($files[$key]['fp'], $data);
@@ -766,9 +807,13 @@ class ProofService
 
         // 3. Finalize
         foreach ($files as $key => $file) {
-            if (is_resource($file['fp'])) {
+            if (isset($file['fp']) && is_resource($file['fp'])) {
                 fclose($file['fp']);
             }
+            if (isset($file['header_stream']) && is_resource($file['header_stream'])) {
+                fclose($file['header_stream']);
+            }
+
             if (isset($file['status']) && $file['status'] >= 200 && $file['status'] < 300 && filesize($file['path']) > 0) {
                 $results[$key] = $file['path'];
             } else {
