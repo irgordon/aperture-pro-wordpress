@@ -34,62 +34,105 @@ if (!defined('HOUR_IN_SECONDS')) {
     define('HOUR_IN_SECONDS', 3600);
 }
 
-// Logic from PortalController::serve_service_worker (simplified for benchmark)
-function serve_sw_logic() {
+// Create a dummy SW file for testing
+$dummySwPath = __DIR__ . '/sw_perf_test.js';
+$dummyContent = "/* Service Worker */\n";
+for ($i = 0; $i < 500; $i++) {
+    $dummyContent .= "console.log('Line $i');\n";
+}
+$dummyContent .= "importScripts('./portal-app.js');\n";
+$dummyContent .= "importScripts('../css/client-portal.css');\n";
+file_put_contents($dummySwPath, $dummyContent);
+
+
+// 1. Legacy Logic (File Get Contents + Replace + Cache)
+function legacy_sw_logic() {
+    global $dummySwPath;
     $cachedContent = get_transient('ap_sw_cache');
     if ($cachedContent) {
         return $cachedContent;
     }
 
-    $pluginDir = plugin_dir_path(__FILE__); // Adjusted for this script location relative to root
-    $swPath = $pluginDir . 'assets/js/sw.js';
-
-    if (file_exists($swPath)) {
-        $content = file_get_contents($swPath);
+    if (file_exists($dummySwPath)) {
+        ob_start(); // Capture output
+        $content = file_get_contents($dummySwPath);
         $pluginUrl = plugin_dir_url(__FILE__);
 
         $content = str_replace("'./portal-app.js'", "'" . $pluginUrl . "assets/js/portal-app.js'", $content);
         $content = str_replace("'../css/client-portal.css'", "'" . $pluginUrl . "assets/css/client-portal.css'", $content);
-        $content = str_replace('"./portal-app.js"', '"' . $pluginUrl . 'assets/js/portal-app.js"', $content);
-        $content = str_replace('"../css/client-portal.css"', '"' . $pluginUrl . 'assets/css/client-portal.css"', $content);
 
         set_transient('ap_sw_cache', $content, HOUR_IN_SECONDS);
-        return $content;
+        echo $content;
+        return ob_get_clean();
+    }
+    return '';
+}
+
+// 2. New Logic (readfile)
+function new_sw_logic() {
+    global $dummySwPath;
+    if (file_exists($dummySwPath)) {
+        ob_start();
+        readfile($dummySwPath);
+        return ob_get_clean();
     }
     return '';
 }
 
 // --- Benchmark ---
 
-$iterations = 1000;
+$iterations = 2000;
 
-// 1. Cold Cache (Baseline) - we simulate this by clearing transient every time
-echo "Benchmarking Cold Cache (File I/O + Processing)...\n";
+echo "Benchmarking SW Delivery Strategies ($iterations iterations)...\n";
+echo "File size: " . round(filesize($dummySwPath) / 1024, 2) . " KB\n\n";
+
+// A. Legacy Cold Cache (Worst Case)
+echo "1. Legacy Cold Cache (File Read + Replace + Cache Write)...\n";
 $start = microtime(true);
+$memStart = memory_get_usage();
 for ($i = 0; $i < $iterations; $i++) {
     global $transients;
     $transients = []; // Clear cache
-    serve_sw_logic();
+    legacy_sw_logic();
 }
 $end = microtime(true);
 $coldTime = $end - $start;
-echo "Cold Cache Time ($iterations iterations): " . number_format($coldTime, 5) . "s\n";
-echo "Avg per request: " . number_format(($coldTime / $iterations) * 1000, 4) . "ms\n";
+echo "Time: " . number_format($coldTime, 5) . "s\n";
+echo "Avg:  " . number_format(($coldTime / $iterations) * 1000, 4) . "ms\n";
 
-// 2. Warm Cache - we populate cache once, then run loop
-echo "\nBenchmarking Warm Cache (Memory Lookup)...\n";
-// Prime cache
-serve_sw_logic();
-
+// B. Legacy Warm Cache (Best Case - Memory Bound)
+echo "\n2. Legacy Warm Cache (Transient Lookup)...\n";
+legacy_sw_logic(); // Prime cache
 $start = microtime(true);
 for ($i = 0; $i < $iterations; $i++) {
-    serve_sw_logic();
+    legacy_sw_logic();
 }
 $end = microtime(true);
 $warmTime = $end - $start;
-echo "Warm Cache Time ($iterations iterations): " . number_format($warmTime, 5) . "s\n";
-echo "Avg per request: " . number_format(($warmTime / $iterations) * 1000, 4) . "ms\n";
+echo "Time: " . number_format($warmTime, 5) . "s\n";
+echo "Avg:  " . number_format(($warmTime / $iterations) * 1000, 4) . "ms\n";
 
-if ($warmTime > 0) {
-    echo "\nImprovement: " . number_format($coldTime / $warmTime, 1) . "x faster\n";
+
+// C. New Logic (readfile - IO Bound but OS Cached)
+echo "\n3. Optimized Logic (readfile)...\n";
+$start = microtime(true);
+$peakStart = memory_get_peak_usage();
+for ($i = 0; $i < $iterations; $i++) {
+    new_sw_logic();
 }
+$end = microtime(true);
+$newTime = $end - $start;
+$peakEnd = memory_get_peak_usage();
+
+echo "Time: " . number_format($newTime, 5) . "s\n";
+echo "Avg:  " . number_format(($newTime / $iterations) * 1000, 4) . "ms\n";
+echo "Peak Mem Delta: " . number_format(($peakEnd - $peakStart) / 1024, 2) . " KB\n";
+
+
+if ($newTime > 0) {
+    echo "\nComparison vs Cold Cache: " . number_format($coldTime / $newTime, 1) . "x faster\n";
+    echo "Comparison vs Warm Cache: " . number_format($warmTime / $newTime, 1) . "x (speed difference)\n";
+}
+
+// Cleanup
+unlink($dummySwPath);

@@ -11,7 +11,14 @@ const CACHE_VERSION = 'ap-v1';
 const STATIC_CACHE = `ap-static-${CACHE_VERSION}`;
 const IMAGE_CACHE = `ap-images-${CACHE_VERSION}`;
 
-const STATIC_ASSETS = [
+// Parse base URL from query string if available (injected by loader)
+const params = new URLSearchParams(self.location.search);
+const base = params.get('base');
+
+const STATIC_ASSETS = base ? [
+    new URL('assets/js/portal-app.js', base).href,
+    new URL('assets/css/client-portal.css', base).href
+] : [
     './portal-app.js',
     '../css/client-portal.css'
 ];
