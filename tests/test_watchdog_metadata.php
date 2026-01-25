@@ -49,6 +49,59 @@ namespace {
     function wp_mkdir_p($path) {
         return mkdir($path, 0777, true);
     }
+
+    function maybe_unserialize($original) {
+        if (is_serialized($original)) {
+            return @unserialize($original);
+        }
+        return $original;
+    }
+
+    function is_serialized($data, $strict = true) {
+        if (!is_string($data)) return false;
+        $data = trim($data);
+        if ('N;' == $data) return true;
+        if (strlen($data) < 4) return false;
+        if (':' !== $data[1]) return false;
+        if ($strict) {
+            $lastc = substr($data, -1);
+            if (';' !== $lastc && '}' !== $lastc) return false;
+        }
+        $token = $data[0];
+        switch ($token) {
+            case 's': case 'a': case 'O': case 'b': case 'd': case 'i': return true;
+        }
+        return false;
+    }
+
+    function wp_using_ext_object_cache() {
+        return false;
+    }
+
+    // Mock WPDB
+    class MockWPDB {
+        public $options = 'wp_options';
+        public $prefix = 'wp_';
+
+        public function get_results($query, $output = 'OBJECT') {
+            global $mock_transients;
+            $results = [];
+            foreach ($mock_transients as $key => $value) {
+                $row = new \stdClass();
+                $row->option_name = '_transient_' . $key;
+                $row->option_value = serialize($value);
+                $results[] = $row;
+            }
+            return $results;
+        }
+
+        public function prepare($query, ...$args) {
+            return $query;
+        }
+    }
+
+    global $wpdb;
+    $wpdb = new MockWPDB();
 }
 
 // Mocks for dependencies

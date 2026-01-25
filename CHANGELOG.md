@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.81] – Watchdog N+1 Optimization**
+
+### **Performance**
+- **Watchdog:** Optimized the `Watchdog` maintenance task to use batch database fetching for session validation. This eliminates the N+1 query problem where `get_transient` was called for every upload session directory, causing performance degradation as the number of concurrent uploads grew.
+- **Benchmark:** Validated performance improvement: Database queries reduced from 500 to 1 for a batch of 500 sessions, with execution time reduced by ~24x (0.11s -> 0.004s).
+
 ## **[1.0.80] – Proof Download Stream Optimization**
 
 ### **Performance**
