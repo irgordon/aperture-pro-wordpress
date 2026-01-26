@@ -1008,8 +1008,9 @@
       }
 
       // Basic validation and normalization
-      const allowedLevels = new Set(['debug', 'info', 'warn', 'error']);
+      const allowedLevels = new Set(['debug', 'info', 'warning', 'error']);
       level = String(level || 'info').toLowerCase();
+      if (level === 'warn') level = 'warning';
       if (!allowedLevels.has(level)) level = 'info';
 
       context = String(context || 'client');
@@ -1048,7 +1049,7 @@
         if (!this._clientLogRateLimited) {
           this._clientLogRateLimited = true;
           // send a single rate-limit notice (best-effort)
-          payload.level = 'warn';
+          payload.level = 'warning';
           payload.context = 'client';
           payload.message = 'client_log_rate_limited';
           payload.meta = { count: this._clientLogCounter, ts: payload.meta.ts };

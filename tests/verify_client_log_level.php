@@ -129,8 +129,8 @@ $_COOKIE[CookieService::COOKIE_NAME] = base64_encode(json_encode($session));
 // Instantiate Controller
 $controller = new ClientProofController();
 
-// Test Case 1: Level 'warn' should become 'warning'
-echo "\nTest 1: Level 'warn' normalization\n";
+// Test Case 1: Level 'warn' should default to 'info' (normalization removed)
+echo "\nTest 1: Level 'warn' normalization removal\n";
 $request = new WP_REST_Request([
     'level' => 'warn',
     'message' => 'Something weird happened',
@@ -149,12 +149,12 @@ if (!$wpdb->last_insert) {
     exit(1);
 }
 
-if ($wpdb->last_insert['data']['level'] !== 'warning') {
-    echo "[FAIL] Level not normalized. Expected 'warning', got: '" . $wpdb->last_insert['data']['level'] . "'\n";
+if ($wpdb->last_insert['data']['level'] !== 'info') {
+    echo "[FAIL] Level not defaulted to info. Expected 'info', got: '" . $wpdb->last_insert['data']['level'] . "'\n";
     exit(1);
 }
 
-echo "[PASS] 'warn' normalized to 'warning'.\n";
+echo "[PASS] 'warn' defaulted to 'info'.\n";
 
 // Test Case 2: Level 'warning' should stay 'warning'
 echo "\nTest 2: Level 'warning' preservation\n";

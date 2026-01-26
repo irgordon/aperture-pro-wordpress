@@ -451,10 +451,6 @@ class ClientProofController extends BaseController
 
         // Validate level
         $allowedLevels = ['debug', 'info', 'warning', 'error', 'critical'];
-        // Fix: JS often sends 'warn', normalize to 'warning'
-        if ($level === 'warn') {
-            $level = 'warning';
-        }
         if (!in_array($level, $allowedLevels, true)) {
             $level = 'info';
         }
