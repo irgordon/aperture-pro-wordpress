@@ -1,121 +1,79 @@
 <?php
 
-// Mock WPDB
-class MockWPDB {
-    public $prefix = 'wp_';
+// tests/benchmark_schema_check.php
 
-    public function get_var($query) {
-        // Simulate DB query latency (e.g., 0.5ms)
-        usleep(500);
-        return 'proof_key'; // Pretend column exists
-    }
-}
-
-$wpdb = new MockWPDB();
-
-// Mock Transients
-$transients = [];
-
-function get_transient($key) {
-    global $transients;
-    // Simulate cache access latency (very fast)
-    // usleep(10);
-    return isset($transients[$key]) ? $transients[$key] : false;
-}
-
-function set_transient($key, $value, $expiration) {
-    global $transients;
-    $transients[$key] = $value;
-    return true;
-}
-
-// Unoptimized Implementation
-function check_schema_unoptimized() {
-    global $wpdb;
-    $imagesTable = $wpdb->prefix . 'ap_images';
-    $hasColumn = $wpdb->get_var("SHOW COLUMNS FROM {$imagesTable} LIKE 'proof_key'");
-    return !empty($hasColumn);
-}
-
-// Optimized Implementation (Class-based to match actual code)
-class ProofService {
-    private static $_hasProofKeyColumn = null;
-
-    public static function reset() {
-        self::$_hasProofKeyColumn = null;
-    }
-
-    public static function hasProofKeyColumn() {
-        if (self::$_hasProofKeyColumn !== null) {
-            return self::$_hasProofKeyColumn;
+// Mock WP functions
+if (!function_exists('get_option')) {
+    function get_option($option, $default = false) {
+        // Return the current version to simulate up-to-date state
+        // We match the constant in Schema class to avoid upgrade logic
+        if ($option === 'aperture_pro_db_version') {
+             return '1.0.16';
         }
-
-        $cached = get_transient('ap_has_proof_key_column');
-        if ($cached !== false) {
-            return self::$_hasProofKeyColumn = (bool) $cached;
-        }
-
-        global $wpdb;
-        $imagesTable = $wpdb->prefix . 'ap_images';
-
-        $hasColumn = $wpdb->get_var("SHOW COLUMNS FROM `{$imagesTable}` LIKE 'proof_key'");
-        $exists = !empty($hasColumn);
-
-        set_transient('ap_has_proof_key_column', $exists ? 1 : 0, 86400);
-
-        return self::$_hasProofKeyColumn = $exists;
+        return $default;
     }
 }
 
-// Benchmark
-$iterations = 1000;
+if (!function_exists('update_option')) {
+    function update_option($option, $value, $autoload = null) {
+        return true;
+    }
+}
 
-echo "Benchmarking Schema Check ($iterations iterations)...\n";
+if (!function_exists('wp_cache_flush')) {
+    function wp_cache_flush() {
+        return true;
+    }
+}
 
-// 1. Unoptimized
+// These will be used in the optimization
+if (!function_exists('is_admin')) {
+    function is_admin() {
+        global $mock_is_admin;
+        return $mock_is_admin ?? false;
+    }
+}
+
+if (!function_exists('wp_doing_ajax')) {
+    function wp_doing_ajax() {
+        global $mock_doing_ajax;
+        return $mock_doing_ajax ?? false;
+    }
+}
+
+if (!function_exists('wp_doing_cron')) {
+    function wp_doing_cron() {
+        global $mock_doing_cron;
+        return $mock_doing_cron ?? false;
+    }
+}
+
+// Load the class
+require_once __DIR__ . '/../src/Installer/Schema.php';
+
+use AperturePro\Installer\Schema;
+
+// --- Config ---
+$iterations = 100000; // 100k iterations to be quick but significant
+
+// --- Benchmark ---
+// Mock frontend request: not admin, not ajax, not cron
+$mock_is_admin = false;
+$mock_doing_ajax = false;
+$mock_doing_cron = false;
+
+echo "Benchmarking Schema::maybe_upgrade() over " . number_format($iterations) . " iterations...\n";
+echo "Context: Frontend Request (is_admin=false)\n";
+
 $start = microtime(true);
+
 for ($i = 0; $i < $iterations; $i++) {
-    check_schema_unoptimized();
+    Schema::maybe_upgrade();
 }
-$timeUnoptimized = microtime(true) - $start;
-echo "Unoptimized: " . number_format($timeUnoptimized, 4) . " sec\n";
 
-// 2. Optimized (Simulating multiple requests in a single script run is hard,
-// so we'll simulate the "steady state" where transient is populated,
-// and static cache is populated per request)
+$end = microtime(true);
+$duration = $end - $start;
 
-// Scenario A: Static cache hit (same request)
-// We call it repeatedly. This simulates many calls in ONE request.
-ProofService::reset();
-// First call populates static
-ProofService::hasProofKeyColumn();
-
-$start = microtime(true);
-for ($i = 0; $i < $iterations; $i++) {
-    ProofService::hasProofKeyColumn();
-}
-$timeOptimizedStatic = microtime(true) - $start;
-echo "Optimized (Static Hit): " . number_format($timeOptimizedStatic, 4) . " sec\n";
-
-// Scenario B: Transient cache hit (new request)
-// We reset static variable every time, but keep transient.
-// This simulates $iterations REQUESTS where transient is already warm.
-
-// Ensure transient is set
-ProofService::reset();
-ProofService::hasProofKeyColumn();
-
-$start = microtime(true);
-for ($i = 0; $i < $iterations; $i++) {
-    ProofService::reset(); // New request simulation
-    ProofService::hasProofKeyColumn();
-}
-$timeOptimizedTransient = microtime(true) - $start;
-echo "Optimized (Transient Hit): " . number_format($timeOptimizedTransient, 4) . " sec\n";
-
-// Calculate Improvement (Transient Hit vs Unoptimized)
-// This is the most fair comparison for "per request" overhead reduction.
-if ($timeOptimizedTransient > 0) {
-    $improvement = $timeUnoptimized / $timeOptimizedTransient;
-    echo "Speedup (Transient vs Unoptimized): " . number_format($improvement, 1) . "x\n";
-}
+echo "Total Time: " . number_format($duration, 4) . " s\n";
+echo "Avg Time per call: " . number_format(($duration / $iterations) * 1000000, 4) . " μs\n";
+echo "Calls per second: " . number_format($iterations / $duration) . "\n";

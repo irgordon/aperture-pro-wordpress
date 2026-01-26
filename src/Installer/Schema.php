@@ -18,6 +18,12 @@ final class Schema
      */
     public static function maybe_upgrade(): void
     {
+        // Optimization: Only run schema checks in admin, CLI, or during AJAX/Cron.
+        // This avoids an unnecessary get_option call on every frontend request.
+        if (!is_admin() && !wp_doing_ajax() && !wp_doing_cron() && !defined('WP_CLI')) {
+            return;
+        }
+
         $installed = (string) get_option(self::DB_VERSION_OPTION, '0.0.0');
 
         if (version_compare($installed, self::DB_VERSION, '>=')) {
