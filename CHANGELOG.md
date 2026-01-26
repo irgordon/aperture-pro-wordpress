@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.90] – Portal Proof Optimization**
+
+### **Performance**
+- **Client Portal:** Optimized `PortalRenderer::gatherContext` to use `ProofService::getProofUrls` for retrieving proof images. This enables batch URL signing (O(1) vs O(N)) and ensures that optimization logic within `ProofService` (like caching and existence checks) is utilized.
+- **Verification:** Verified that direct `Storage::signMany` calls on original paths are replaced by the optimized proof service flow, reducing overhead for large galleries.
+
 ## **[1.0.89] – Zip Stream Optimization**
 
 ### **Performance**
