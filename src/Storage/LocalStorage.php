@@ -130,38 +130,115 @@ class LocalStorage extends AbstractStorage
     }
 
     /**
-     * Create a transient token mapping to the real file path and metadata.
+     * Create a signed stateless token mapping to the real file path and metadata.
      */
     protected function createSignedTokenForPath(string $path, string $remoteKey, array $options = []): ?string
     {
-        try {
-            $token = bin2hex(random_bytes(self::TOKEN_BYTES));
-        } catch (\Throwable $e) {
-            $token = hash('sha256', uniqid('ap_', true));
-        }
-
         $clientIp = $this->getClientIp();
         $bindIp = $options['bind_ip'] ?? $this->bindIp;
 
+        // Payload for stateless token
+        // We omit 'path' to avoid exposing absolute server paths and reduce size.
+        // It can be reconstructed from 'key' + baseDir.
         $payload = [
-            'path'       => $path,
-            'key'        => $remoteKey,
-            'mime'       => $this->detectMimeType($path), // Might be inaccurate if file doesn't exist, will fallback
-            'created_at' => time(),
-            'expires_at' => time() + ($options['expires'] ?? $options['ttl'] ?? $this->tokenTtl),
-            'inline'     => $options['inline'] ?? false,
-            'bind_ip'    => $bindIp,
-            'ip'         => $bindIp ? $clientIp : null,
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+            'k'  => $remoteKey,
+            'm'  => $this->detectMimeType($path),
+            'c'  => time(),
+            'e'  => time() + ($options['expires'] ?? $options['ttl'] ?? $this->tokenTtl),
+            'in' => $options['inline'] ?? false,
+            'bi' => $bindIp,
+            'ip' => $bindIp ? $clientIp : null,
+            'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null,
         ];
 
-        $saved = set_transient(self::TRANSIENT_PREFIX . $token, $payload, $payload['expires_at'] - time());
-        if (!$saved) {
-            Logger::log('error', 'local_storage', 'Failed to save signed token transient', ['token' => $token, 'path' => $path]);
+        return $this->generateStatelessToken($payload);
+    }
+
+    /**
+     * Generate a HMAC-signed stateless token.
+     */
+    protected function generateStatelessToken(array $payload): string
+    {
+        $json = json_encode($payload);
+        $encoded = $this->base64UrlEncode($json);
+        $signature = $this->signData($encoded);
+
+        return $encoded . '.' . $signature;
+    }
+
+    /**
+     * Verify and decode a stateless token.
+     *
+     * @param string $token
+     * @return array|null Payload if valid, null otherwise.
+     */
+    public function verifyToken(string $token): ?array
+    {
+        $parts = explode('.', $token);
+        if (count($parts) !== 2) {
             return null;
         }
 
-        return $token;
+        [$encoded, $signature] = $parts;
+
+        // 1. Verify Signature
+        if (!hash_equals($this->signData($encoded), $signature)) {
+            return null;
+        }
+
+        // 2. Decode Payload
+        $json = $this->base64UrlDecode($encoded);
+        $data = json_decode($json, true);
+
+        if (!is_array($data)) {
+            return null;
+        }
+
+        // 3. Map short keys back to full keys for internal compatibility
+        $payload = [
+            'key'        => $data['k'] ?? '',
+            'mime'       => $data['m'] ?? 'application/octet-stream',
+            'created_at' => $data['c'] ?? 0,
+            'expires_at' => $data['e'] ?? 0,
+            'inline'     => $data['in'] ?? false,
+            'bind_ip'    => $data['bi'] ?? false,
+            'ip'         => $data['ip'] ?? null,
+            'user_agent' => $data['ua'] ?? null,
+        ];
+
+        // Reconstruct absolute path
+        $payload['path'] = $this->baseDir . ltrim($payload['key'], '/');
+
+        // 4. Verify Expiration
+        if (time() > $payload['expires_at']) {
+            return null;
+        }
+
+        // 5. Verify IP Binding (if enabled)
+        if ($payload['bind_ip'] && !empty($payload['ip'])) {
+            if ($payload['ip'] !== $this->getClientIp()) {
+                return null;
+            }
+        }
+
+        return $payload;
+    }
+
+    protected function signData(string $data): string
+    {
+        // Use WP salt if available, otherwise fallback (mostly for testing isolation)
+        $key = function_exists('wp_salt') ? wp_salt('auth') : 'aperture_fallback_key';
+        return hash_hmac('sha256', $data, $key);
+    }
+
+    private function base64UrlEncode(string $data): string
+    {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+    }
+
+    private function base64UrlDecode(string $data): string
+    {
+        return base64_decode(strtr($data, '-_', '+/'));
     }
 
     protected function buildSignedUrl(string $token): string
