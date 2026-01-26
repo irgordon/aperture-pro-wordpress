@@ -3,6 +3,7 @@
 namespace AperturePro\Download;
 
 use AperturePro\Storage\StorageInterface;
+use AperturePro\Storage\StorageFactory;
 use AperturePro\Helpers\Logger;
 use ZipStream\ZipStream;
 use ZipStream\Option\Archive;
@@ -13,19 +14,93 @@ use ZipStream\Option\Archive;
  * Streams ZIP archives to the client.
  *
  * PERFORMANCE IMPROVEMENTS:
- *  - Remote files are downloaded in parallel using curl_multi
- *  - Bounded concurrency prevents memory exhaustion
- *  - ZIP entries are streamed from local temp files (fast + predictable)
+ *  - Files are streamed directly from storage source to the ZIP output
+ *  - Eliminates local temporary file usage
+ *  - Reduces Time To First Byte (TTFB) significantly
  *
  * SECURITY:
  *  - Uses signed URLs for remote access
  *  - Sanitizes filenames
- *  - Cleans up temp files deterministically
  */
 class ZipStreamService
 {
-    /** Max concurrent remote downloads */
-    const MAX_CONCURRENT_DOWNLOADS = 5;
+    /**
+     * Stream a ZIP archive based on a download token.
+     * This orchestrates the retrieval of files and storage instantiation.
+     *
+     * @param string      $token
+     * @param string|null $email
+     * @param int|null    $projectId
+     * @return array      ['success' => bool, 'message' => string]
+     */
+    public static function streamByToken(string $token, ?string $email, ?int $projectId): array
+    {
+        global $wpdb;
+
+        // 1. Resolve token to gallery/files
+        $tokensTable = $wpdb->prefix . 'ap_download_tokens';
+        $tokenRow = $wpdb->get_row($wpdb->prepare("SELECT * FROM $tokensTable WHERE token = %s LIMIT 1", $token));
+
+        if (!$tokenRow) {
+            return ['success' => false, 'error' => 'invalid_token', 'message' => 'Invalid token.'];
+        }
+
+        $galleryId = (int) $tokenRow->gallery_id;
+
+        // 2. Fetch images (use storage_key_original as path)
+        $imagesTable = $wpdb->prefix . 'ap_images';
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT storage_key_original, filename FROM $imagesTable WHERE gallery_id = %d",
+            $galleryId
+        ));
+
+        if (empty($rows)) {
+            return ['success' => false, 'error' => 'no_files', 'message' => 'No files found in this gallery.'];
+        }
+
+        // 3. Prepare file list
+        $files = [];
+        foreach ($rows as $row) {
+            $path = $row->storage_key_original;
+            // Use filename from DB or basename of path
+            $name = !empty($row->filename) ? $row->filename : basename($path);
+
+            $files[] = [
+                'path' => $path,
+                'name' => $name,
+            ];
+        }
+
+        // 4. Resolve Storage
+        try {
+            $storage = StorageFactory::create();
+        } catch (\Throwable $e) {
+            Logger::log('error', 'zip', 'Storage init failed', ['error' => $e->getMessage()]);
+            return ['success' => false, 'error' => 'storage_error', 'message' => 'Storage configuration error.'];
+        }
+
+        // 5. Determine ZIP name
+        $zipName = 'Gallery_Download.zip';
+        if ($tokenRow->project_id) {
+            $pTitle = $wpdb->get_var($wpdb->prepare("SELECT title FROM {$wpdb->prefix}ap_projects WHERE id = %d", $tokenRow->project_id));
+            if ($pTitle) {
+                $zipName = sanitize_file_name($pTitle) . '.zip';
+            }
+        }
+
+        // 6. Stream and Exit
+        try {
+            self::streamZip($files, $storage, $zipName);
+            // If streamZip returns, it means it finished streaming.
+            // We exit here to ensure no further output (like JSON from controller) is appended to the ZIP.
+            exit;
+        } catch (\Throwable $e) {
+            Logger::log('error', 'zip', 'Stream failed', ['error' => $e->getMessage()]);
+            // If streaming failed BEFORE headers were sent, we can return error JSON.
+            // If headers were sent, this return value might be moot, but safe to return.
+            return ['success' => false, 'message' => 'Internal error during streaming.'];
+        }
+    }
 
     /**
      * Stream a ZIP archive to the client.
@@ -51,131 +126,38 @@ class ZipStreamService
 
         $zip = new ZipStream(self::sanitizeFilename($zipName), $options);
 
-        // Phase 1: Download files in parallel to temp storage
-        $tempFiles = self::downloadFilesInParallel($files, $storage);
+        foreach ($files as $file) {
+            try {
+                // Get signed URL with short expiry
+                $url = $storage->getSignedUrl($file['path'], 300);
 
-        // Phase 2: Stream ZIP entries from local temp files
-        foreach ($tempFiles as $entry) {
-            if (!is_readable($entry['tmp'])) {
-                Logger::log('warning', 'zip', 'Temp file missing, skipping', [
-                    'name' => $entry['name'],
+                // Open stream to remote file
+                $stream = @fopen($url, 'rb');
+
+                if ($stream === false) {
+                    Logger::log('warning', 'zip', 'Could not open stream for file', [
+                        'path' => $file['path'],
+                        'name' => $file['name'],
+                    ]);
+                    continue;
+                }
+
+                $zip->addFileFromStream(
+                    self::sanitizeFilename($file['name']),
+                    $stream
+                );
+
+                fclose($stream);
+
+            } catch (\Throwable $e) {
+                Logger::log('error', 'zip', 'Failed to stream file', [
+                    'path' => $file['path'],
+                    'error' => $e->getMessage(),
                 ]);
-                continue;
             }
-
-            $zip->addFileFromPath(
-                $entry['name'],
-                $entry['tmp']
-            );
-
-            @unlink($entry['tmp']);
         }
 
         $zip->finish();
-    }
-
-    /**
-     * Download remote files concurrently using curl_multi.
-     *
-     * @param array            $files
-     * @param StorageInterface $storage
-     * @return array           Array of ['name' => string, 'tmp' => string]
-     */
-    protected static function downloadFilesInParallel(array $files, StorageInterface $storage): array
-    {
-        $multiHandle = curl_multi_init();
-        $handles = [];
-        $results = [];
-        $queue = $files;
-
-        while (!empty($queue) || !empty($handles)) {
-            // Fill concurrency slots
-            while (count($handles) < self::MAX_CONCURRENT_DOWNLOADS && !empty($queue)) {
-                $file = array_shift($queue);
-
-                try {
-                    $url = $storage->getSignedUrl($file['path'], 900);
-                } catch (\Throwable $e) {
-                    Logger::log('error', 'zip', 'Failed to get signed URL', [
-                        'path' => $file['path'],
-                        'error' => $e->getMessage(),
-                    ]);
-                    continue;
-                }
-
-                $tmp = wp_tempnam('ap-zip-');
-                if (!$tmp) {
-                    Logger::log('error', 'zip', 'Failed to create temp file');
-                    continue;
-                }
-
-                $fp = fopen($tmp, 'w+b');
-                if (!$fp) {
-                    @unlink($tmp);
-                    continue;
-                }
-
-                $ch = curl_init($url);
-                curl_setopt_array($ch, [
-                    CURLOPT_FILE => $fp,
-                    CURLOPT_FOLLOWLOCATION => true,
-                    CURLOPT_TIMEOUT => 300,
-                    CURLOPT_CONNECTTIMEOUT => 15,
-                    CURLOPT_FAILONERROR => true,
-                ]);
-
-                curl_multi_add_handle($multiHandle, $ch);
-
-                $handles[(int)$ch] = [
-                    'handle' => $ch,
-                    'fp' => $fp,
-                    'tmp' => $tmp,
-                    'name' => self::sanitizeFilename($file['name']),
-                ];
-            }
-
-            // Execute
-            do {
-                $status = curl_multi_exec($multiHandle, $running);
-            } while ($status === CURLM_CALL_MULTI_PERFORM);
-
-            // Read completed transfers
-            while ($info = curl_multi_info_read($multiHandle)) {
-                $ch = $info['handle'];
-                $key = (int)$ch;
-
-                if (!isset($handles[$key])) {
-                    continue;
-                }
-
-                $entry = $handles[$key];
-                fclose($entry['fp']);
-
-                if ($info['result'] === CURLE_OK) {
-                    $results[] = [
-                        'name' => $entry['name'],
-                        'tmp' => $entry['tmp'],
-                    ];
-                } else {
-                    Logger::log('error', 'zip', 'Download failed', [
-                        'name' => $entry['name'],
-                        'error' => curl_error($ch),
-                    ]);
-                    @unlink($entry['tmp']);
-                }
-
-                curl_multi_remove_handle($multiHandle, $ch);
-                curl_close($ch);
-                unset($handles[$key]);
-            }
-
-            if ($running) {
-                curl_multi_select($multiHandle, 1.0);
-            }
-        }
-
-        curl_multi_close($multiHandle);
-        return $results;
     }
 
     /**
