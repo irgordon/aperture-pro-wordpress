@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.83] – JS Log Level Normalization**
+
+### **Fixes**
+- **Logging:** Added normalization for client-side logs where 'warn' is converted to 'warning' to match the PHP logger standard. This prevents 'warn' logs from being downgraded to 'info' due to validation failure.
+- **Tests:** Added `tests/verify_client_log_level.php` to verify the log level normalization logic in `ClientProofController`.
+
 ## **[1.0.82] – Watchdog Stale Session Optimization**
 
 ### **Performance**
@@ -168,7 +174,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## **[1.0.57] – Watchdog Robustness**
 
 ### **Fixes**
-- **Watchdog:** Verified and hardened the `Watchdog` metadata recovery logic to ensure it correctly prioritizes the `session.json` file when reconstructing storage keys for orphaned uploads. This prevents data loss or incorrect key generation if the session transient expires or is missing.
+- **Watchdog:** Verified and hardened the `Watchdog` metadata recovery logic to ensure it correctly prioritizes the `session.json` file when reconstructing storage keys for orphaned upload sessions (`orphaned/{id}/assembled.bin`) when the session transient was missing.
 - **Tests:** Updated `tests/test_watchdog_metadata.php` to serve as a regression test for this recovery behavior.
 
 ## **[1.0.16] – Admin Queue Optimization 2**
