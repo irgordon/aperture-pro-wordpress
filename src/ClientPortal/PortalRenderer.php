@@ -7,6 +7,7 @@ use AperturePro\Auth\CookieService;
 use AperturePro\Helpers\Utils;
 use AperturePro\Helpers\Logger;
 use AperturePro\Repositories\ProjectRepository;
+use AperturePro\Proof\ProofService;
 
 /**
  * PortalRenderer
@@ -116,13 +117,21 @@ class PortalRenderer
             $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$imagesTable} WHERE gallery_id = %d ORDER BY sort_order ASC, id ASC", (int)$gallery->id));
             $storage = StorageFactory::make();
 
-            // Collect paths once
-            $paths = array_map(static fn ($r) => $r->storage_key_original, $rows);
+            // Prepare image list for proof service (optimized batch retrieval)
+            $imagesForProof = [];
+            foreach ($rows as $k => $r) {
+                $imagesForProof[$k] = [
+                    'id' => (int)$r->id,
+                    'project_id' => $projectId,
+                    'path' => $r->storage_key_original,
+                    'has_proof' => !empty($r->has_proof),
+                ];
+            }
 
-            // Batch sign (request + cross-request cached)
-            $signedUrls = $storage->signMany($paths);
+            // Get proof URLs (handles generation, existence checks, and signing)
+            $proofUrls = ProofService::getProofUrls($imagesForProof, $storage);
 
-            foreach ($rows as $r) {
+            foreach ($rows as $k => $r) {
                 $comments = [];
                 if (!empty($r->client_comments)) {
                     if ($r->client_comments === '[]') {
@@ -135,7 +144,7 @@ class PortalRenderer
                     }
                 }
 
-                $url = $signedUrls[$r->storage_key_original] ?? null;
+                $url = $proofUrls[$k] ?? null;
 
                 $context['images'][] = [
                     'id' => (int)$r->id,
