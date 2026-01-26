@@ -220,6 +220,10 @@ class EmailService
         };
         add_action('phpmailer_init', $captureInstance);
 
+        $sentIds = [];
+        $retryIds = [];
+        $failedIds = [];
+
         foreach ($items as $item) {
              // Check for timeout
              if ((microtime(true) - $startTime) > $timeLimit) {
@@ -234,31 +238,39 @@ class EmailService
 
             if ($sent) {
                 Logger::log('info', 'email_queue', 'Transactional email sent via queue', ['to' => $item['to_address']]);
-                $wpdb->update(
-                    $table,
-                    ['status' => 'sent', 'updated_at' => current_time('mysql')],
-                    ['id' => $item['id']]
-                );
+                $sentIds[] = $item['id'];
             } else {
                 $retries = $item['retries'] + 1;
                 $newStatus = ($retries >= $maxRetries) ? 'failed_permanently' : 'pending';
 
-                $wpdb->update(
-                    $table,
-                    [
-                        'status' => $newStatus,
-                        'retries' => $retries,
-                        'updated_at' => current_time('mysql')
-                    ],
-                    ['id' => $item['id']]
-                );
-
                 if ($newStatus === 'failed_permanently') {
                     Logger::log('error', 'email_queue', 'Transactional email failed after max retries', ['to' => $item['to_address'], 'subject' => $item['subject'], 'notify_admin' => true]);
                     self::enqueueAdminNotification('error', 'email_queue', 'Transactional email failed permanently', ['item_id' => $item['id']]);
+                    $failedIds[] = $item['id'];
+                } else {
+                    $retryIds[] = $item['id'];
                 }
             }
             $processedCount++;
+        }
+
+        // Batch update results to reduce N+1 queries
+        $now = current_time('mysql');
+
+        if (!empty($sentIds)) {
+            $ids = implode(',', array_map('intval', $sentIds));
+            $wpdb->query("UPDATE $table SET status = 'sent', updated_at = '$now' WHERE id IN ($ids)");
+        }
+
+        if (!empty($retryIds)) {
+            $ids = implode(',', array_map('intval', $retryIds));
+            // Use SQL for retry increment to ensure consistency
+            $wpdb->query("UPDATE $table SET status = 'pending', retries = retries + 1, updated_at = '$now' WHERE id IN ($ids)");
+        }
+
+        if (!empty($failedIds)) {
+            $ids = implode(',', array_map('intval', $failedIds));
+            $wpdb->query("UPDATE $table SET status = 'failed_permanently', retries = retries + 1, updated_at = '$now' WHERE id IN ($ids)");
         }
 
         // Cleanup: Close SMTP connection and remove hooks

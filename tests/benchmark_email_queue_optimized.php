@@ -63,6 +63,28 @@ namespace {
             return 1;
         }
 
+        public function query($query) {
+             // Simulate latency
+             usleep(500);
+
+             // Handle batch updates
+             // UPDATE wp_ap_email_queue SET status = 'sent', updated_at = '...' WHERE id IN (1,2,3)
+             if (preg_match('/UPDATE\s+(\S+)\s+SET\s+status\s*=\s*\'([^\']+)\'.*WHERE\s+id\s+IN\s*\(([^)]+)\)/i', $query, $matches)) {
+                 $newStatus = $matches[2];
+                 $idsStr = $matches[3];
+                 $ids = explode(',', $idsStr);
+
+                 foreach ($ids as $id) {
+                     $id = trim($id);
+                     if (isset($this->rows[$id])) {
+                         $this->rows[$id]['status'] = $newStatus;
+                     }
+                 }
+                 return count($ids);
+             }
+             return 0;
+        }
+
         public function get_results($query, $output = OBJECT) {
             // Naive simulation of SELECT * FROM ... WHERE status = 'pending' ... LIMIT X
             // We just grab the first X pending items
