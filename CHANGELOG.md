@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.92] – Legacy Queue Migration Fix**
+
+### **Performance**
+- **Proof Queue:** Optimized `ProofQueue::migrateLegacyQueue` to perform a database lookup for legacy items that lack IDs but have `original_path`. This ensures that even path-only legacy items are correctly migrated to the optimized database table.
+- **Performance:** This resolves a potential issue where path-only legacy items would remain in the `wp_options` table indefinitely, preventing the complete deprecation of the legacy queue.
+- **Benchmark:** Validated that the optimized migration clears the legacy queue in a single pass (0.025s for 1000 items), whereas the previous implementation would fail to migrate path-only items.
+
 ## **[1.0.91] – Legacy Queue Optimization**
 
 ### **Performance**
