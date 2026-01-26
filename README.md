@@ -70,6 +70,39 @@ Aperture Pro is a modern, production‑grade WordPress plugin built for photogra
 
 ---
 
+## 📐 Architectural Workflow
+
+Aperture Pro follows a strict event-driven workflow to ensure data integrity and a smooth client experience.
+
+### **1. Project Lifecycle & Uploads**
+1.  **Project Creation**: Admin creates a project. The system initializes a **Proof Gallery** and generates a secure **Magic Link**.
+2.  **High-Res Upload**: Photographer uploads high-resolution images via the admin panel.
+    *   Uploads are **chunked** client-side and streamed to the server to bypass PHP memory limits.
+    *   Chunks are assembled, validated (MIME/Size), and pushed to the configured **Storage Provider** (S3, Local, etc.).
+    *   Metadata is stored in the `ap_images` table.
+3.  **Proof Generation**: A background job (driven by WP-Cron and `ProofQueue`) automatically picks up new images.
+    *   It downloads the original, resizes it, applies a watermark ("PROOF COPY"), and uploads the low-res variant.
+    *   This ensures the original high-res file is never exposed directly to the client browser.
+
+### **2. Client Interaction**
+1.  **Access**: The client receives an email with the **Magic Link**, which logs them into the **Client Portal** (session-based).
+2.  **Selection & Approval**:
+    *   Clients view the watermarked proofs.
+    *   They can "Heart" (Select) images and leave comments.
+    *   Finally, they click "Approve Proofs," which locks the gallery and transitions the project status to `editing`.
+3.  **Refinement**: The photographer sees the approved selection in the admin dashboard to perform final edits (retouching).
+
+### **3. Payment & Delivery**
+1.  **Payment**: The client pays for the package/session via the integrated payment gateway (Stripe/PayPal).
+    *   Webhooks notify the **Payment Abstraction Layer**, which normalizes the event.
+    *   `Workflow::onPaymentReceived` is triggered.
+2.  **Delivery**:
+    *   Upon confirmed payment (or manual trigger), the system generates a secure, time-bound **Download Token**.
+    *   An email is sent to the client with a link to download their final gallery.
+    *   Downloads are streamed through a signed URL proxy to protect the actual storage location.
+
+---
+
 ## 📁 Plugin File Structure
 
 ```
@@ -175,18 +208,46 @@ aperture-pro-theme/
 
 ---
 
-## 🚀 Installation
+## 🚀 First Installation & Setup
 
-1. Upload the plugin to `wp-content/plugins/`  
-2. Activate it in **WordPress Admin → Plugins**  
-3. Open **Aperture Pro → Settings**  
-4. Configure:
-   - Storage driver  
-   - Cloud provider API keys  
-   - Email sender  
-   - Payment provider + webhook secret  
-   - OTP requirements  
-5. (Optional) Customize portal appearance under **Settings → Aperture Portal Theme**
+Follow these steps to get your studio up and running immediately after installing the plugin.
+
+### **1. Installation**
+1.  Upload the `aperture-pro` folder to your `/wp-content/plugins/` directory.
+2.  Log in to WordPress Admin and navigate to **Plugins**.
+3.  Click **Activate** under "Aperture Pro".
+4.  *Optional*: If you are using the companion theme, upload and activate `aperture-pro-theme` under **Appearance → Themes**.
+
+### **2. Storage Configuration (Crucial)**
+*Go to **Aperture Pro → Settings → Storage**.*
+*   **Local Storage**: Simplest for getting started. Files are stored on your server.
+*   **S3 / Cloud Storage (Recommended)**: For production scalability.
+    *   Select your provider (AWS S3, DigitalOcean Spaces, Wasabi, etc.).
+    *   Enter your **Region**, **Bucket Name**, **Access Key**, and **Secret Key**.
+    *   Click **Test Connection** to verify permissions.
+
+### **3. Payment Setup**
+*Go to **Aperture Pro → Settings → Payments**.*
+1.  Select your provider (e.g., Stripe, PayPal).
+2.  Enter your **API Keys** (Publishable/Secret).
+3.  **Webhook Setup**:
+    *   Copy the Webhook Endpoint URL displayed on the settings page (e.g., `https://site.com/wp-json/aperture/v1/webhooks/payment/stripe`).
+    *   Add this endpoint in your Payment Provider's dashboard.
+    *   Copy the **Webhook Secret** from the provider and paste it back into Aperture Pro settings.
+
+### **4. Email & Notifications**
+*Go to **Aperture Pro → Settings → Email**.*
+*   Configure the **Sender Name** and **Sender Email**.
+*   Ensure your WordPress install can send emails (use an SMTP plugin like WP Mail SMTP for reliability).
+*   Test by sending a magic link to yourself.
+
+### **5. Create Your First Project**
+1.  Navigate to **Aperture Pro → Projects → Add New**.
+2.  Enter a **Client Name** and **Email**.
+3.  Set the **Project Title** (e.g., "Smith Family Session").
+4.  Upload your first batch of images in the **Uploads** tab.
+5.  Wait a moment for the **Proof Queue** to generate watermarked copies (check the **Health** dashboard if needed).
+6.  Copy the **Magic Link** and open it in an Incognito window to see what your client sees.
 
 ---
 
