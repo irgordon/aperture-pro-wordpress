@@ -193,9 +193,9 @@ class ProofService
                 ProofQueue::addBatch($batchIds);
             }
 
-            // Iterative enqueue for legacy items
-            foreach ($legacyItems as $item) {
-                ProofQueue::enqueue($item['original_path'], $item['proof_path']);
+            // Batch enqueue for legacy items
+            if (!empty($legacyItems)) {
+                ProofQueue::enqueueBatch($legacyItems);
             }
         }
 
