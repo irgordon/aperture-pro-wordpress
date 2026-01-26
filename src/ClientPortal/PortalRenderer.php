@@ -114,7 +114,23 @@ class PortalRenderer
 
             // Fetch images
             $imagesTable = $wpdb->prefix . 'ap_images';
-            $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$imagesTable} WHERE gallery_id = %d ORDER BY sort_order ASC, id ASC", (int)$gallery->id));
+
+            // Pagination
+            $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+            $perPage = 50;
+            $offset = ($page - 1) * $perPage;
+
+            $totalItems = (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$imagesTable} WHERE gallery_id = %d", (int)$gallery->id));
+            $totalPages = max(1, (int)ceil($totalItems / $perPage));
+
+            $context['pagination'] = [
+                'current_page' => $page,
+                'total_pages' => $totalPages,
+                'total_items' => $totalItems,
+                'per_page' => $perPage,
+            ];
+
+            $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$imagesTable} WHERE gallery_id = %d ORDER BY sort_order ASC, id ASC LIMIT %d OFFSET %d", (int)$gallery->id, $perPage, $offset));
             $storage = StorageFactory::make();
 
             // Prepare image list for proof service (optimized batch retrieval)
