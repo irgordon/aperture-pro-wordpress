@@ -84,6 +84,18 @@ if (!function_exists('add_action')) {
 if (!function_exists('add_shortcode')) {
     function add_shortcode($tag, $callback) {}
 }
+if (!function_exists('get_option')) {
+    function get_option($option, $default = false) { return $default; }
+}
+if (!function_exists('update_option')) {
+    function update_option($option, $value, $autoload = null) { return true; }
+}
+if (!function_exists('wp_next_scheduled')) {
+    function wp_next_scheduled($hook, $args = []) { return false; }
+}
+if (!function_exists('wp_schedule_event')) {
+    function wp_schedule_event($timestamp, $recurrence, $hook, $args = []) { return true; }
+}
 
 
 // Mock wpdb
