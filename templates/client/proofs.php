@@ -31,6 +31,30 @@
             <?php endforeach; ?>
         </div>
 
+        <?php if (isset($context['pagination']) && $context['pagination']['total_pages'] > 1): ?>
+            <div class="ap-pagination" style="margin: 20px 0; display: flex; justify-content: center; gap: 15px; align-items: center;">
+                <?php
+                $pg = $context['pagination'];
+                $cur = $pg['current_page'];
+                $tot = $pg['total_pages'];
+                ?>
+
+                <?php if ($cur > 1): ?>
+                    <a href="<?php echo esc_url(add_query_arg('page', $cur - 1)); ?>" class="ap-btn ap-btn-small">Previous</a>
+                <?php else: ?>
+                    <button class="ap-btn ap-btn-small" disabled>Previous</button>
+                <?php endif; ?>
+
+                <span>Page <?php echo (int)$cur; ?> of <?php echo (int)$tot; ?></span>
+
+                <?php if ($cur < $tot): ?>
+                    <a href="<?php echo esc_url(add_query_arg('page', $cur + 1)); ?>" class="ap-btn ap-btn-small">Next</a>
+                <?php else: ?>
+                    <button class="ap-btn ap-btn-small" disabled>Next</button>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+
         <div class="ap-proofs-actions">
             <button id="ap-approve-proofs" class="ap-btn ap-btn-success" aria-label="Approve currently selected proofs">Approve Selected Proofs</button>
         </div>
