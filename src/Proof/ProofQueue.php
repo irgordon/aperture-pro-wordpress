@@ -705,15 +705,72 @@ class ProofQueue
         $migratable = [];
         $remaining = [];
 
-        foreach ($queue as $item) {
+        $pathsToLookup = [];
+        $itemMap = []; // Map original_path -> item(s)
+
+        foreach ($queue as $key => $item) {
             // We can only migrate if we have IDs.
-            // Older legacy items might only have paths. We cannot easily recover IDs without lookup.
             if (isset($item['project_id'], $item['image_id'])) {
                 $migratable[] = [
                     'project_id' => (int)$item['project_id'],
                     'image_id'   => (int)$item['image_id']
                 ];
+            } elseif (isset($item['original_path']) && !empty($item['original_path'])) {
+                // Legacy path-based item. Try to resolve ID.
+                $path = $item['original_path'];
+                $pathsToLookup[] = $path;
+                if (!isset($itemMap[$path])) {
+                    $itemMap[$path] = [];
+                }
+                $itemMap[$path][] = $item;
             } else {
+                $remaining[] = $item;
+            }
+        }
+
+        // Attempt to resolve IDs for path-based items
+        if (!empty($pathsToLookup)) {
+            global $wpdb;
+            $pathsToLookup = array_unique($pathsToLookup);
+            $escapedPaths = [];
+            foreach ($pathsToLookup as $p) {
+                $escapedPaths[] = $wpdb->prepare('%s', $p);
+            }
+
+            // Chunking to avoid massive query if queue is huge
+            $chunks = array_chunk($escapedPaths, 500);
+            $imagesTable = $wpdb->prefix . 'ap_images';
+            $galleriesTable = $wpdb->prefix . 'ap_galleries';
+
+            foreach ($chunks as $chunk) {
+                $inClause = implode(',', $chunk);
+                $query = "
+                    SELECT i.id as image_id, i.storage_key_original, g.project_id
+                    FROM {$imagesTable} i
+                    JOIN {$galleriesTable} g ON i.gallery_id = g.id
+                    WHERE i.storage_key_original IN ({$inClause})
+                ";
+                $results = $wpdb->get_results($query);
+
+                foreach ($results as $row) {
+                    $path = $row->storage_key_original;
+                    if (isset($itemMap[$path])) {
+                        // We found a match! Add to migratable.
+                        foreach ($itemMap[$path] as $legacyItem) {
+                            $migratable[] = [
+                                'project_id' => (int)$row->project_id,
+                                'image_id'   => (int)$row->image_id
+                            ];
+                        }
+                        unset($itemMap[$path]);
+                    }
+                }
+            }
+        }
+
+        // Any items remaining in itemMap could not be resolved; keep them in legacy queue.
+        foreach ($itemMap as $items) {
+            foreach ($items as $item) {
                 $remaining[] = $item;
             }
         }
