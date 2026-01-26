@@ -431,18 +431,23 @@ class ProofQueue
      */
     protected static function processLegacyQueue(): void
     {
-        // 1. Attempt Migration to DB Table
-        if (self::tableExists()) {
-            self::migrateLegacyQueue();
-        }
-
         $queue = get_option(self::QUEUE_OPTION, []);
         if (!is_array($queue) || empty($queue)) {
             return;
         }
 
+        // 1. Attempt Migration to DB Table (In-Memory)
+        if (self::tableExists()) {
+            list($moved, $queue) = self::doMigration($queue);
+        }
+
+        if (empty($queue)) {
+            update_option(self::QUEUE_OPTION, [], false);
+            return;
+        }
+
         $batch = array_splice($queue, 0, self::MAX_PER_RUN);
-        $remaining = $queue; // Start with what's left
+        $remaining = $queue; // Start with what's left after taking batch
 
         try {
             $storage = StorageFactory::create();
@@ -702,6 +707,23 @@ class ProofQueue
             return 0;
         }
 
+        list($moved, $remaining) = self::doMigration($queue);
+
+        if ($moved > 0) {
+            update_option(self::QUEUE_OPTION, $remaining, false);
+        }
+
+        return $moved;
+    }
+
+    /**
+     * Internal migration logic.
+     *
+     * @param array $queue
+     * @return array [int $moved, array $remainingQueue]
+     */
+    protected static function doMigration(array $queue): array
+    {
         $migratable = [];
         $remaining = [];
 
@@ -780,16 +802,11 @@ class ProofQueue
             if (self::addBatch($migratable)) {
                 $moved = count($migratable);
             } else {
-                // Batch insert failed. Abort migration to preserve data.
-                return 0;
+                // Batch insert failed. Return original queue (assume no migration happened)
+                return [0, $queue];
             }
         }
 
-        // Save back only what we couldn't migrate
-        if ($moved > 0) {
-            update_option(self::QUEUE_OPTION, $remaining, false);
-        }
-
-        return $moved;
+        return [$moved, $remaining];
     }
 }
