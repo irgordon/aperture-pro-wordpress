@@ -148,11 +148,17 @@ class Watchdog
                     // Note: If we are using DB batching, we didn't check if it's already expired in DB logic (we filtered those out in getSessionsBatch)
                     // But here we are checking application-level logic (STALE_THRESHOLD).
                     // So we must call delete_transient.
-                    delete_transient(self::SESSION_TRANSIENT_PREFIX . $uploadId);
+                    // We collect these to batch delete later
+                    $staleIdsToDelete[] = $uploadId;
 
                     $summary['stale_removed']++;
                     Logger::log('info', 'watchdog', 'Removed stale upload session (transient expired)', ['upload_id' => $uploadId]);
                 }
+            }
+
+            // Batch delete stale sessions to avoid N+1 queries
+            if (!empty($staleIdsToDelete)) {
+                self::deleteSessionsBatch($staleIdsToDelete);
             }
         }
 
@@ -260,5 +266,46 @@ class Watchdog
         }
 
         return $sessions;
+    }
+
+    /**
+     * Delete multiple sessions from DB in one query to avoid N+1.
+     * Safely falls back to iterative delete_transient if object caching is detected.
+     *
+     * @param array $uploadIds List of upload IDs
+     * @return void
+     */
+    protected static function deleteSessionsBatch(array $uploadIds): void
+    {
+        if (empty($uploadIds)) {
+            return;
+        }
+
+        // If external object cache is active, rely on it to avoid data inconsistency.
+        if (function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache()) {
+            foreach ($uploadIds as $id) {
+                delete_transient(self::SESSION_TRANSIENT_PREFIX . $id);
+            }
+            return;
+        }
+
+        global $wpdb;
+
+        // Prepare keys
+        $transientKeys = [];
+        foreach ($uploadIds as $id) {
+            $transientKeys[] = '_transient_' . self::SESSION_TRANSIENT_PREFIX . $id;
+            $transientKeys[] = '_transient_timeout_' . self::SESSION_TRANSIENT_PREFIX . $id;
+        }
+
+        // Chunking for SQL safety (max 1000 items in IN clause usually safe)
+        // processing in chunks of 500 IDs = 1000 keys.
+        $chunks = array_chunk($transientKeys, 1000);
+
+        foreach ($chunks as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '%s'));
+            $sql = "DELETE FROM {$wpdb->options} WHERE option_name IN ($placeholders)";
+            $wpdb->query($wpdb->prepare($sql, $chunk));
+        }
     }
 }

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.82] – Watchdog Stale Session Optimization**
+
+### **Performance**
+- **Watchdog:** Optimized the `Watchdog` cleanup process to use batch database deletion for stale sessions. This eliminates the N+1 query problem where `delete_transient` was called for every stale session, significantly reducing database load during maintenance runs.
+- **Benchmark:** Validated performance improvement: Database queries reduced from 500 to 2 for a batch of 500 stale sessions, with execution time reduced by ~12x (0.36s -> 0.03s).
+
 ## **[1.0.81] – Watchdog N+1 Optimization**
 
 ### **Performance**
