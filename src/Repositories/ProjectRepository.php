@@ -62,14 +62,23 @@ class ProjectRepository
         }
 
         return array_map(function ($row) use ($project_id) {
-            $comments = json_decode($row['client_comments'] ?? '[]', true);
+            $raw = $row['client_comments'] ?? null;
+
+            // Optimization: Avoid json_decode for empty/null comments
+            if ($raw === '[]' || $raw === null || $raw === '') {
+                $comments = [];
+            } else {
+                $decoded = json_decode($raw, true);
+                $comments = is_array($decoded) ? $decoded : [];
+            }
+
             return [
                 'id' => (int) $row['id'],
                 'project_id' => $project_id,
                 'path' => $row['path'],
                 'filename' => $row['filename'],
                 'is_selected' => (bool) $row['is_selected'],
-                'comments' => is_array($comments) ? $comments : [],
+                'comments' => $comments,
             ];
         }, $results);
     }
