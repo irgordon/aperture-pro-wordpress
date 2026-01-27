@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.17] – Proof Queue Caller Refactor**
+
+### **Maintenance**
+- **Proof Queue:** Updated `ProofQueue::enqueue` to accept optional `project_id` and `image_id` arguments.
+- **Proof Queue:** Implemented ID resolution within `enqueue` to seamlessly route legacy calls (path only) to the optimized database queue if IDs can be resolved.
+- **Proof Service:** Simplified `ProofService::getProofUrlForImage` and `ProofService::getProofUrls` to leverage the enhanced `enqueue` method, removing redundant ID resolution logic and simplifying call sites.
+- **Cleanup:** Removed unused helper methods `resolveIdsFromPath` and `resolveBatchIds` from `ProofService`.
+
 ## **[1.1.16] – Parallel Download Sleep Adjustment**
 
 ### **Performance**
