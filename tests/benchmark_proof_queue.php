@@ -96,6 +96,7 @@ class MockWPDB {
 
     public function esc_like($text) { return $text; }
     public function query($query) { return true; }
+    public function get_results($query) { return []; }
 }
 $GLOBALS['wpdb'] = new MockWPDB();
 

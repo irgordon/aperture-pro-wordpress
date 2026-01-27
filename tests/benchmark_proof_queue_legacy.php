@@ -61,6 +61,8 @@ class MockWPDB {
     public function get_var($query) { return null; }
     public function esc_like($text) { return $text; }
     public function query($query) { return true; }
+    // Add get_results for ID resolution fallback check
+    public function get_results($query) { return []; }
 }
 $GLOBALS['wpdb'] = new MockWPDB();
 

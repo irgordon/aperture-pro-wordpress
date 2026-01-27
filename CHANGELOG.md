@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.07] – Proof Queue ID Refactor**
+
+### **Fixes**
+- **Proof Queue:** Refactored `ProofQueue::enqueueBatch` to automatically resolve `project_id` and `image_id` from `original_path` when IDs are missing from the input items.
+- **Optimization:** This ensures that legacy-style batch requests (paths only) are now correctly routed to the optimized database queue (`ap_proof_queue`) instead of falling back to the slower `wp_options` legacy queue.
+- **Verification:** Verified with `tests/repro_proof_queue_refactor.php` that items with resolvable paths are now successfully inserted into the database queue.
+
 ## **[1.1.06] – Proof Queue ID Resolution Fix**
 
 ### **Fixes**

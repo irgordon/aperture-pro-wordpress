@@ -210,6 +210,8 @@ class ProofQueue
         // If items are just paths (legacy), go to legacy option.
         $idItems = [];
         $legacyItems = [];
+        $pathsToResolve = [];
+        $pathToItemMap = []; // Keep track of original items by path for fallback
 
         foreach ($items as $item) {
             // If caller provided IDs (future-proofing refactor)
@@ -218,8 +220,34 @@ class ProofQueue
                     'project_id' => (int)$item['project_id'],
                     'image_id'   => (int)$item['image_id']
                 ];
+            } elseif (isset($item['original_path']) && !empty($item['original_path'])) {
+                $path = $item['original_path'];
+                $pathsToResolve[] = $path;
+                if (!isset($pathToItemMap[$path])) {
+                    $pathToItemMap[$path] = [];
+                }
+                $pathToItemMap[$path][] = $item;
             } else {
+                // No IDs and no path? Just legacy fallback (unlikely valid but safe)
                 $legacyItems[] = $item;
+            }
+        }
+
+        // Try to resolve IDs for path-based items
+        if (!empty($pathsToResolve)) {
+            $resolvedMap = self::resolveIdsFromPaths($pathsToResolve);
+            foreach ($pathToItemMap as $path => $mappedItems) {
+                if (isset($resolvedMap[$path])) {
+                    // Resolved successfully
+                    foreach ($mappedItems as $mappedItem) {
+                        $idItems[] = $resolvedMap[$path];
+                    }
+                } else {
+                    // Could not resolve, fallback to legacy
+                    foreach ($mappedItems as $mappedItem) {
+                        $legacyItems[] = $mappedItem;
+                    }
+                }
             }
         }
 
@@ -807,40 +835,15 @@ class ProofQueue
 
         // Attempt to resolve IDs for path-based items
         if (!empty($pathsToLookup)) {
-            global $wpdb;
-            $pathsToLookup = array_unique($pathsToLookup);
-            $escapedPaths = [];
-            foreach ($pathsToLookup as $p) {
-                $escapedPaths[] = $wpdb->prepare('%s', $p);
-            }
+            $resolvedMap = self::resolveIdsFromPaths($pathsToLookup);
 
-            // Chunking to avoid massive query if queue is huge
-            $chunks = array_chunk($escapedPaths, 500);
-            $imagesTable = $wpdb->prefix . 'ap_images';
-            $galleriesTable = $wpdb->prefix . 'ap_galleries';
-
-            foreach ($chunks as $chunk) {
-                $inClause = implode(',', $chunk);
-                $query = "
-                    SELECT i.id as image_id, i.storage_key_original, g.project_id
-                    FROM {$imagesTable} i
-                    JOIN {$galleriesTable} g ON i.gallery_id = g.id
-                    WHERE i.storage_key_original IN ({$inClause})
-                ";
-                $results = $wpdb->get_results($query);
-
-                foreach ($results as $row) {
-                    $path = $row->storage_key_original;
-                    if (isset($itemMap[$path])) {
-                        // We found a match! Add to migratable.
-                        foreach ($itemMap[$path] as $legacyItem) {
-                            $migratable[] = [
-                                'project_id' => (int)$row->project_id,
-                                'image_id'   => (int)$row->image_id
-                            ];
-                        }
-                        unset($itemMap[$path]);
+            foreach ($resolvedMap as $path => $ids) {
+                if (isset($itemMap[$path])) {
+                    // We found a match! Add to migratable.
+                    foreach ($itemMap[$path] as $legacyItem) {
+                        $migratable[] = $ids;
                     }
+                    unset($itemMap[$path]);
                 }
             }
         }
@@ -863,5 +866,53 @@ class ProofQueue
         }
 
         return [$moved, $remaining];
+    }
+
+    /**
+     * Helper to resolve IDs for a list of original paths.
+     *
+     * @param array $paths List of original paths to resolve.
+     * @return array Map of original_path => ['project_id' => int, 'image_id' => int]
+     */
+    protected static function resolveIdsFromPaths(array $paths): array
+    {
+        if (empty($paths)) {
+            return [];
+        }
+
+        global $wpdb;
+        $paths = array_unique($paths);
+        $escapedPaths = [];
+        foreach ($paths as $p) {
+            $escapedPaths[] = $wpdb->prepare('%s', $p);
+        }
+
+        // Chunking to avoid massive query if queue is huge
+        $chunks = array_chunk($escapedPaths, 500);
+        $imagesTable = $wpdb->prefix . 'ap_images';
+        $galleriesTable = $wpdb->prefix . 'ap_galleries';
+        $resolved = [];
+
+        foreach ($chunks as $chunk) {
+            $inClause = implode(',', $chunk);
+            $query = "
+                SELECT i.id as image_id, i.storage_key_original, g.project_id
+                FROM {$imagesTable} i
+                JOIN {$galleriesTable} g ON i.gallery_id = g.id
+                WHERE i.storage_key_original IN ({$inClause})
+            ";
+            $results = $wpdb->get_results($query);
+
+            foreach ($results as $row) {
+                if (!empty($row->storage_key_original)) {
+                    $resolved[$row->storage_key_original] = [
+                        'project_id' => (int)$row->project_id,
+                        'image_id'   => (int)$row->image_id
+                    ];
+                }
+            }
+        }
+
+        return $resolved;
     }
 }
