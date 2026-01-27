@@ -37,6 +37,14 @@ class ProofQueue
             return self::$tableExistsCache;
         }
 
+        // Performance: Check persistent cache first
+        $cacheKey = 'ap_proof_queue_table_exists';
+        $cached = get_transient($cacheKey);
+        if ($cached !== false) {
+            self::$tableExistsCache = (bool) $cached;
+            return self::$tableExistsCache;
+        }
+
         global $wpdb;
         $table = $wpdb->prefix . self::TABLE_NAME;
 
@@ -44,6 +52,9 @@ class ProofQueue
             "SHOW TABLES LIKE %s",
             $wpdb->esc_like($table)
         )) === $table;
+
+        // Cache for 24 hours
+        set_transient($cacheKey, (int) $exists, 24 * 3600);
 
         self::$tableExistsCache = (bool) $exists;
         return self::$tableExistsCache;
