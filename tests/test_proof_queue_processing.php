@@ -132,10 +132,18 @@ namespace AperturePro\Test {
             return $r;
         }
 
-        public function uploadMany(array $files, array $options = []): array {
+        public function uploadMany(array $files): array {
             $results = [];
-            foreach ($files as $source => $target) {
-                $results[$target] = $this->upload($source, $target, $options);
+            foreach ($files as $file) {
+                $target = $file['target'];
+                $source = $file['source'];
+                $options = $file['options'] ?? [];
+                $this->upload($source, $target, $options);
+                $results[$target] = [
+                    'success' => true,
+                    'url' => 'url',
+                    'error' => null
+                ];
             }
             return $results;
         }

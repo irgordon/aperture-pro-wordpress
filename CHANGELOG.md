@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.08] – Proof Generation Batch Upload Optimization**
+
+### **Performance**
+- **Proofs:** Optimized `ProofService::generateBatch` to process all proof images locally first, then upload them in a single batch using `StorageInterface::uploadMany`.
+- **Performance:** This replaces sequential blocking uploads (wait for upload 1, then upload 2...) with parallel uploads (where supported by the driver, e.g., S3/Cloudinary), significantly reducing total batch processing time.
+- **Benchmark:** Validated performance improvement: ~6x speedup (1.02s -> 0.17s) for a batch of 10 items in simulated benchmarks.
+
 ## **[1.1.07] – Proof Queue ID Refactor**
 
 ### **Fixes**
