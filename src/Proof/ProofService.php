@@ -657,7 +657,9 @@ class ProofService
 
         while ($active && $mrc == CURLM_OK) {
             if (curl_multi_select($mh) == -1) {
-                usleep(5000);
+                // OPTIMIZATION: Reduced sleep from 5000us (5ms) to 100us (0.1ms)
+                // When select returns -1, it means we should wait a bit, but 5ms is too long for high-concurrency loops
+                usleep(100);
             }
             do {
                 $mrc = curl_multi_exec($mh, $active);
