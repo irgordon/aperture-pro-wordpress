@@ -59,6 +59,16 @@
     return ms + Math.floor(Math.random() * (2 * delta + 1)) - delta;
   }
 
+  function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+  }
+
   function fetchJson(url, opts = {}) {
     opts.headers = opts.headers || {};
     opts.headers['X-WP-Nonce'] = ApertureClient.nonce;
@@ -984,10 +994,45 @@
       const url = `${ApertureClient.restBase}/projects/${projectId}/proofs`;
       try {
         const res = await fetchJson(url, { method: 'GET' });
-        if (res && res.data) {
-          // Replace proofs HTML or update DOM accordingly
-          // For simplicity, reload page to reflect new proofs
-          window.location.reload();
+        // Handle both direct array (if changed) or wrapped response
+        // ClientProofController::list_proofs returns { project_id, proofs: [...] }
+        const proofs = (res && res.proofs) ? res.proofs : (res && res.data && res.data.proofs ? res.data.proofs : null);
+
+        if (proofs) {
+          const grid = document.querySelector('.ap-proofs-grid');
+          if (!grid) return;
+
+          if (proofs.length === 0) {
+            grid.innerHTML = '<p>No proofs uploaded yet. Check back later.</p>';
+            return;
+          }
+
+          const html = proofs.map(img => {
+            const commentsHtml = (img.comments || []).map(c =>
+                `<div class="ap-comment">${escapeHtml(c.comment)} <span class="ap-comment-time">${escapeHtml(c.created_at || '')}</span></div>`
+            ).join('');
+
+            const selectedAttr = img.is_selected ? 'checked' : '';
+
+            return `
+                <div class="ap-proof-item" data-image-id="${img.id}">
+                    <img src="${escapeHtml(img.proof_url)}" alt="Proof image ID ${img.id}" />
+                    <div class="ap-proof-meta">
+                        <label>
+                            <input type="checkbox" class="ap-select-checkbox" ${selectedAttr} aria-label="Select proof ${img.id}" />
+                            Select
+                        </label>
+                        <button class="ap-btn ap-btn-small ap-comment-btn" aria-label="Comment on proof ${img.id}">Comment</button>
+                    </div>
+                    <div class="ap-proof-comments">
+                        ${commentsHtml}
+                    </div>
+                </div>
+            `;
+          }).join('');
+
+          grid.innerHTML = html;
+          this.cacheProofImages();
         }
       } catch (e) {
         log('Failed to refresh proofs', e);
