@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.06] – Proof Queue ID Resolution Fix**
+
+### **Fixes**
+- **Proof Service:** Updated `ProofService::getProofUrlForImage` and `ProofService::getProofUrls` to resolve project and image IDs from `ap_images` when they are missing from the input.
+- **Proof Service:** This ensures that `ProofQueue::add` (DB-based queue) is used instead of falling back to `ProofQueue::enqueue` (legacy option-based queue), even when the caller only provides paths.
+- **Performance:** Ensures O(1) database inserts for proof generation requests that originate from path-based contexts, maintaining the performance benefits of the new queue system.
+
 ## **[1.1.05] – Mixed Queue Item Optimization**
 
 ### **Fixes**

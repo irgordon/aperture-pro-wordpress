@@ -188,6 +188,32 @@ class ProofService
                 }
             }
 
+            // Try to resolve IDs for legacy items
+            if (!empty($legacyItems)) {
+                $pathsToResolve = [];
+                foreach ($legacyItems as $lItem) {
+                    if (isset($lItem['original_path'])) {
+                        $pathsToResolve[] = $lItem['original_path'];
+                    }
+                }
+
+                $resolvedMap = self::resolveBatchIds($pathsToResolve);
+                $stillLegacy = [];
+
+                foreach ($legacyItems as $lItem) {
+                    $path = $lItem['original_path'] ?? '';
+                    if (isset($resolvedMap[$path])) {
+                        $batchIds[] = [
+                            'project_id' => $resolvedMap[$path]['project_id'],
+                            'image_id'   => $resolvedMap[$path]['image_id'],
+                        ];
+                    } else {
+                        $stillLegacy[] = $lItem;
+                    }
+                }
+                $legacyItems = $stillLegacy;
+            }
+
             // Optimized batch insert for items with IDs
             if (!empty($batchIds)) {
                 ProofQueue::addBatch($batchIds);
@@ -236,7 +262,13 @@ class ProofService
             if (isset($image['project_id'], $image['id']) && is_numeric($image['project_id']) && is_numeric($image['id'])) {
                 ProofQueue::add((int) $image['project_id'], (int) $image['id']);
             } else {
-                ProofQueue::enqueue($originalPath, $proofPath);
+                // Try to resolve IDs first
+                $ids = self::resolveIdsFromPath($originalPath);
+                if ($ids) {
+                    ProofQueue::add($ids['project_id'], $ids['image_id']);
+                } else {
+                    ProofQueue::enqueue($originalPath, $proofPath);
+                }
             }
             return self::getPlaceholderUrl();
         }
@@ -1232,5 +1264,84 @@ SVG;
         }
 
         return $tmp;
+    }
+
+    /**
+     * Helper to resolve project/image IDs from an original path.
+     *
+     * @param string $path
+     * @return array|null ['project_id' => int, 'image_id' => int] or null
+     */
+    protected static function resolveIdsFromPath(string $path): ?array
+    {
+        global $wpdb;
+        $imagesTable = $wpdb->prefix . 'ap_images';
+        $galleriesTable = $wpdb->prefix . 'ap_galleries';
+
+        $query = "
+            SELECT i.id as image_id, g.project_id
+            FROM {$imagesTable} i
+            JOIN {$galleriesTable} g ON i.gallery_id = g.id
+            WHERE i.storage_key_original = %s
+            LIMIT 1
+        ";
+
+        $row = $wpdb->get_row($wpdb->prepare($query, $path));
+
+        if ($row) {
+            return [
+                'project_id' => (int) $row->project_id,
+                'image_id'   => (int) $row->image_id,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Helper to resolve IDs for a batch of paths.
+     *
+     * @param array $paths List of original paths
+     * @return array Map of original_path => ['project_id' => int, 'image_id' => int]
+     */
+    protected static function resolveBatchIds(array $paths): array
+    {
+        if (empty($paths)) {
+            return [];
+        }
+
+        global $wpdb;
+        $imagesTable = $wpdb->prefix . 'ap_images';
+        $galleriesTable = $wpdb->prefix . 'ap_galleries';
+
+        $paths = array_unique($paths);
+        $escapedPaths = [];
+        foreach ($paths as $p) {
+            $escapedPaths[] = $wpdb->prepare('%s', $p);
+        }
+
+        // Chunking handled by caller if massive, but let's be safe
+        $chunks = array_chunk($escapedPaths, 200);
+        $results = [];
+
+        foreach ($chunks as $chunk) {
+            $inClause = implode(',', $chunk);
+            $query = "
+                SELECT i.id as image_id, i.storage_key_original, g.project_id
+                FROM {$imagesTable} i
+                JOIN {$galleriesTable} g ON i.gallery_id = g.id
+                WHERE i.storage_key_original IN ({$inClause})
+            ";
+
+            $rows = $wpdb->get_results($query);
+            foreach ($rows as $row) {
+                $results[$row->storage_key_original] = [
+                    'project_id' => (int) $row->project_id,
+                    'image_id'   => (int) $row->image_id,
+                ];
+            }
+        }
+
+        return $results;
     }
 }
