@@ -74,15 +74,4 @@ class Logger
             }
         }
     }
-
-    /**
-     * Send a concise email to the site admin with details about the critical event.
-     *
-     * @deprecated 2.1.0 Use EmailService::enqueueAdminNotification instead to avoid blocking I/O.
-     */
-    protected static function notifyAdminByEmail(string $level, string $context, string $message, array $meta = []): void
-    {
-        // Redirect legacy calls to queue
-        \AperturePro\Email\EmailService::enqueueAdminNotification($level, $context, $message, $meta);
-    }
 }

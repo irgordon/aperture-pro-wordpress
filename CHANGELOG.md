@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.98] – Logger Cleanup**
+
+### **Cleanup**
+- **Logger:** Removed deprecated `Logger::notifyAdminByEmail` method. This method was deprecated in 2.1.0 and has been fully replaced by `EmailService::enqueueAdminNotification` to prevent blocking I/O during critical error logging.
+- **Tests:** Verified `Logger::log` functionality with `tests/benchmark_logger_email.php`.
+
 ## **[1.0.97] – Client Portal Rendering Optimization**
 
 ### **Performance**
