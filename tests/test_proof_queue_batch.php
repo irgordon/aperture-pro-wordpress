@@ -18,6 +18,16 @@ namespace {
     function current_time($type, $gmt = 0) { return date('Y-m-d H:i:s'); }
     function wp_next_scheduled($hook, $args = []) { return false; }
     function wp_schedule_single_event($timestamp, $hook, $args = []) { return true; }
+
+    class MockWPDB {
+        public $prefix = 'wp_';
+        public function prepare($query, ...$args) { return $query; }
+        public function get_var($query) { return null; }
+        public function esc_like($text) { return $text; }
+        public function query($query) { return true; }
+        public function get_results($query) { return []; }
+    }
+    $GLOBALS['wpdb'] = new MockWPDB();
 }
 
 namespace AperturePro\Test {
