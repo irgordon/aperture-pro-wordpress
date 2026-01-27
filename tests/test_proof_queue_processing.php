@@ -131,6 +131,14 @@ namespace AperturePro\Test {
             foreach ($paths as $p) $r[$p] = 'signed_' . $p;
             return $r;
         }
+
+        public function uploadMany(array $files, array $options = []): array {
+            $results = [];
+            foreach ($files as $source => $target) {
+                $results[$target] = $this->upload($source, $target, $options);
+            }
+            return $results;
+        }
     }
 
     // Setup

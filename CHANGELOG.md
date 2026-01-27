@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.05] – Mixed Queue Item Optimization**
+
+### **Fixes**
+- **Proof Queue:** Optimized `ProofQueue::processUnifiedBatch` to correctly resolve `original_path` from `image_id` for legacy queue items. This ensures that legacy items containing only IDs (from fallback scenarios) are processed successfully instead of being discarded as invalid.
+- **Verification:** Verified the fix with a reproduction script confirming that mixed queue items are now correctly uploaded.
+
 ## **[1.1.04] – Watchdog Sequential Upload Optimization**
 
 ### **Performance**
