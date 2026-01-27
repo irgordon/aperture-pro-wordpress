@@ -46,6 +46,8 @@ class WP_REST_Response {
 class MockWPDB {
     public $prefix = 'wp_';
     public $last_insert = null;
+    public $last_prepared_args = null;
+    public $last_query = null;
 
     public function insert($table, $data, $format) {
         $this->last_insert = [
@@ -53,6 +55,17 @@ class MockWPDB {
             'data' => $data
         ];
         return 1;
+    }
+
+    public function prepare($query, ...$args) {
+        if (isset($args[0]) && is_array($args[0])) $args = $args[0];
+        $this->last_prepared_args = $args;
+        return $query;
+    }
+
+    public function query($query) {
+        $this->last_query = $query;
+        return true;
     }
 
     // For Logger rate limiting check
@@ -115,6 +128,7 @@ spl_autoload_register(function ($class) {
 
 use AperturePro\REST\ClientProofController;
 use AperturePro\Auth\CookieService;
+use AperturePro\Helpers\Logger;
 
 echo "Starting ClientProofController::client_log verification...\n";
 
@@ -144,17 +158,24 @@ if ($response instanceof WP_Error) {
     exit(1);
 }
 
-if (!$wpdb->last_insert) {
+Logger::flush();
+
+if (!$wpdb->last_prepared_args) {
     echo "[FAIL] No DB insert performed.\n";
     exit(1);
 }
 
-if ($wpdb->last_insert['data']['level'] !== 'info') {
-    echo "[FAIL] Level not defaulted to info. Expected 'info', got: '" . $wpdb->last_insert['data']['level'] . "'\n";
+$level = $wpdb->last_prepared_args[0];
+
+if ($level !== 'info') {
+    echo "[FAIL] Level not defaulted to info. Expected 'info', got: '" . $level . "'\n";
     exit(1);
 }
 
 echo "[PASS] 'warn' defaulted to 'info'.\n";
+
+// Reset
+$wpdb->last_prepared_args = null;
 
 // Test Case 2: Level 'warning' should stay 'warning'
 echo "\nTest 2: Level 'warning' preservation\n";
@@ -165,13 +186,19 @@ $request = new WP_REST_Request([
 ]);
 
 $controller->client_log($request);
+Logger::flush();
 
-if ($wpdb->last_insert['data']['level'] !== 'warning') {
-    echo "[FAIL] Level changed unexpectedly. Expected 'warning', got: '" . $wpdb->last_insert['data']['level'] . "'\n";
+$level = $wpdb->last_prepared_args[0];
+
+if ($level !== 'warning') {
+    echo "[FAIL] Level changed unexpectedly. Expected 'warning', got: '" . $level . "'\n";
     exit(1);
 }
 
 echo "[PASS] 'warning' preserved.\n";
+
+// Reset
+$wpdb->last_prepared_args = null;
 
 // Test Case 3: Level 'error' should stay 'error'
 echo "\nTest 3: Level 'error' preservation\n";
@@ -182,13 +209,19 @@ $request = new WP_REST_Request([
 ]);
 
 $controller->client_log($request);
+Logger::flush();
 
-if ($wpdb->last_insert['data']['level'] !== 'error') {
-    echo "[FAIL] Level changed unexpectedly. Expected 'error', got: '" . $wpdb->last_insert['data']['level'] . "'\n";
+$level = $wpdb->last_prepared_args[0];
+
+if ($level !== 'error') {
+    echo "[FAIL] Level changed unexpectedly. Expected 'error', got: '" . $level . "'\n";
     exit(1);
 }
 
 echo "[PASS] 'error' preserved.\n";
+
+// Reset
+$wpdb->last_prepared_args = null;
 
 // Test Case 4: Invalid level should default to 'info'
 echo "\nTest 4: Invalid level default\n";
@@ -199,9 +232,12 @@ $request = new WP_REST_Request([
 ]);
 
 $controller->client_log($request);
+Logger::flush();
 
-if ($wpdb->last_insert['data']['level'] !== 'info') {
-    echo "[FAIL] Invalid level did not default to 'info'. Got: '" . $wpdb->last_insert['data']['level'] . "'\n";
+$level = $wpdb->last_prepared_args[0];
+
+if ($level !== 'info') {
+    echo "[FAIL] Invalid level did not default to 'info'. Got: '" . $level . "'\n";
     exit(1);
 }
 

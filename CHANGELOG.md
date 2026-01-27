@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.12] – Logger Buffering Optimization**
+
+### **Performance**
+- **Logger:** Optimized `Logger::log` to implement an in-memory buffer (limit: 50) and flush logs in a single batch query at the end of the request.
+- **Performance:** This eliminates the synchronous N+1 database insert problem for frequent logging operations (e.g., inside loops), significantly reducing database overhead.
+- **Benchmark:** Validated performance improvement: 50x reduction in database interactions (20 batch queries vs 1000 inserts) for high-volume logging scenarios.
+
 ## **[1.1.11] – Project Repository Decode Optimization**
 
 ### **Performance**

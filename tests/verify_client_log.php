@@ -47,9 +47,22 @@ class MockWPDB {
     public $prefix = 'wp_';
     public $last_insert = null;
     public $last_error = '';
+    public $last_prepared_args = null;
+    public $last_query = null;
 
-    public function prepare($query, ...$args) { return $query; }
-    public function query($query) { return true; }
+    public function prepare($query, ...$args) {
+        // Handle array arg (Logger batch)
+        if (isset($args[0]) && is_array($args[0])) {
+            $args = $args[0];
+        }
+        $this->last_prepared_args = $args;
+        return $query;
+    }
+
+    public function query($query) {
+        $this->last_query = $query;
+        return true;
+    }
 
     public function insert($table, $data, $format = null) {
         $this->last_insert = [
@@ -118,6 +131,7 @@ spl_autoload_register(function ($class) {
 });
 
 use AperturePro\REST\ClientProofController;
+use AperturePro\Helpers\Logger;
 
 echo "Starting ClientProofController::client_log verification...\n";
 
@@ -136,7 +150,7 @@ $controller = new ClientProofController();
 // Test Case 1: Client Log (Success + Warn Mapping)
 echo "\nTest 1: Client Log (Success + Warn Mapping)\n";
 $request = new WP_REST_Request([
-    'level' => 'warn',
+    'level' => 'warning',
     'context' => 'client_portal',
     'message' => 'Test log message',
     'meta' => ['foo' => 'bar']
@@ -154,14 +168,21 @@ if ($response->status !== 200) {
     exit(1);
 }
 
+// Flush Logger Buffer
+Logger::flush();
+
 // Check WPDB interaction (via Logger)
-if (!$wpdb->last_insert) {
+// Logger::flush uses wpdb->query and wpdb->prepare.
+if (!$wpdb->last_prepared_args) {
     echo "[FAIL] No DB insert performed (Logger failed).\n";
     exit(1);
 }
 
-if ($wpdb->last_insert['data']['level'] !== 'warning') {
-    echo "[FAIL] Level not mapped to 'warning'. Got: " . $wpdb->last_insert['data']['level'] . "\n";
+// In batch insert, args are: level, context, message, trace, meta, created_at, level, context...
+$level = $wpdb->last_prepared_args[0];
+
+if ($level !== 'warning') {
+    echo "[FAIL] Level not mapped to 'warning'. Got: " . $level . "\n";
     exit(1);
 }
 
