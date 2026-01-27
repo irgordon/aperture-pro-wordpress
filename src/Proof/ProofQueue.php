@@ -360,14 +360,18 @@ class ProofQueue
         foreach ($batch as $item) {
             if (isset($item->type) && $item->type === 'legacy') {
                 $legacyItems[] = $item;
+                // Check if legacy item has an ID that needs resolution
+                if (isset($item->image_id) && $item->image_id > 0) {
+                    $imageIdsToResolve[] = (int) $item->image_id;
+                }
             } else {
                 // Default to DB type
                 $dbItems[] = $item;
-                $imageIdsToResolve[] = $item->image_id;
+                $imageIdsToResolve[] = (int) $item->image_id;
             }
         }
 
-        // 2. Resolve Paths for DB Items
+        // 2. Resolve Paths for DB/Legacy Items
         $imageMap = self::getOriginalPaths($imageIdsToResolve);
 
         // 3. Prepare Generation List
@@ -400,6 +404,11 @@ class ProofQueue
         foreach ($legacyItems as $item) {
             $originalPath = $item->original_path ?? null;
             $proofPath    = $item->proof_path ?? null;
+
+            // If no path but we have an ID, try to resolve it from imageMap
+            if (empty($originalPath) && isset($item->image_id) && isset($imageMap[$item->image_id])) {
+                $originalPath = $imageMap[$item->image_id];
+            }
 
             if ($originalPath) {
                 if (!$proofPath) {
