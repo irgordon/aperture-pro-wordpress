@@ -130,6 +130,7 @@ namespace AperturePro\Auth {
 namespace AperturePro\Storage {
     interface StorageInterface {
         public function upload($source, $destination, $options = []);
+        public function uploadMany(array $files);
     }
 
     class MockStorage implements StorageInterface {
@@ -138,6 +139,15 @@ namespace AperturePro\Storage {
         public function upload($source, $destination, $options = []) {
             $this->uploaded[] = ['source' => $source, 'destination' => $destination];
             return ['success' => true, 'key' => $destination];
+        }
+
+        public function uploadMany(array $files) {
+            $results = [];
+            foreach ($files as $file) {
+                $this->uploaded[] = ['source' => $file['source'], 'destination' => $file['target']];
+                $results[$file['target']] = ['success' => true, 'key' => $file['target']];
+            }
+            return $results;
         }
     }
 

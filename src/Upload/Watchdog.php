@@ -75,6 +75,9 @@ class Watchdog
             $ids = array_column($chunk, 'id');
             $sessions = self::getSessionsBatch($ids);
 
+            $batchUploads = [];
+            $staleIdsToDelete = [];
+
             foreach ($chunk as $item) {
                 $uploadId = $item['id'];
                 $session = $sessions[$uploadId] ?? false;
@@ -87,12 +90,8 @@ class Watchdog
                     $sessionDir = $item['path'] . '/';
                     $assembled = $sessionDir . ChunkedUploadHandler::ASSEMBLED_FILENAME;
                     if (file_exists($assembled)) {
-                        // Attempt one best-effort upload using storage driver
+                        // Collect for batch upload
                         try {
-                            if (!$storage) {
-                                $storage = \AperturePro\Storage\StorageFactory::make();
-                            }
-
                             // Try to recover session metadata from disk
                             $sessionFile = $sessionDir . 'session.json';
                             $diskSession = null;
@@ -109,20 +108,16 @@ class Watchdog
                                 $remoteKey = 'orphaned/' . $uploadId . '/' . basename($assembled);
                             }
 
-                            $res = $storage->upload($assembled, $remoteKey, ['signed' => true]);
-                            $summary['retry_attempts']++;
-                            if (empty($res['success'])) {
-                                $summary['retry_failures']++;
-                                Logger::log('warning', 'watchdog', 'Retry upload failed for orphaned assembled file', ['upload_id' => $uploadId, 'remoteKey' => $remoteKey]);
-                            } else {
-                                // On success, remove assembled and session dir
-                                ChunkedUploadHandler::cleanupSessionFiles($sessionDir);
-                                $summary['stale_removed']++;
-                                Logger::log('info', 'watchdog', 'Orphaned assembled file uploaded and cleaned', ['upload_id' => $uploadId, 'remoteKey' => $remoteKey]);
-                            }
+                            $batchUploads[] = [
+                                'source' => $assembled,
+                                'target' => $remoteKey,
+                                'options' => ['signed' => true],
+                                'upload_id' => $uploadId,
+                                'session_dir' => $sessionDir,
+                            ];
+
                         } catch (\Throwable $e) {
                             $summary['errors'][] = $e->getMessage();
-                            Logger::log('error', 'watchdog', 'Exception during orphaned assembled retry: ' . $e->getMessage(), ['upload_id' => $uploadId, 'notify_admin' => true]);
                             $summary['retry_failures']++;
                         }
                     } else {
@@ -153,6 +148,41 @@ class Watchdog
 
                     $summary['stale_removed']++;
                     Logger::log('info', 'watchdog', 'Removed stale upload session (transient expired)', ['upload_id' => $uploadId]);
+                }
+            }
+
+            // Execute batch uploads
+            if (!empty($batchUploads)) {
+                if (!$storage) {
+                    $storage = \AperturePro\Storage\StorageFactory::make();
+                }
+
+                $summary['retry_attempts'] += count($batchUploads);
+
+                try {
+                    $results = $storage->uploadMany($batchUploads);
+
+                    foreach ($batchUploads as $task) {
+                        $target = $task['target'];
+                        $uploadId = $task['upload_id'];
+                        $sessionDir = $task['session_dir'];
+
+                        $result = $results[$target] ?? ['success' => false, 'error' => 'Unknown error'];
+
+                        if (!empty($result['success'])) {
+                            // On success, remove assembled and session dir
+                            ChunkedUploadHandler::cleanupSessionFiles($sessionDir);
+                            $summary['stale_removed']++;
+                            Logger::log('info', 'watchdog', 'Orphaned assembled file uploaded and cleaned', ['upload_id' => $uploadId, 'remoteKey' => $target]);
+                        } else {
+                            $summary['retry_failures']++;
+                            Logger::log('warning', 'watchdog', 'Retry upload failed for orphaned assembled file', ['upload_id' => $uploadId, 'remoteKey' => $target, 'error' => $result['error'] ?? '']);
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    $summary['errors'][] = 'Batch upload exception: ' . $e->getMessage();
+                    $summary['retry_failures'] += count($batchUploads);
+                    Logger::log('error', 'watchdog', 'Exception during batch upload: ' . $e->getMessage());
                 }
             }
 

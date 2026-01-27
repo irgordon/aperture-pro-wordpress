@@ -294,6 +294,125 @@ class S3Storage extends AbstractStorage
     }
 
     /**
+     * Parallel upload for multiple files.
+     * Uses CommandPool for small files (< 32MB) and sequential uploads for large files.
+     */
+    public function uploadMany(array $files): array
+    {
+        $smallFiles = [];
+        $largeFiles = [];
+        $results = [];
+
+        // 1. Separate files by size
+        foreach ($files as $file) {
+            $source = $file['source'];
+            $target = $file['target'];
+
+            // Initialize result
+            $results[$target] = [
+                'success' => false,
+                'url'     => null,
+                'error'   => null,
+            ];
+
+            if (!is_readable($source)) {
+                $results[$target]['error'] = "File not readable: $source";
+                continue;
+            }
+
+            $size = @filesize($source);
+            if ($size !== false && $size >= 32 * 1024 * 1024) {
+                $largeFiles[] = $file;
+            } else {
+                $smallFiles[] = $file;
+            }
+        }
+
+        // 2. Process large files sequentially (they might need multipart)
+        if (!empty($largeFiles)) {
+            foreach ($largeFiles as $file) {
+                try {
+                    $url = $this->upload($file['source'], $file['target'], $file['options'] ?? []);
+                    $results[$file['target']] = [
+                        'success' => true,
+                        'url'     => $url,
+                        'error'   => null,
+                    ];
+                } catch (\Throwable $e) {
+                    $results[$file['target']]['error'] = $e->getMessage();
+                }
+            }
+        }
+
+        // 3. Process small files in parallel using CommandPool
+        if (!empty($smallFiles)) {
+            // Use a generator to yield commands lazily, preventing file handle exhaustion
+            $commandGenerator = function () use ($smallFiles) {
+                foreach ($smallFiles as $idx => $file) {
+                    $source  = $file['source'];
+                    $target  = $file['target'];
+                    $options = $file['options'] ?? [];
+
+                    $acl = $options['acl'] ?? $this->defaultAcl;
+                    $contentType = $options['content_type'] ?? null;
+
+                    $params = [
+                        'Bucket' => $this->bucket,
+                        'Key'    => ltrim($target, '/'),
+                        'Body'   => fopen($source, 'r'),
+                        'ACL'    => $acl,
+                    ];
+
+                    if ($contentType) {
+                        $params['ContentType'] = $contentType;
+                    }
+
+                    yield $idx => $this->s3->getCommand('PutObject', $params);
+                }
+            };
+
+            try {
+                $pool = new CommandPool($this->s3, $commandGenerator(), [
+                    'concurrency' => 25,
+                    'fulfilled' => function ($result, $iteratorId) use (&$results, $smallFiles) {
+                        $file = $smallFiles[$iteratorId];
+                        $target = $file['target'];
+                        $options = $file['options'] ?? [];
+
+                        // Success
+                        $results[$target] = [
+                            'success' => true,
+                            'url'     => $this->getUrl($target, $options),
+                            'error'   => null,
+                        ];
+                    },
+                    'rejected' => function ($reason, $iteratorId) use (&$results, $smallFiles) {
+                        $file = $smallFiles[$iteratorId];
+                        $target = $file['target'];
+                        $error = ($reason instanceof \Exception) ? $reason->getMessage() : 'Unknown error';
+                        $results[$target]['error'] = $error;
+                    },
+                ]);
+
+                $promise = $pool->promise();
+                $promise->wait();
+
+            } catch (\Throwable $e) {
+                Logger::log('error', 'storage', 'S3 uploadMany pool failed: ' . $e->getMessage());
+                // Mark remaining as failed
+                foreach ($smallFiles as $idx => $file) {
+                    $target = $file['target'];
+                    if (!$results[$target]['success'] && empty($results[$target]['error'])) {
+                        $results[$target]['error'] = 'Batch upload pool failure';
+                    }
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    /**
      * Store raw contents. (Helper not in interface, but useful for internal logic if needed, keeping it just in case or removing if unused. I'll keep it as helper).
      */
     public function putContents(string $contents, string $target, array $options = []): void
