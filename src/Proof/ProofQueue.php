@@ -196,12 +196,23 @@ class ProofQueue
      *
      * @deprecated Use add() with project/image ID instead.
      */
-    public static function enqueue(string $originalPath, string $proofPath): void
+    public static function enqueue(string $originalPath, string $proofPath, ?int $projectId = null, ?int $imageId = null): void
     {
-        // We cannot easily map paths to IDs without a query.
-        // For now, this just uses the legacy array format in the option
-        // because the new table requires IDs.
-        // Ideally, callers are updated to pass IDs.
+        // 1. If IDs are provided, use optimized path immediately
+        if ($projectId > 0 && $imageId > 0) {
+            self::add($projectId, $imageId);
+            return;
+        }
+
+        // 2. Try to resolve IDs from original path
+        $resolved = self::resolveIdsFromPaths([$originalPath]);
+        if (isset($resolved[$originalPath])) {
+            $ids = $resolved[$originalPath];
+            self::add($ids['project_id'], $ids['image_id']);
+            return;
+        }
+
+        // 3. Fallback to legacy queue
         self::addToLegacyQueueBatch([
             [
                 'original_path' => $originalPath,

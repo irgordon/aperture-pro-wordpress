@@ -50,6 +50,12 @@ if (!function_exists('get_transient')) {
     }
 }
 
+if (!function_exists('set_transient')) {
+    function set_transient($transient, $value, $expiration = 0) {
+        return true;
+    }
+}
+
 class MockWPDB_Repro {
     public $prefix = 'wp_';
     public $last_error = '';
