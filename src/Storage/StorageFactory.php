@@ -14,6 +14,21 @@ use AperturePro\Helpers\Logger;
 class StorageFactory
 {
     /**
+     * Cache for storage driver instances.
+     * @var array<string, StorageInterface>
+     */
+    private static $instances = [];
+
+    /**
+     * Reset the storage factory cache.
+     * Useful for testing to prevent state pollution.
+     */
+    public static function reset(): void
+    {
+        self::$instances = [];
+    }
+
+    /**
      * Create a storage driver instance.
      *
      * @param string|null $driver
@@ -32,23 +47,39 @@ class StorageFactory
      */
     public static function create(?string $driver = null): StorageInterface
     {
-        $config = Config::all();
-        $driver = $driver ?: ($config['storage']['driver'] ?? 'local');
+        // Optimization: Check cache immediately if driver name is known
+        if ($driver && isset(self::$instances[$driver])) {
+            return self::$instances[$driver];
+        }
 
-        switch ($driver) {
+        $config = Config::all();
+        $resolvedDriver = $driver ?: ($config['storage']['driver'] ?? 'local');
+
+        // Check cache again with resolved driver name
+        if (isset(self::$instances[$resolvedDriver])) {
+            return self::$instances[$resolvedDriver];
+        }
+
+        switch ($resolvedDriver) {
             case 'cloudinary':
-                return self::createCloudinary($config);
+                self::$instances[$resolvedDriver] = self::createCloudinary($config);
+                break;
 
             case 'imagekit':
-                return self::createImageKit($config);
+                self::$instances[$resolvedDriver] = self::createImageKit($config);
+                break;
 
             case 's3':
-                return self::createS3($config);
+                self::$instances[$resolvedDriver] = self::createS3($config);
+                break;
 
             case 'local':
             default:
-                return self::createLocal($config);
+                self::$instances[$resolvedDriver] = self::createLocal($config);
+                break;
         }
+
+        return self::$instances[$resolvedDriver];
     }
 
     protected static function createLocal(array $config): StorageInterface
