@@ -925,7 +925,19 @@ class ProofService
         // Prefer Imagick if available.
         if (extension_loaded('imagick')) {
             try {
-                $img = new \Imagick($localOriginal);
+                // OPTIMIZATION: Use pingImage + jpeg:size hint to avoid loading full resolution into RAM.
+                // This lets libjpeg downscale during decode, significantly reducing memory usage.
+                $img = new \Imagick();
+                $img->pingImage($localOriginal);
+
+                // Only apply hint for JPEG formats where libjpeg supports it.
+                $format = strtoupper($img->getImageFormat());
+                if ($format === 'JPEG' || $format === 'JPG') {
+                    // Set size hint slightly larger than target to ensure quality
+                    $img->setOption('jpeg:size', ($maxSize) . 'x' . ($maxSize));
+                }
+
+                $img->readImage($localOriginal);
                 $img->setImageFormat('jpeg');
 
                 // Resize to max dimension.
