@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.02] – Proof Batch Download Logging Optimization**
+
+### **Performance**
+- **Proofs:** Optimized `ProofService::downloadBatchToTemp` to aggregate failure logs during batch downloads.
+- **Performance:** Eliminates N+1 database inserts (logging) when batch items fail to download (e.g., due to storage errors).
+- **Benchmark:** Validated performance improvement: Database inserts reduced from 100 to 1 in failure scenarios.
+
 ## **[1.1.01] – Client Proof Logging Optimization**
 
 ### **Performance**

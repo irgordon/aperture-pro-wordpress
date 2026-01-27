@@ -431,6 +431,7 @@ class ProofService
     {
         $results = []; // key => temp_path
         $httpUrls = []; // key => url
+        $failedItems = []; // optimization: batch log failures
 
         foreach ($paths as $key => $remotePath) {
             // 1. Local Storage Optimization
@@ -449,9 +450,16 @@ class ProofService
             try {
                 $httpUrls[$key] = $storage->getUrl($remotePath, ['signed' => true, 'expires' => 600]);
             } catch (\Throwable $e) {
-                Logger::log('error', 'proofs', 'Failed to get URL for batch item', ['path' => $remotePath]);
+                $failedItems[] = $remotePath;
                 continue;
             }
+        }
+
+        if (!empty($failedItems)) {
+            Logger::log('error', 'proofs', 'Failed to get URLs for batch items', [
+                'count' => count($failedItems),
+                'paths' => array_slice($failedItems, 0, 20) // Log first 20 only
+            ]);
         }
 
         if (empty($httpUrls)) {
