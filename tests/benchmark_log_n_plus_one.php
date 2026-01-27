@@ -66,9 +66,15 @@ namespace {
     class MockWPDB {
         public $prefix = 'wp_';
         public $insert_count = 0;
+        public $query_count = 0;
 
         public function insert($table, $data, $format) {
             $this->insert_count++;
+            return 1;
+        }
+
+        public function query($query) {
+            $this->query_count++;
             return 1;
         }
 
@@ -118,6 +124,7 @@ namespace AperturePro\Config {
 
 namespace {
     use AperturePro\REST\ClientProofController;
+    use AperturePro\Helpers\Logger;
 
     // Subclass controller to inject images
     class TestClientProofController extends ClientProofController {
@@ -144,26 +151,28 @@ namespace {
     // Reset counter
     global $wpdb;
     $wpdb->insert_count = 0;
+    $wpdb->query_count = 0;
 
     $start = microtime(true);
-    // BaseController::respond_error uses Logger, but we are testing list_proofs which logs errors in the loop.
-    // However, list_proofs calls get_project_images which we mocked.
-    // It calls StorageFactory::create.
-    // It calls ProofService::getProofUrls (mocked to return []).
-    // Then it loops.
     $response = $controller->list_proofs($request);
+
+    // Explicit flush for benchmark
+    Logger::flush();
+
     $end = microtime(true);
 
     $duration = $end - $start;
-    $queries = $wpdb->insert_count;
+    $interactions = $wpdb->insert_count + $wpdb->query_count;
 
     echo "Processed 500 images.\n";
     echo "Time: " . number_format($duration, 4) . "s\n";
-    echo "DB Inserts (Logger calls): " . $queries . "\n";
+    echo "DB Inserts (Legacy): " . $wpdb->insert_count . "\n";
+    echo "DB Queries (Batch): " . $wpdb->query_count . "\n";
+    echo "Total DB Interactions: " . $interactions . "\n";
 
-    if ($queries >= 500) {
-        echo "BASELINE CONFIRMED: N+1 issue present.\n";
+    if ($interactions < 50) {
+        echo "SUCCESS: N+1 issue resolved (Interactions: $interactions).\n";
     } else {
-        echo "WARNING: N+1 issue NOT reproduced (Queries: $queries).\n";
+        echo "WARNING: N+1 issue MIGHT still be present (Interactions: $interactions).\n";
     }
 }
