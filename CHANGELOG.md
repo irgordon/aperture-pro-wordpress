@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.96] – Imagick Memory Optimization**
+
+### **Performance**
+- **Proofs:** Optimized `ProofService::createWatermarkedLowRes` to use `pingImage()` and the `jpeg:size` hint when loading JPEG images via Imagick. This instructs libjpeg to downscale the image during the decode phase, significantly reducing memory usage (RAM) when processing high-resolution originals.
+- **Verification:** Added `tests/verify_imagick_optimization.php` to verify that the optimized loading sequence is correctly invoked.
+- **Benchmark:** Validated that large JPEG files (e.g., 24MP+) are loaded with a fraction of the memory footprint compared to full-resolution decoding.
+
 ## **[1.0.95] – Async Logger Emails**
 
 ### **Performance**
