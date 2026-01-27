@@ -650,7 +650,6 @@
         this.bind();
         this.initProofButtons();
         this.initDownloadFlow();
-        this.initUploadControls();
         this.refreshPaymentState();
         this.cacheProofImages();
       });
@@ -883,7 +882,8 @@
       if (!confirmed) return;
 
       const galleryEl = document.querySelector('.ap-proofs');
-      const galleryId = galleryEl ? galleryEl.datasetGalleryId || null : null;
+      const galleryId = galleryEl ? (galleryEl.dataset.galleryId || galleryEl.getAttribute('data-gallery-id')) : null;
+
       if (!galleryId) {
         Modal.alert('Gallery not found.');
         return;
@@ -892,7 +892,24 @@
       try {
         await fetchJson(url, { method: 'POST' });
         await Modal.alert('Proofs approved. Thank you.');
-        window.location.reload();
+
+        // Update UI state without reload
+        const btn = document.getElementById('ap-approve-proofs');
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = 'Approved';
+          btn.classList.add('ap-btn-disabled');
+        }
+
+        // Update header status if visible
+        const statusEl = document.querySelector('.ap-project-status strong');
+        if (statusEl) {
+          statusEl.textContent = 'Approved';
+        }
+
+        // Disable checkboxes
+        const checkboxes = document.querySelectorAll('.ap-select-checkbox');
+        checkboxes.forEach((cb) => (cb.disabled = true));
       } catch (e) {
         Modal.alert('Failed to approve proofs. Please try again.');
       }
