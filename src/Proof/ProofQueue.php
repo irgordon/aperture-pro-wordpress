@@ -234,34 +234,47 @@ class ProofQueue
 
     /**
      * Fetch a batch of items to process.
+     * Can return a mix of DB items and Legacy items if table exists but migration is partial.
      *
      * @param int $limit
-     * @return array Array of objects {id, project_id, image_id, ...}
+     * @return array Array of objects {type: 'db'|'legacy', ...item_data}
      */
     public static function fetchBatch(int $limit = 10): array
     {
+        $results = [];
+
+        // 1. Fetch from DB Table (Primary)
         if (self::tableExists()) {
             global $wpdb;
             $table = $wpdb->prefix . self::TABLE_NAME;
 
             // FIFO: Oldest first, excluding max retries
-            return $wpdb->get_results($wpdb->prepare(
+            $dbItems = $wpdb->get_results($wpdb->prepare(
                 "SELECT * FROM {$table} WHERE attempts < 3 ORDER BY created_at ASC LIMIT %d",
                 $limit
             ));
+
+            foreach ($dbItems as $item) {
+                $item->type = 'db';
+                $results[] = $item;
+            }
         }
 
-        // Fallback: Read from option and convert to object-like structure
-        $queue = get_option(self::QUEUE_OPTION, []);
-        if (!is_array($queue)) return [];
+        // 2. Backfill with Legacy Queue if we haven't hit the limit
+        // This ensures we drain the legacy queue even if DB queue is empty/partial.
+        if (count($results) < $limit) {
+            $queue = get_option(self::QUEUE_OPTION, []);
+            if (is_array($queue) && !empty($queue)) {
+                $needed = $limit - count($results);
+                $slice  = array_slice($queue, 0, $needed, true); // preserve keys
 
-        $slice = array_slice($queue, 0, $limit);
-        $results = [];
-        foreach ($slice as $k => $item) {
-            // Legacy items use paths, not IDs.
-            // We return them as-is, but wrapped as objects for consistency if possible?
-            // Actually, processQueue needs to handle both types.
-            $results[] = (object) $item;
+                foreach ($slice as $key => $item) {
+                    $obj = (object) $item;
+                    $obj->type = 'legacy';
+                    $obj->legacy_key = $key; // needed for removal/update
+                    $results[] = $obj;
+                }
+            }
         }
 
         return $results;
@@ -301,13 +314,19 @@ class ProofQueue
         set_transient(self::QUEUE_LOCK, 1, 60); // 1 min lock
 
         try {
-            // 1. Process DB Queue
+            // 1. Attempt Migration if Table Exists
             if (self::tableExists()) {
-                self::processDbQueue();
+                self::migrateLegacyQueue();
             }
 
-            // 2. Process Legacy Queue (Drain it)
-            self::processLegacyQueue();
+            // 2. Fetch Mixed Batch
+            // This pulls from DB table first, then fills remaining slot with legacy items.
+            $batch = self::fetchBatch(self::MAX_PER_RUN);
+
+            // 3. Process Unified Batch
+            if (!empty($batch)) {
+                self::processUnifiedBatch($batch);
+            }
 
         } catch (\Throwable $e) {
             Logger::log('error', 'proof_queue', 'Exception in processQueue', ['error' => $e->getMessage()]);
@@ -317,11 +336,12 @@ class ProofQueue
     }
 
     /**
-     * Process batch from DB table.
+     * Process a unified batch containing potential mix of DB and Legacy items.
+     *
+     * @param array $batch Items from fetchBatch()
      */
-    protected static function processDbQueue(): void
+    protected static function processUnifiedBatch(array $batch): void
     {
-        $batch = self::fetchBatch(self::MAX_PER_RUN);
         if (empty($batch)) {
             return;
         }
@@ -329,78 +349,147 @@ class ProofQueue
         try {
             $storage = StorageFactory::create();
         } catch (\Throwable $e) {
-            // Abort if storage is broken
             return;
         }
 
-        // We need to resolve IDs to Paths for ProofService
-        // Batch query to ap_images + ap_galleries?
-        // Actually, ProofService::getProofPath takes a path.
-        // We need 'original_path' from ap_images.
-
-        $imageIds = array_map(fn($item) => $item->image_id, $batch);
-        $imageMap = self::getOriginalPaths($imageIds);
-
-        $toGenerate = [];
-        $queueIdsToRemove = [];
-        $failedQueueIds = [];
+        // 1. Separate items by type
+        $dbItems = [];
+        $legacyItems = [];
+        $imageIdsToResolve = [];
 
         foreach ($batch as $item) {
-            $imageId = $item->image_id;
+            if (isset($item->type) && $item->type === 'legacy') {
+                $legacyItems[] = $item;
+            } else {
+                // Default to DB type
+                $dbItems[] = $item;
+                $imageIdsToResolve[] = $item->image_id;
+            }
+        }
 
+        // 2. Resolve Paths for DB Items
+        $imageMap = self::getOriginalPaths($imageIdsToResolve);
+
+        // 3. Prepare Generation List
+        // Structure: ['original_path' => ..., 'proof_path' => ..., '_meta' => item_object]
+        $toGenerate = [];
+        $dbIdsToRemove = []; // Orphans
+
+        // Process DB Items
+        foreach ($dbItems as $item) {
+            $imageId = $item->image_id;
             if (!isset($imageMap[$imageId])) {
-                // Orphaned queue item? Image deleted? Remove it.
-                $queueIdsToRemove[] = $item->id;
+                // Orphaned
+                $dbIdsToRemove[] = $item->id;
                 continue;
             }
-
             $originalPath = $imageMap[$imageId];
-            $proofPath    = ProofService::getProofPathForOriginal($originalPath); // Helper needed
+            $proofPath    = ProofService::getProofPathForOriginal($originalPath);
 
             $toGenerate[] = [
-                'queue_id'      => $item->id,
-                'image_id'      => $imageId,
                 'original_path' => $originalPath,
                 'proof_path'    => $proofPath,
+                '_meta'         => $item
             ];
+        }
+
+        // Process Legacy Items (paths are usually embedded)
+        // Track keys to remove if invalid
+        $legacyKeysInvalid = [];
+
+        foreach ($legacyItems as $item) {
+            $originalPath = $item->original_path ?? null;
+            $proofPath    = $item->proof_path ?? null;
+
+            if ($originalPath) {
+                if (!$proofPath) {
+                    $proofPath = ProofService::getProofPathForOriginal($originalPath);
+                }
+                $toGenerate[] = [
+                    'original_path' => $originalPath,
+                    'proof_path'    => $proofPath,
+                    '_meta'         => $item
+                ];
+            } else {
+                // Invalid legacy item? Mark for removal
+                if (isset($item->legacy_key)) {
+                    $legacyKeysInvalid[] = $item->legacy_key;
+                }
+            }
         }
 
         if (empty($toGenerate)) {
-            // All orphans?
-            if (!empty($queueIdsToRemove)) {
-                self::removeBatch($queueIdsToRemove);
+            if (!empty($dbIdsToRemove)) {
+                self::removeBatch($dbIdsToRemove);
+            }
+            if (!empty($legacyKeysInvalid)) {
+                self::updateLegacyQueue($legacyKeysInvalid, []);
             }
             return;
         }
 
-        // Call Generation Service
-        // Map to format expected by generateBatch
-        $genItems = [];
-        foreach ($toGenerate as $t) {
-            $genItems[] = [
+        // 4. Execute Batch Generation
+        $genPayload = array_map(function ($t) {
+            return [
                 'original_path' => $t['original_path'],
                 'proof_path'    => $t['proof_path']
             ];
-        }
+        }, $toGenerate);
 
-        $results = ProofService::generateBatch($genItems, $storage);
+        $results = ProofService::generateBatch($genPayload, $storage);
 
-        // Correlate results back to queue IDs
+        // 5. Process Results
+        $dbIdsSuccess = [];
+        $dbIdsFail    = [];
+        $legacyKeysSuccess = [];
+        $legacyKeysFail    = []; // To increment attempts
         $successfulImageIds = [];
 
         $generatedProofs = [];
 
         foreach ($toGenerate as $t) {
             $proofPath = $t['proof_path'];
-            $qid       = $t['queue_id'];
+            $meta      = $t['_meta'];
+            $success   = !empty($results[$proofPath]);
 
-            if (!empty($results[$proofPath])) {
-                $queueIdsToRemove[] = $qid;
-                $successfulImageIds[] = $t['image_id'];
+            if ($success) {
                 $generatedProofs[] = $proofPath;
+                if ($meta->type === 'legacy') {
+                    $legacyKeysSuccess[] = $meta->legacy_key;
+                    // If legacy item has IDs, we can mark DB optimization too
+                    if (isset($meta->image_id) && $meta->image_id > 0) {
+                        $successfulImageIds[] = $meta->image_id;
+                    }
+                } else {
+                    $dbIdsSuccess[] = $meta->id;
+                    $successfulImageIds[] = $meta->image_id;
+                }
             } else {
-                $failedQueueIds[] = $qid;
+                if ($meta->type === 'legacy') {
+                    $legacyKeysFail[] = $meta->legacy_key;
+                } else {
+                    $dbIdsFail[] = $meta->id;
+                }
             }
+        }
+
+        // 6. Apply Updates
+
+        // DB Success
+        $dbIdsToRemove = array_merge($dbIdsToRemove, $dbIdsSuccess);
+        self::removeBatch($dbIdsToRemove);
+        self::markProofsAsExisting($successfulImageIds);
+
+        // DB Failure
+        if (!empty($dbIdsFail)) {
+            self::incrementAttempts($dbIdsFail);
+            self::cleanupMaxRetries($dbIdsFail);
+        }
+
+        // Legacy Updates
+        $legacyKeysToRemove = array_merge($legacyKeysSuccess, $legacyKeysInvalid);
+        if (!empty($legacyKeysToRemove) || !empty($legacyKeysFail)) {
+            self::updateLegacyQueue($legacyKeysToRemove, $legacyKeysFail);
         }
 
         if (!empty($generatedProofs)) {
@@ -410,95 +499,52 @@ class ProofQueue
             ]);
         }
 
-        // Cleanup success
-        self::removeBatch($queueIdsToRemove);
-        self::markProofsAsExisting($successfulImageIds);
-
-        // Handle failure (increment attempts)
-        if (!empty($failedQueueIds)) {
-            self::incrementAttempts($failedQueueIds);
-
-            // Cleanup items that have exceeded max retries to keep table clean
-            self::cleanupMaxRetries($failedQueueIds);
-        }
-
-        // Reschedule if we did work (might be more)
-        self::scheduleCronIfNeeded();
-    }
-
-    /**
-     * Process items from legacy option queue.
-     */
-    protected static function processLegacyQueue(): void
-    {
-        $queue = get_option(self::QUEUE_OPTION, []);
-        if (!is_array($queue) || empty($queue)) {
-            return;
-        }
-
-        // 1. Attempt Migration to DB Table (In-Memory)
-        if (self::tableExists()) {
-            list($moved, $queue) = self::doMigration($queue);
-        }
-
-        if (empty($queue)) {
-            update_option(self::QUEUE_OPTION, [], false);
-            return;
-        }
-
-        $batch = array_splice($queue, 0, self::MAX_PER_RUN);
-        $remaining = $queue; // Start with what's left after taking batch
-
-        try {
-            $storage = StorageFactory::create();
-            $results = ProofService::generateBatch($batch, $storage);
-
-            foreach ($batch as $key => $item) {
-                $proofPath = $item['proof_path'] ?? '';
-                if (empty($results[$proofPath])) {
-                    // Failed? Retry logic (legacy)
-                    $item['attempts'] = ($item['attempts'] ?? 0) + 1;
-                    if ($item['attempts'] < 3) {
-                        if (is_string($key)) {
-                            $remaining[$key] = $item;
-                        } else {
-                            $p = $item['project_id'] ?? 0;
-                            $i = $item['image_id'] ?? 0;
-                            if ($p && $i) {
-                                $remaining["{$p}:{$i}"] = $item;
-                            } else {
-                                $remaining[] = $item;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (\Throwable $e) {
-            // Put back batch on error
-            foreach ($batch as $key => $item) {
-                $item['attempts'] = ($item['attempts'] ?? 0) + 1;
-                if ($item['attempts'] < 3) {
-                    if (is_string($key)) {
-                        $remaining[$key] = $item;
-                    } else {
-                        $p = $item['project_id'] ?? 0;
-                        $i = $item['image_id'] ?? 0;
-                        if ($p && $i) {
-                            $remaining["{$p}:{$i}"] = $item;
-                        } else {
-                            $remaining[] = $item;
-                        }
-                    }
-                }
-            }
-        }
-
-        update_option(self::QUEUE_OPTION, $remaining, false);
-
-        if (!empty($remaining)) {
+        // 7. Reschedule if batch was full (likely more items)
+        if (count($batch) >= self::MAX_PER_RUN) {
             self::scheduleCronIfNeeded();
         }
     }
+
+    /**
+     * Update legacy queue option (remove success, increment failure).
+     */
+    protected static function updateLegacyQueue(array $removeKeys, array $failKeys): void
+    {
+        $queue = get_option(self::QUEUE_OPTION, []);
+        if (empty($queue) || !is_array($queue)) {
+            return;
+        }
+
+        $changed = false;
+        $removeMap = array_flip($removeKeys);
+        $failMap   = array_flip($failKeys);
+
+        foreach ($queue as $key => &$item) {
+            // Check removal
+            if (isset($removeMap[$key])) {
+                unset($queue[$key]);
+                $changed = true;
+                continue;
+            }
+
+            // Check failure increment
+            if (isset($failMap[$key])) {
+                $item['attempts'] = ($item['attempts'] ?? 0) + 1;
+                $changed = true;
+                // Check max retries
+                if ($item['attempts'] >= 3) {
+                    unset($queue[$key]);
+                }
+            }
+        }
+
+        if ($changed) {
+            // Re-index if array became associative and we want list?
+            // Actually our legacy format supports keys.
+            update_option(self::QUEUE_OPTION, $queue, false);
+        }
+    }
+
 
     /**
      * Helper to get original paths from image IDs.

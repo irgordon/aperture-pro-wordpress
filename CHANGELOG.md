@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.00] – Unified Proof Queue Processing**
+
+### **Performance**
+- **Proof Queue:** Optimized `ProofQueue::processQueue` to handle both legacy (option-based) and new (DB-based) queue items in a single unified batch.
+- **Efficiency:** Removed the separate `processLegacyQueue` loop, eliminating the need to wait for the legacy queue to drain before processing new items.
+- **Robustness:** Added invalid item detection to `processUnifiedBatch` to ensure that malformed legacy items are automatically pruned from the queue, preventing infinite processing loops.
+- **Verification:** Validated with `tests/repro_process_mixed.php` that mixed queues are processed in a single pass (1 batch generation call instead of 2).
+
 ## **[1.0.99] – Client Portal Approval UX**
 
 ### **UX**
