@@ -87,8 +87,10 @@ namespace {
     $end = microtime(true);
     $duration = $end - $start;
 
+    global $mock_curl_runs;
+
     echo "Time taken: " . number_format($duration, 4) . "s\n";
-    echo "This includes ~" . AperturePro\Proof\curl_multi_exec('mh', $dummy) . " iterations (simulated).\n"; // Just checking
+    echo "This includes ~" . $mock_curl_runs . " iterations (simulated).\n"; // Just checking
 
     // If usleep(5000) is called in each iteration (roughly), we expect ~40 * 5ms = 200ms delay.
     // (mock_curl_runs goes up to 50)
