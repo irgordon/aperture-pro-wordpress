@@ -1,6 +1,6 @@
 <?php
 /**
- * Reproduction/Verification Test for ProofQueue::enqueueBatch Refactor
+ * Regression Test for ProofQueue::enqueueBatch Refactor
  * Usage: php tests/repro_proof_queue_refactor.php
  */
 
@@ -118,7 +118,7 @@ use AperturePro\Proof\ProofQueue;
 
 // --- Test Execution ---
 
-echo "Starting ProofQueue Refactor Test...\n";
+echo "Starting ProofQueue Refactor Regression Test...\n";
 
 // 1. Setup Test Data
 $items = [
@@ -157,23 +157,37 @@ echo "DB Inserts Count:   " . count($dbInserts) . "\n";
 $legacyKeys = array_map(function($i) { return $i['original_path'] ?? 'unknown'; }, $legacyQueue);
 echo "Legacy Items: " . implode(', ', $legacyKeys) . "\n";
 
-// Expectation BEFORE FIX:
-// - All 3 items in legacy queue (count 3).
-// - 0 DB inserts.
+// Assertions
+$errors = [];
 
-// Expectation AFTER FIX:
-// - 1 item in legacy queue (image3).
-// - 1 DB insert (batch insert for image1 and image2).
-
-if (count($legacyQueue) === 3 && count($dbInserts) === 0) {
-    echo "STATUS: CURRENT BEHAVIOR (Legacy fallback for all items).\n";
-} elseif (count($legacyQueue) === 1 && count($dbInserts) > 0) {
-    echo "STATUS: FIXED BEHAVIOR (IDs resolved and pushed to DB).\n";
-    if (strpos($dbInserts[0] ?? '', '101') !== false && strpos($dbInserts[0] ?? '', '102') !== false) {
-        echo " - Verified correct IDs in INSERT query.\n";
-    } else {
-        echo " - WARNING: IDs missing from INSERT query.\n";
-    }
-} else {
-    echo "STATUS: UNEXPECTED STATE.\n";
+// Assertion 1: Legacy queue should only contain the item that couldn't be resolved (image3)
+if (count($legacyQueue) !== 1) {
+    $errors[] = "Expected legacy queue count to be 1, got " . count($legacyQueue);
 }
+
+$legacyItem = reset($legacyQueue);
+if (!isset($legacyItem['original_path']) || $legacyItem['original_path'] !== 'path/to/image3.jpg') {
+    $errors[] = "Expected legacy item to be 'path/to/image3.jpg', got " . ($legacyItem['original_path'] ?? 'unknown');
+}
+
+// Assertion 2: DB queue should have received the resolved items (image1, image2)
+if (count($dbInserts) === 0) {
+    $errors[] = "Expected at least one DB INSERT query, got 0";
+} else {
+    // Check the content of the insert query
+    $insertQuery = reset($dbInserts);
+    if (strpos($insertQuery, '101') === false || strpos($insertQuery, '102') === false) {
+        $errors[] = "DB INSERT query does not contain expected IDs (101, 102). Query: $insertQuery";
+    }
+}
+
+if (!empty($errors)) {
+    echo "FAIL: Regression test failed.\n";
+    foreach ($errors as $error) {
+        echo " - $error\n";
+    }
+    exit(1);
+}
+
+echo "PASS: All assertions met. ID resolution and routing works as expected.\n";
+exit(0);
