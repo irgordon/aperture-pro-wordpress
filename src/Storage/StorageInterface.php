@@ -29,6 +29,14 @@ interface StorageInterface
     public function upload(string $source, string $target, array $options = []): string;
 
     /**
+     * Store multiple files at once.
+     *
+     * @param array $files Array of ['source' => ..., 'target' => ..., 'options' => ...]
+     * @return array Keyed by target, value is result array ['success' => bool, 'url' => string|null, 'error' => string|null]
+     */
+    public function uploadMany(array $files): array;
+
+    /**
      * Delete a file from storage.
      *
      * @param string $target Relative path/key in the storage backend.

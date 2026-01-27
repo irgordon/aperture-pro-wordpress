@@ -115,4 +115,33 @@ abstract class AbstractStorage implements StorageInterface
      * @return array<string,string>
      */
     abstract protected function signManyInternal(array $paths): array;
+
+    /**
+     * Default implementation of uploadMany (sequential).
+     */
+    public function uploadMany(array $files): array
+    {
+        $results = [];
+        foreach ($files as $file) {
+            $source  = $file['source'];
+            $target  = $file['target'];
+            $options = $file['options'] ?? [];
+
+            try {
+                $url = $this->upload($source, $target, $options);
+                $results[$target] = [
+                    'success' => true,
+                    'url'     => $url,
+                    'error'   => null,
+                ];
+            } catch (\Throwable $e) {
+                $results[$target] = [
+                    'success' => false,
+                    'url'     => null,
+                    'error'   => $e->getMessage(),
+                ];
+            }
+        }
+        return $results;
+    }
 }
