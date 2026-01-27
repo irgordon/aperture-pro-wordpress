@@ -354,7 +354,10 @@ class ProofService
         // 2. Batch Download (Parallel)
         $tempFiles = self::downloadBatchToTemp($downloadMap, $storage);
 
-        // 3. Process & Upload
+        // 3. Process Locally (Create Proofs)
+        $filesToUpload = [];
+        $tempProofs = [];
+
         foreach ($items as $key => $item) {
             $proofPath = $item['proof_path'];
             $tempOriginal = $tempFiles[$key] ?? null;
@@ -365,12 +368,46 @@ class ProofService
                 continue;
             }
 
-            // Process
-            $success = self::processAndUpload($tempOriginal, $proofPath, $storage);
-            $results[$proofPath] = $success;
+            // Generate Proof (CPU intensive)
+            $tmpProof = self::createWatermarkedLowRes($tempOriginal);
 
-            // Cleanup temp original
+            // Cleanup temp original immediately to free space
             @unlink($tempOriginal);
+
+            if ($tmpProof && is_readable($tmpProof)) {
+                $tempProofs[$proofPath] = $tmpProof;
+                $filesToUpload[] = [
+                    'source'  => $tmpProof,
+                    'target'  => $proofPath,
+                    'options' => [
+                        'content_type' => 'image/jpeg',
+                        'acl'          => 'private',
+                    ],
+                ];
+            } else {
+                Logger::log('error', 'proofs', 'Failed to create watermarked proof', [
+                    'proofPath' => $proofPath,
+                ]);
+                $results[$proofPath] = false;
+            }
+        }
+
+        // 4. Batch Upload (Network I/O)
+        if (!empty($filesToUpload)) {
+            // Use parallel upload if supported by driver
+            $uploadResults = $storage->uploadMany($filesToUpload);
+
+            foreach ($uploadResults as $target => $res) {
+                $results[$target] = $res['success'];
+                if (!$res['success']) {
+                    Logger::log('error', 'proofs', 'Batch upload failed: ' . ($res['error'] ?? 'Unknown'), ['target' => $target]);
+                }
+            }
+        }
+
+        // 5. Cleanup Temp Proofs
+        foreach ($tempProofs as $tmp) {
+            @unlink($tmp);
         }
 
         return $results;
