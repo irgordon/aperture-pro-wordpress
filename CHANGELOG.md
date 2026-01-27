@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.13] – Proof Queue Regression Test**
+
+### **Tests**
+- **Proof Queue:** Converted `tests/repro_proof_queue_refactor.php` from a reproduction script into a formal regression test.
+- **Verification:** The test now strictly asserts that `ProofQueue::enqueueBatch` correctly resolves IDs from paths and routes items to the optimized database queue, preventing future regressions of the legacy queue fallback logic.
+
 ## **[1.1.12] – Logger Buffering Optimization**
 
 ### **Performance**
