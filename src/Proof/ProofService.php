@@ -670,6 +670,8 @@ class ProofService
                     'fp' => fopen($tmp, 'w+'),
                     'req' => "GET $path HTTP/1.1\r\nHost: {$parts['host']}\r\nConnection: close\r\nUser-Agent: AperturePro\r\n\r\n",
                     'state' => 'connecting',
+                    'url' => $url,
+                    'redirects' => 0,
                     // Optimization: Use stream for header buffering instead of string concatenation
                     'header_stream' => fopen('php://temp', 'w+'),
                     'tail' => '',
@@ -767,14 +769,102 @@ class ProofService
                                 if ($headerEndPos !== false) {
                                     $headerStr = substr($fullBuffer, 0, $headerEndPos);
 
-                                    // Detect Chunked Transfer or Redirects (3xx)
-                                    if (stripos($headerStr, 'Transfer-Encoding: chunked') !== false ||
-                                        preg_match('|^HTTP/[\d\.]+ 3\d\d|', $headerStr)) {
+                                    // Detect Chunked Transfer
+                                    if (stripos($headerStr, 'Transfer-Encoding: chunked') !== false) {
                                         // Complex response, abort and fallback
                                         fclose($socket);
                                         unset($sockets[$key]);
                                         @unlink($files[$key]['path']);
                                         fclose($files[$key]['header_stream']);
+                                        unset($files[$key]);
+                                        continue;
+                                    }
+
+                                    // Handle Redirects (3xx)
+                                    if (preg_match('|^HTTP/[\d\.]+ (3\d\d)|', $headerStr, $mStatus)) {
+                                        // Parse Location
+                                        if (preg_match('/^Location:\s*(.+)$/mi', $headerStr, $mLoc)) {
+                                            $newUrl = trim($mLoc[1]);
+                                            $redirectCount = $files[$key]['redirects'] ?? 0;
+
+                                            if ($redirectCount < 5) {
+                                                // Close current connection
+                                                fclose($socket);
+                                                unset($sockets[$key]);
+                                                fclose($files[$key]['header_stream']);
+
+                                                // Reset file for reuse
+                                                ftruncate($files[$key]['fp'], 0);
+                                                rewind($files[$key]['fp']);
+
+                                                // Resolve URL (Simple resolution)
+                                                if (strpos($newUrl, 'http') !== 0) {
+                                                    // Relative URL
+                                                    $currentUrl = $files[$key]['url'];
+                                                    $parts = parse_url($currentUrl);
+                                                    $scheme = $parts['scheme'] ?? 'http';
+                                                    $host = $parts['host'] ?? '';
+                                                    if (strpos($newUrl, '/') === 0) {
+                                                        $newUrl = "$scheme://$host$newUrl";
+                                                    } else {
+                                                        $pathDir = isset($parts['path']) ? dirname($parts['path']) : '/';
+                                                        if ($pathDir === '/') $pathDir = '';
+                                                        $newUrl = "$scheme://$host$pathDir/$newUrl";
+                                                    }
+                                                }
+
+                                                // Connect to new URL
+                                                $parts = parse_url($newUrl);
+                                                $host = $parts['host'] ?? '';
+                                                $port = $parts['port'] ?? 80;
+                                                $scheme = $parts['scheme'] ?? 'http';
+                                                $path = ($parts['path'] ?? '/') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+
+                                                if ($scheme === 'https') {
+                                                    $host = 'ssl://' . $host;
+                                                    if ($port === 80) $port = 443;
+                                                }
+
+                                                $errno = 0; $errstr = '';
+                                                // Create context
+                                                $ctx = stream_context_create();
+                                                $fp = @stream_socket_client(
+                                                    "$host:$port",
+                                                    $errno,
+                                                    $errstr,
+                                                    30,
+                                                    STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT,
+                                                    $ctx
+                                                );
+
+                                                if ($fp) {
+                                                    stream_set_blocking($fp, false);
+                                                    $sockets[$key] = $fp;
+
+                                                    // Update file state
+                                                    $files[$key]['req'] = "GET $path HTTP/1.1\r\nHost: {$parts['host']}\r\nConnection: close\r\nUser-Agent: AperturePro\r\n\r\n";
+                                                    $files[$key]['state'] = 'connecting';
+                                                    $files[$key]['url'] = $newUrl;
+                                                    $files[$key]['redirects'] = $redirectCount + 1;
+                                                    $files[$key]['header_stream'] = fopen('php://temp', 'w+');
+                                                    $files[$key]['tail'] = '';
+
+                                                    // Clear previous state
+                                                    unset($files[$key]['headers_done']);
+                                                    unset($files[$key]['status']);
+
+                                                    continue; // Continue loop with new socket
+                                                } else {
+                                                    Logger::log('error', 'proofs', 'Stream redirect connect failed', ['url' => $newUrl, 'error' => $errstr]);
+                                                }
+                                            }
+                                        }
+
+                                        // If we get here, redirect failed or limit reached
+                                        fclose($socket);
+                                        unset($sockets[$key]);
+                                        @unlink($files[$key]['path']);
+                                        if (isset($files[$key]['header_stream'])) fclose($files[$key]['header_stream']);
                                         unset($files[$key]);
                                         continue;
                                     }
