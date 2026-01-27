@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.0.99] – Client Portal Approval UX**
+
+### **UX**
+- **Client Portal:** Optimized the proof approval flow in `assets/js/client-portal.js`. Removed the full page reload after successful approval.
+- **Client Portal:** The UI now updates in-place: the "Approve" button is disabled and labeled "Approved", the project status header is updated, and selection checkboxes are disabled immediately.
+- **Performance:** Eliminates the unnecessary server round-trip and asset re-fetching associated with a full page reload, providing a smoother experience for the client.
+
 ## **[1.0.98] – Logger Cleanup**
 
 ### **Cleanup**
