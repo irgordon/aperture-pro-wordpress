@@ -150,6 +150,8 @@ class ClientProofController extends BaseController
         }
 
         $proofs = [];
+        $failed_ids = [];
+
         foreach ($images as $key => $image) {
             $proofUrl = $proofUrls[$key] ?? null;
 
@@ -162,11 +164,16 @@ class ClientProofController extends BaseController
                     'comments'    => $image['comments'] ?? [],
                 ];
             } else {
-                Logger::log('error', 'client_proofs', 'Failed to generate proof URL', [
-                    'project_id' => $project_id,
-                    'image_id'   => $image['id'] ?? null,
-                ]);
+                $failed_ids[] = $image['id'] ?? 'unknown';
             }
+        }
+
+        if (!empty($failed_ids)) {
+            Logger::log('error', 'client_proofs', 'Failed to generate proof URLs for batch', [
+                'project_id' => $project_id,
+                'count'      => count($failed_ids),
+                'failed_ids' => $failed_ids,
+            ]);
         }
 
         return new WP_REST_Response([

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.01] – Client Proof Logging Optimization**
+
+### **Performance**
+- **Client Proofs:** Optimized error logging in `ClientProofController::list_proofs` to aggregate failed proof URL generations into a single log entry per request.
+- **Performance:** Eliminates N+1 database inserts when proof generation fails for a batch of images (e.g., 500 images -> 1 log entry vs 500 log entries).
+- **Benchmark:** Validated performance improvement: Database inserts reduced from 500 to 1 in failure scenarios.
+
 ## **[1.1.00] – Unified Proof Queue Processing**
 
 ### **Performance**
