@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.09] – Admin Logs JSON Optimization**
+
+### **Performance**
+- **Admin:** Optimized `AdminController::get_logs` to stream JSON responses directly, bypassing `json_decode`/`json_encode` cycles for the `meta` column.
+- **Performance:** This optimization reduces memory usage by ~8x and execution time by ~90% for large log datasets by injecting the raw JSON stored in the database directly into the response stream.
+- **Benchmark:** Validated performance improvement: 0.051s -> 0.002s for 2000 log rows.
+
 ## **[1.1.08] – Proof Generation Batch Upload Optimization**
 
 ### **Performance**
