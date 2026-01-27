@@ -677,10 +677,53 @@ class ProofQueue
     }
 
     /**
+     * Attempt to recover the queue table if it is missing.
+     * This is called by fallback methods to see if we can self-heal.
+     *
+     * @return bool True if recovery was attempted and table now exists.
+     */
+    protected static function attemptTableRecovery(): bool
+    {
+        // 1. If we already know table exists, no need to recover.
+        // If we are here, it means add() failed. If tableExists() is true,
+        // the failure was likely due to something else (e.g. DB error),
+        // so we should NOT retry to avoid infinite recursion.
+        if (self::tableExists()) {
+            return false;
+        }
+
+        // 2. Check for Schema class
+        if (!class_exists('\AperturePro\Installer\Schema')) {
+            return false;
+        }
+
+        // 3. Attempt Recovery (Create Tables)
+        try {
+            \AperturePro\Installer\Schema::activate();
+
+            // 4. Invalidate Cache
+            self::$tableExistsCache = null;
+            delete_transient('ap_proof_queue_table_exists');
+
+            // 5. Re-check
+            return self::tableExists();
+        } catch (\Throwable $e) {
+            // Logger::log('error', 'proof_queue', 'Recovery failed', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
      * Fallback: Add to legacy option queue.
      */
     protected static function addToLegacyQueue(int $projectId, int $imageId): bool
     {
+        // Optimization: If table is missing, try to create it and retry.
+        // This avoids dumping 1000s of items into wp_options if someone dropped the table.
+        if (self::attemptTableRecovery()) {
+            return self::add($projectId, $imageId);
+        }
+
         $migrated = false;
         $queue = self::getLegacyQueueAsMap($migrated);
         $key = "{$projectId}:{$imageId}";
@@ -711,6 +754,11 @@ class ProofQueue
      */
     protected static function addToLegacyQueueBatchIds(array $items): bool
     {
+        // Optimization: Try to recover table before falling back
+        if (self::attemptTableRecovery()) {
+            return self::addBatch($items);
+        }
+
         $migrated = false;
         $queue = self::getLegacyQueueAsMap($migrated);
         $changed = false;
