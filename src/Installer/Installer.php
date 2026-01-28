@@ -23,7 +23,7 @@ class Installer
     {
         try {
             // 1. Create all custom tables
-            Schema::createTables();
+            Schema::activate();
 
             // 2. Initialize configuration on first run
             self::initializeConfig();
