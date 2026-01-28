@@ -25,6 +25,7 @@ if (!defined('ABSPATH')) {
 }
 
 use AperturePro\Installer\Schema;
+use AperturePro\Installer\Activator;
 
 /* -------------------------------------------------------------------------
  * Constants
@@ -54,7 +55,7 @@ if (file_exists($composerAutoload)) {
  * ------------------------------------------------------------------------- */
 
 register_activation_hook(__FILE__, function (): void {
-    Schema::activate();
+    Activator::activate();
 
     if (!current_user_can('manage_options')) {
         return;
