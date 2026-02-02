@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.20] – Imagick Memory & Stream Cleanup**
+
+### **Performance**
+- **Proof Service:** Optimized `ProofService::createWatermarkedLowRes` to correctly manage `Imagick` resources. Implemented a strict `ping` -> `clear` -> `setOption` -> `read` sequence to ensure the `jpeg:size` hint is applied effectively, significantly reducing memory usage for large JPEGs.
+- **Proof Service:** Added a `finally` block to ensure `Imagick` objects are destroyed and resources freed even if an exception occurs, preventing memory leaks during batch processing.
+- **Proof Service:** Optimized `ProofService::performParallelDownloadsStreams` to enforce strict resource cleanup (closing sockets, deleting partial files) when handling HTTP redirects, ensuring robust operation in long-running processes.
+
 ## **[1.1.19] – Batch Proof Generation Benchmark**
 
 ### **Performance**
