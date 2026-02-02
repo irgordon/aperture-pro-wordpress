@@ -36,6 +36,7 @@ class EmailService
 
     protected static $_tableExists = null;
     protected static ?bool $adminQueueTableExistsCache = null;
+    protected static array $dedupeCache = [];
 
     protected static function tableExists(): bool
     {
@@ -446,12 +447,18 @@ class EmailService
                 // We use dedupe_hash index for O(1) lookup
                 $dedupeHash = md5($level . '|' . $context . '|' . $message);
 
+                // Optimization: Check in-memory cache first to avoid repetitive DB hits within the same request
+                if (isset(self::$dedupeCache[$dedupeHash])) {
+                    return;
+                }
+
                 $duplicateId = $wpdb->get_var($wpdb->prepare(
                     "SELECT id FROM $table WHERE dedupe_hash = %s AND processed = 0 LIMIT 1",
                     $dedupeHash
                 ));
 
                 if ($duplicateId) {
+                    self::$dedupeCache[$dedupeHash] = true;
                     return;
                 }
 
@@ -472,6 +479,8 @@ class EmailService
                 );
 
                 if ($inserted !== false) {
+                    self::$dedupeCache[$dedupeHash] = true;
+
                     // Ensure cron is scheduled
                     if (!wp_next_scheduled(self::CRON_HOOK)) {
                         wp_schedule_event(time() + 60, 'minute', self::CRON_HOOK);
