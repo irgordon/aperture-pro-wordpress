@@ -34,6 +34,9 @@ if (!function_exists('wp_mkdir_p')) {
         return mkdir($path, 0755, true);
     }
 }
+if (!function_exists('get_transient')) {
+    function get_transient($name) { return false; }
+}
 if (!function_exists('set_transient')) {
     function set_transient($name, $val, $exp) { return true; } // Mock success
 }
@@ -96,13 +99,18 @@ if (!function_exists('wp_next_scheduled')) {
 if (!function_exists('wp_schedule_event')) {
     function wp_schedule_event($timestamp, $recurrence, $hook, $args = []) { return true; }
 }
+if (!function_exists('wp_schedule_single_event')) {
+    function wp_schedule_single_event($timestamp, $hook, $args = []) { return true; }
+}
 
 
 // Mock wpdb
 class MockWPDB {
     public $prefix = 'wp_';
-    public function prepare($query, $args) { return $query; }
+    public function prepare($query, ...$args) { return $query; }
     public function query($query) { return true; }
+    public function get_results($query) { return []; }
+    public function get_col($query) { return []; }
 }
 global $wpdb;
 $wpdb = new MockWPDB();
