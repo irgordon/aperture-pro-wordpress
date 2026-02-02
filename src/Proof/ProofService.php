@@ -190,6 +190,10 @@ class ProofService
      *  - Avoid calling this method in a loop. Use getProofUrls() for batch operations
      *    to significantly reduce network latency (N+1 problem).
      *
+     * OPTIMIZATION:
+     *  - This method now wraps getProofUrls() to benefit from request-level caching.
+     *  - Repeated calls for the same image in the same request will hit the cache.
+     *
      * @param array                 $image    Image record (expects at least 'path' or 'filename')
      * @param StorageInterface|null $storage  Optional pre-instantiated storage driver
      *
@@ -199,32 +203,18 @@ class ProofService
      */
     public static function getProofUrlForImage(array $image, ?StorageInterface $storage = null): string
     {
-        // Use provided storage if available; otherwise instantiate lazily.
-        if ($storage === null) {
-            $storage = StorageFactory::create();
-        }
-
-        // Derive proof path (e.g., add suffix or folder).
+        // Validate input for backward compatibility
         $originalPath = $image['path'] ?? $image['filename'] ?? null;
         if (!$originalPath) {
             throw new \RuntimeException('Missing image path for proof generation.');
         }
 
-        $proofPath = self::getProofPath($originalPath);
+        // Delegate to batch method to utilize caching and optimization logic
+        // We wrap the single image in an array, preserving its keys if necessary,
+        // but getProofUrls expects a list of images.
+        $batchResult = self::getProofUrls([0 => $image], $storage);
 
-        // Ensure proof exists; if missing, queue and return placeholder.
-        if (!$storage->exists($proofPath)) {
-            $projectId = isset($image['project_id']) && is_numeric($image['project_id']) ? (int) $image['project_id'] : null;
-            $imageId   = isset($image['id']) && is_numeric($image['id']) ? (int) $image['id'] : null;
-            ProofQueue::enqueue($originalPath, $proofPath, $projectId, $imageId);
-            return self::getPlaceholderUrl();
-        }
-
-        // Use signed URL or public URL depending on your policy.
-        // For proof copies, short-lived signed URLs are recommended.
-        $url = $storage->getUrl($proofPath, ['signed' => true, 'expires' => 3600]);
-
-        return $url;
+        return $batchResult[0] ?? self::getPlaceholderUrl();
     }
 
     /**
