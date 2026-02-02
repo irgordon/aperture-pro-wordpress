@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.24] – Admin Notification Optimization**
+
+### **Performance**
+- **Email Service:** Optimized `EmailService::enqueueAdminNotification` to implement in-memory deduplication caching for the duration of the request.
+- **Why:** This prevents redundant database checks and inserts when multiple errors are logged in the same request (e.g., inside a loop), addressing the N+1 query issue for admin notifications.
+- **Benchmark:** Validated performance improvement: Database queries reduced from N (50) to 1 for 50 repeated notifications in a single request.
+
 ## **[1.1.23] – Email Queue Table Existence Caching**
 
 ### **Performance**
