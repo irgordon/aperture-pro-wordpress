@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.22] – Storage Key Index Optimization**
+
+### **Performance**
+- **Database:** Added an index to `ap_images.storage_key_original` to optimize lookups by path.
+- **Why:** `ProofQueue::resolveIdsFromPaths` and other path-based lookups were performing full table scans.
+- **Benchmark:** Validated performance improvement: ~125x speedup (0.03s -> 0.0002s) for path resolution queries on 100k rows.
+- **Schema:** Bumped `DB_VERSION` to `1.0.17`.
+
 ## **[1.1.21] – Proof Service Request Caching**
 
 ### **Performance**
