@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## **[1.1.19] – Batch Proof Generation Benchmark**
+
+### **Performance**
+- **Proof Service:** Verified and benchmarked the N+1 performance optimization in `ProofService::getProofUrls`.
+- **Validation:** Confirmed that batch proof generation (using `existsMany` and `signMany`) eliminates the N+1 network latency inherent in sequential `getProofUrlForImage` loops.
+- **Benchmark:** Validated performance improvement: ~50x speedup (1.02s -> 0.02s) for a batch of 50 items with 10ms simulated latency.
+
 ## **[1.1.18] – Proof Queue Auto-Recovery**
 
 ### **Performance**

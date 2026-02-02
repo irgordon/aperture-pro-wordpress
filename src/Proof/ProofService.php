@@ -186,6 +186,10 @@ class ProofService
     /**
      * Get a proof URL for a given image record.
      *
+     * PERFORMANCE WARNING:
+     *  - Avoid calling this method in a loop. Use getProofUrls() for batch operations
+     *    to significantly reduce network latency (N+1 problem).
+     *
      * @param array                 $image    Image record (expects at least 'path' or 'filename')
      * @param StorageInterface|null $storage  Optional pre-instantiated storage driver
      *
