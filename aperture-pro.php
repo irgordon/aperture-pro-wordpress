@@ -11,7 +11,7 @@
  * Plugin Name:       Aperture Pro
  * Plugin URI:        https://iangordon.app/aperturepro
  * Description:       Aperture Pro is a modern, production‑grade WordPress plugin built for photography studios that need a secure, elegant, and scalable way to deliver proofs, collect approvals, and provide final downloads.
- * Version:           1.0.86
+ * Version:           1.1.20
  * Author:            Ian Gordon
  * Author URI:        https://iangordon.app/
  * License:           MIT License
@@ -31,7 +31,7 @@ use AperturePro\Installer\Activator;
  * Constants
  * ------------------------------------------------------------------------- */
 
-define('APERTURE_PRO_VERSION', '1.0.86');
+define('APERTURE_PRO_VERSION', '1.1.20');
 define('APERTURE_PRO_FILE', __FILE__);
 define('APERTURE_PRO_DIR', plugin_dir_path(__FILE__));
 define('APERTURE_PRO_URL', plugin_dir_url(__FILE__));

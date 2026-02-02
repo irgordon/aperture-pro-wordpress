@@ -874,16 +874,27 @@ class ProofService
                                                     continue; // Continue loop with new socket
                                                 } else {
                                                     Logger::log('error', 'proofs', 'Stream redirect connect failed', ['url' => $newUrl, 'error' => $errstr]);
+                                                    // Cleanup dead file since we won't be writing to it anymore
+                                                    @unlink($files[$key]['path']);
+                                                    unset($files[$key]);
                                                 }
                                             }
                                         }
 
                                         // If we get here, redirect failed or limit reached
-                                        fclose($socket);
+                                        // Ensure socket is closed if it wasn't already (though logic above handles closure before redirect attempt)
+                                        if (is_resource($socket)) {
+                                            fclose($socket);
+                                        }
                                         unset($sockets[$key]);
-                                        @unlink($files[$key]['path']);
-                                        if (isset($files[$key]['header_stream'])) fclose($files[$key]['header_stream']);
-                                        unset($files[$key]);
+
+                                        if (isset($files[$key])) {
+                                            @unlink($files[$key]['path']);
+                                            if (isset($files[$key]['header_stream']) && is_resource($files[$key]['header_stream'])) {
+                                                fclose($files[$key]['header_stream']);
+                                            }
+                                            unset($files[$key]);
+                                        }
                                         continue;
                                     }
 
@@ -1040,14 +1051,18 @@ class ProofService
 
         // Prefer Imagick if available.
         if (extension_loaded('imagick')) {
+            $img = new \Imagick();
             try {
                 // OPTIMIZATION: Use pingImage + jpeg:size hint to avoid loading full resolution into RAM.
                 // This lets libjpeg downscale during decode, significantly reducing memory usage.
-                $img = new \Imagick();
                 $img->pingImage($localOriginal);
 
                 // Only apply hint for JPEG formats where libjpeg supports it.
                 $format = strtoupper($img->getImageFormat());
+
+                // IMPORTANT: Clear ping data to ensure clean state for readImage
+                $img->clear();
+
                 if ($format === 'JPEG' || $format === 'JPG') {
                     // Set size hint slightly larger than target to ensure quality
                     $img->setOption('jpeg:size', ($maxSize) . 'x' . ($maxSize));
@@ -1065,19 +1080,25 @@ class ProofService
                 $draw->setFontSize(36);
                 $draw->setGravity(\Imagick::GRAVITY_SOUTHEAST);
                 $img->annotateImage($draw, 10, 10, 0, 'PROOF COPY - NOT FINAL QUALITY');
+                $draw->clear();
+                $draw->destroy();
 
                 // Lower quality intentionally (configurable, clamped).
                 $img->setImageCompressionQuality($quality);
 
                 $img->writeImage($tmp);
-                $img->clear();
-                $img->destroy();
 
                 return $tmp;
             } catch (\Throwable $e) {
                 Logger::log('error', 'proofs', 'Imagick proof generation failed: ' . $e->getMessage());
                 @unlink($tmp);
                 return null;
+            } finally {
+                // Ensure resources are always freed, even on exception
+                if (isset($img) && $img instanceof \Imagick) {
+                    $img->clear();
+                    $img->destroy();
+                }
             }
         }
 

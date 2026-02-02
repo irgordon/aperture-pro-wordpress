@@ -25,8 +25,7 @@ namespace {
     }
 }
 
-namespace AperturePro\Proof {
-    // Mock other dependencies
+namespace AperturePro\Helpers {
     if (!class_exists('AperturePro\Helpers\Logger')) {
         class Logger {
             public static function log($level, $category, $message, $context = []) {
@@ -34,6 +33,9 @@ namespace AperturePro\Proof {
             }
         }
     }
+}
+
+namespace AperturePro\Proof {
 
     if (!class_exists('AperturePro\Config\Config')) {
         class Config {
@@ -131,6 +133,8 @@ namespace {
             public function setFillColor($color) {}
             public function setFontSize($size) {}
             public function setGravity($gravity) {}
+            public function clear() { return true; }
+            public function destroy() { return true; }
         }
     }
 }
