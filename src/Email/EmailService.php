@@ -43,11 +43,21 @@ class EmailService
             return self::$_tableExists;
         }
 
+        $cacheKey = 'ap_email_queue_table_exists';
+        $cached = get_transient($cacheKey);
+        if ($cached !== false) {
+            self::$_tableExists = (bool) $cached;
+            return self::$_tableExists;
+        }
+
         global $wpdb;
         $table = $wpdb->prefix . 'ap_email_queue';
         // Check using a cheap query that hits information_schema or just check if table name is correct?
         // SHOW TABLES LIKE is robust.
         self::$_tableExists = ($wpdb->get_var("SHOW TABLES LIKE '$table'") === $table);
+
+        set_transient($cacheKey, (int) self::$_tableExists, 24 * 3600);
+
         return self::$_tableExists;
     }
 
@@ -57,10 +67,20 @@ class EmailService
             return self::$adminQueueTableExistsCache;
         }
 
+        $cacheKey = 'ap_admin_queue_table_exists';
+        $cached = get_transient($cacheKey);
+        if ($cached !== false) {
+            self::$adminQueueTableExistsCache = (bool) $cached;
+            return self::$adminQueueTableExistsCache;
+        }
+
         global $wpdb;
         $table = $wpdb->prefix . 'ap_admin_notifications';
         $exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $wpdb->esc_like($table))) === $table;
         self::$adminQueueTableExistsCache = (bool) $exists;
+
+        set_transient($cacheKey, (int) self::$adminQueueTableExistsCache, 24 * 3600);
+
         return self::$adminQueueTableExistsCache;
     }
 
