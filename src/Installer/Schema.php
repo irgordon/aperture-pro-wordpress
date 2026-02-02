@@ -11,7 +11,7 @@ final class Schema
      * Bump this when schema changes.
      * Keep it aligned with your release tags when schema changes ship.
      */
-    public const DB_VERSION = '1.0.16';
+    public const DB_VERSION = '1.0.17';
 
     /**
      * Run on activation and on every request (cheap) to ensure schema is current.
@@ -68,6 +68,10 @@ final class Schema
 
         if (version_compare($from, '1.0.16', '<')) {
             self::migrate_to_1016_admin_queue_optimization();
+        }
+
+        if (version_compare($from, '1.0.17', '<')) {
+            self::migrate_to_1017_add_storage_key_index();
         }
 
         // Ensure FK constraints last (optional and safe).
@@ -164,7 +168,8 @@ final class Schema
                 updated_at DATETIME NOT NULL,
                 PRIMARY KEY (id),
                 KEY gallery_id (gallery_id),
-                KEY sort_order (sort_order)
+                KEY sort_order (sort_order),
+                KEY storage_key_original (storage_key_original)
             ) {$charset};
         ";
         dbDelta($images);
@@ -344,6 +349,15 @@ final class Schema
             SET dedupe_hash = MD5(CONCAT(level, '|', context, '|', message))
             WHERE dedupe_hash IS NULL
         ");
+    }
+
+    private static function migrate_to_1017_add_storage_key_index(): void
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'ap_images';
+
+        // Index for performance optimization in ProofQueue lookups
+        self::add_index_if_missing($table, 'storage_key_original', 'storage_key_original');
     }
 
     private static function create_payment_tables(): void
