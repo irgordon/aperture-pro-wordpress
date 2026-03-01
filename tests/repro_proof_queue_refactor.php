@@ -146,8 +146,8 @@ $items = [
 $mock_options[ProofQueue::QUEUE_OPTION] = [];
 $mock_queries = [];
 
-// 2. Run enqueueBatch
-ProofQueue::enqueueBatch($items);
+// 2. Run addBatch
+ProofQueue::addBatch($items);
 
 // 3. Verification
 
