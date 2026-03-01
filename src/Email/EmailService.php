@@ -38,6 +38,13 @@ class EmailService
     protected static ?bool $adminQueueTableExistsCache = null;
     protected static array $dedupeCache = [];
 
+    // Legacy fallback buffers and flags
+    protected static array $legacyTransactionalBuffer = [];
+    protected static array $legacyAdminBuffer = [];
+    protected static bool $shutdownRegistered = false;
+    protected static ?bool $transactionalCronScheduled = null;
+    protected static ?bool $adminCronScheduled = null;
+
     protected static function tableExists(): bool
     {
         if (self::$_tableExists !== null) {
@@ -154,10 +161,8 @@ class EmailService
         global $wpdb;
 
         if (!self::tableExists()) {
-            // Fallback to legacy behavior if table missing
-            $queue = get_option(self::TRANSACTIONAL_QUEUE_OPTION, []);
-            if (!is_array($queue)) $queue = [];
-            $queue[] = [
+            // Fallback to legacy behavior if table missing (buffered)
+            self::$legacyTransactionalBuffer[] = [
                 'to' => $to,
                 'subject' => $subject,
                 'body' => $body,
@@ -165,7 +170,11 @@ class EmailService
                 'retries' => 0,
                 'created_at' => current_time('mysql'),
             ];
-            update_option(self::TRANSACTIONAL_QUEUE_OPTION, $queue, false);
+
+            if (!self::$shutdownRegistered) {
+                register_shutdown_function([self::class, 'flushLegacyQueues']);
+                self::$shutdownRegistered = true;
+            }
         } else {
             // Optimized storage
             $table = $wpdb->prefix . 'ap_email_queue';
@@ -183,8 +192,13 @@ class EmailService
             );
         }
 
-        if (!wp_next_scheduled(self::TRANSACTIONAL_CRON_HOOK)) {
+        if (self::$transactionalCronScheduled === null) {
+            self::$transactionalCronScheduled = (bool) wp_next_scheduled(self::TRANSACTIONAL_CRON_HOOK);
+        }
+
+        if (!self::$transactionalCronScheduled) {
             wp_schedule_single_event(time(), self::TRANSACTIONAL_CRON_HOOK);
+            self::$transactionalCronScheduled = true;
         }
     }
 
@@ -197,6 +211,9 @@ class EmailService
             return;
         }
         set_transient(self::TRANSACTIONAL_QUEUE_LOCK, 1, 60);
+
+        // Ensure any buffered legacy items are flushed before processing
+        self::flushLegacyQueues();
 
         if (!self::tableExists()) {
             self::processOptionQueue();
@@ -503,73 +520,79 @@ class EmailService
             }
         }
 
-        // Option fallback (legacy): keep behavior but avoid repeated linear scans
-        $optionKey = self::ADMIN_QUEUE_OPTION;
-        $queue = get_option($optionKey, []);
-        if (!is_array($queue)) {
-            $queue = [];
-        }
-
-        // Convert to keyed map for O(1) dedupe if not already keyed
-        $isKeyed = false;
-        if (!empty($queue) && is_array($queue)) {
-            foreach (array_keys($queue) as $k) {
-                if (!is_int($k)) { $isKeyed = true; break; }
-            }
-        }
-
-        $map = [];
-        if ($isKeyed) {
-            $map = $queue;
-        } else {
-            // Migrate numeric list to keyed map
-            foreach ($queue as $item) {
-                $p = $item['level'] ?? null;
-                $c = $item['context'] ?? null;
-                $m = $item['message'] ?? null;
-
-                // Fallback for legacy items that used 'body' instead of 'message'
-                if ($m === null && isset($item['body'])) {
-                    $m = $item['body'];
-                }
-
-                // Use a stable key; here we use hash of level|context|message
-                if ($p !== null && $c !== null && $m !== null) {
-                    $k = md5("{$p}:{$c}:{$m}");
-                    $map[$k] = $item;
-                } else {
-                    // If we can't key it easily, just append with random key or skip?
-                    // We'll just preserve it with a random key to avoid data loss
-                    $map[uniqid('legacy_', true)] = $item;
-                }
-            }
-        }
-
-        // Dedup key for this item
+        // Option fallback (legacy): use buffering
         $dedupeKey = md5("{$level}:{$context}:{$message}");
 
-        if (isset($map[$dedupeKey])) {
-            // Already queued
+        if (isset(self::$legacyAdminBuffer[$dedupeKey])) {
             return;
         }
 
-        $map[$dedupeKey] = [
+        static $legacyAdminMapCache = null;
+        if ($legacyAdminMapCache === null) {
+            $optionKey = self::ADMIN_QUEUE_OPTION;
+            $queue = get_option($optionKey, []);
+            if (!is_array($queue)) {
+                $queue = [];
+            }
+
+            // Convert to keyed map for O(1) dedupe if not already keyed
+            $isKeyed = false;
+            if (!empty($queue) && is_array($queue)) {
+                foreach (array_keys($queue) as $k) {
+                    if (!is_int($k)) {
+                        $isKeyed = true;
+                        break;
+                    }
+                }
+            }
+
+            $legacyAdminMapCache = [];
+            if ($isKeyed) {
+                $legacyAdminMapCache = $queue;
+            } else {
+                // Migrate numeric list to keyed map
+                foreach ($queue as $item) {
+                    $p = $item['level'] ?? null;
+                    $c = $item['context'] ?? null;
+                    $m = $item['message'] ?? $item['body'] ?? null;
+
+                    // Use a stable key
+                    if ($p !== null && $c !== null && $m !== null) {
+                        $k = md5("{$p}:{$c}:{$m}");
+                        $legacyAdminMapCache[$k] = $item;
+                    } else {
+                        $legacyAdminMapCache[uniqid('legacy_', true)] = $item;
+                    }
+                }
+            }
+        }
+
+        if (isset($legacyAdminMapCache[$dedupeKey])) {
+            return;
+        }
+
+        self::$legacyAdminBuffer[$dedupeKey] = [
             'level' => $level,
             'context' => $context,
-            'message' => $message, // Changed from subject/body to message for consistency with DB schema
-            // Also keep legacy fields for backward compatibility if we revert
+            'message' => $message,
             'subject' => sprintf('[Aperture Pro] %s: %s', strtoupper($level), $context),
             'body' => $message . "\n\n" . print_r($meta, true),
             'meta' => $meta,
             'created_at' => current_time('mysql'),
         ];
 
-        // Persist back to option
-        update_option($optionKey, $map, false);
+        if (!self::$shutdownRegistered) {
+            register_shutdown_function([self::class, 'flushLegacyQueues']);
+            self::$shutdownRegistered = true;
+        }
 
-        // Ensure cron is scheduled
-        if (!wp_next_scheduled(self::CRON_HOOK)) {
+        if (self::$adminCronScheduled === null) {
+            self::$adminCronScheduled = (bool) wp_next_scheduled(self::CRON_HOOK);
+        }
+
+        if (!self::$adminCronScheduled) {
             wp_schedule_event(time() + 60, 'minute', self::CRON_HOOK);
+            self::$adminCronScheduled = true;
         }
     }
 
@@ -629,6 +652,9 @@ class EmailService
             return;
         }
         set_transient(self::ADMIN_QUEUE_LOCK, 1, 30);
+
+        // Ensure any buffered legacy items are flushed before processing
+        self::flushLegacyQueues();
 
         // 1. Check for legacy items to migrate
         if (get_option(self::ADMIN_QUEUE_OPTION) !== false) {
@@ -778,6 +804,72 @@ class EmailService
 
         update_option(self::ADMIN_QUEUE_OPTION, $remaining, false);
         update_option('ap_admin_email_last_sent', $lastSent, false);
+    }
+
+    /**
+     * Flush all buffered legacy items to WordPress options.
+     */
+    public static function flushLegacyQueues(): void
+    {
+        // 1. Transactional Emails
+        if (!empty(self::$legacyTransactionalBuffer)) {
+            $items = self::$legacyTransactionalBuffer;
+            self::$legacyTransactionalBuffer = [];
+
+            $queue = get_option(self::TRANSACTIONAL_QUEUE_OPTION, []);
+            if (!is_array($queue)) {
+                $queue = [];
+            }
+
+            $newQueue = array_merge($queue, $items);
+            update_option(self::TRANSACTIONAL_QUEUE_OPTION, $newQueue, false);
+        }
+
+        // 2. Admin Notifications
+        if (!empty(self::$legacyAdminBuffer)) {
+            $items = self::$legacyAdminBuffer;
+            self::$legacyAdminBuffer = [];
+
+            $optionKey = self::ADMIN_QUEUE_OPTION;
+            $queue = get_option($optionKey, []);
+            if (!is_array($queue)) {
+                $queue = [];
+            }
+
+            // Convert to keyed map for O(1) dedupe if not already keyed (copied from enqueueAdminNotification logic)
+            $isKeyed = false;
+            if (!empty($queue) && is_array($queue)) {
+                foreach (array_keys($queue) as $k) {
+                    if (!is_int($k)) { $isKeyed = true; break; }
+                }
+            }
+
+            $map = [];
+            if ($isKeyed) {
+                $map = $queue;
+            } else {
+                foreach ($queue as $item) {
+                    $p = $item['level'] ?? null;
+                    $c = $item['context'] ?? null;
+                    $m = $item['message'] ?? $item['body'] ?? null;
+                    if ($p !== null && $c !== null && $m !== null) {
+                        $k = md5("{$p}:{$c}:{$m}");
+                        $map[$k] = $item;
+                    } else {
+                        $map[uniqid('legacy_', true)] = $item;
+                    }
+                }
+            }
+
+            // Merge buffered items
+            foreach ($items as $key => $item) {
+                if (!isset($map[$key])) {
+                    $map[$key] = $item;
+                }
+            }
+
+            update_option($optionKey, $map, false);
+        }
     }
 
     /**
