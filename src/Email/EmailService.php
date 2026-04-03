@@ -347,22 +347,26 @@ class EmailService
         global $wpdb;
         $table = $wpdb->prefix . 'ap_email_queue';
 
-        // Transactional integrity is ideal, but for now we just insert one by one
-        // and delete option at the end.
-        foreach ($queue as $item) {
-             $wpdb->insert(
-                $table,
-                [
-                    'to_address' => $item['to'],
-                    'subject'    => $item['subject'],
-                    'body'       => $item['body'],
-                    'headers'    => !empty($item['headers']) ? json_encode($item['headers']) : null,
-                    'status'     => 'pending',
-                    'retries'    => $item['retries'] ?? 0,
-                    'created_at' => $item['created_at'] ?? current_time('mysql'),
-                    'updated_at' => current_time('mysql'),
-                ]
-            );
+        $chunks = array_chunk($queue, 100);
+        foreach ($chunks as $chunk) {
+            $values = [];
+            $placeholders = [];
+            foreach ($chunk as $item) {
+                $placeholders[] = "(%s, %s, %s, %s, %s, %d, %s, %s)";
+                $values[] = $item['to'];
+                $values[] = $item['subject'];
+                $values[] = $item['body'];
+                $values[] = !empty($item['headers']) ? json_encode($item['headers']) : null;
+                $values[] = 'pending';
+                $values[] = $item['retries'] ?? 0;
+                $values[] = $item['created_at'] ?? current_time('mysql');
+                $values[] = current_time('mysql');
+            }
+
+            if (!empty($values)) {
+                $query = "INSERT INTO $table (to_address, subject, body, headers, status, retries, created_at, updated_at) VALUES " . implode(', ', $placeholders);
+                $wpdb->query($wpdb->prepare($query, ...$values));
+            }
         }
 
         delete_option(self::TRANSACTIONAL_QUEUE_OPTION);
@@ -613,28 +617,34 @@ class EmailService
         global $wpdb;
         $table = $wpdb->prefix . 'ap_admin_notifications';
 
-        // Check if queue is keyed or list
-        foreach ($queue as $key => $item) {
-            // Basic validation
-            if (!isset($item['level'])) continue;
+        $chunks = array_chunk($queue, 100);
+        foreach ($chunks as $chunk) {
+            $values = [];
+            $placeholders = [];
+            foreach ($chunk as $item) {
+                if (!isset($item['level'])) continue;
 
-            $meta = $item['meta'] ?? [];
-            $message = $item['message'] ?? $item['body'] ?? '';
-            // If body was used (legacy), it contained the message.
-            $context = substr((string)($item['context'] ?? 'general'), 0, 128);
-            $level = substr((string)$item['level'], 0, 16);
-            $messageStr = (string)$message;
-            $hash = md5($level . '|' . $context . '|' . $messageStr);
+                $meta = $item['meta'] ?? [];
+                $message = $item['message'] ?? $item['body'] ?? '';
+                $context = substr((string)($item['context'] ?? 'general'), 0, 128);
+                $level = substr((string)$item['level'], 0, 16);
+                $messageStr = (string)$message;
+                $hash = md5($level . '|' . $context . '|' . $messageStr);
 
-            $wpdb->insert($table, [
-                'level' => $level,
-                'context' => $context,
-                'message' => $messageStr,
-                'meta' => wp_json_encode($meta),
-                'dedupe_hash' => $hash,
-                'created_at' => $item['created_at'] ?? current_time('mysql'),
-                'processed' => 0
-            ]);
+                $placeholders[] = "(%s, %s, %s, %s, %s, %s, %d)";
+                $values[] = $level;
+                $values[] = $context;
+                $values[] = $messageStr;
+                $values[] = wp_json_encode($meta);
+                $values[] = $hash;
+                $values[] = $item['created_at'] ?? current_time('mysql');
+                $values[] = 0;
+            }
+
+            if (!empty($values)) {
+                $query = "INSERT INTO $table (level, context, message, meta, dedupe_hash, created_at, processed) VALUES " . implode(', ', $placeholders);
+                $wpdb->query($wpdb->prepare($query, ...$values));
+            }
         }
 
         delete_option(self::ADMIN_QUEUE_OPTION);
