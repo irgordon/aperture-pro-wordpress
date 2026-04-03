@@ -5,12 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## **[1.1.23] – Email Queue Table Check Optimization**
+## **[1.1.25] – Email Queue Table Check Optimization**
 
 ### **Performance**
 - **Email Service:** Optimized `EmailService::tableExists` and `EmailService::adminQueueTableExists` to use a persistent transient cache (24 hours).
 - **Performance:** Eliminates redundant `SHOW TABLES LIKE ...` database queries on every email queue operation or check.
 - **Benchmark:** Validated performance improvement: ~50x speedup (0.51s -> 0.01s) for 50 iterations in simulated benchmarks.
+## **[1.1.24] – Admin Notification Optimization**
+
+### **Performance**
+- **Email Service:** Optimized `EmailService::enqueueAdminNotification` to implement in-memory deduplication caching for the duration of the request.
+- **Why:** This prevents redundant database checks and inserts when multiple errors are logged in the same request (e.g., inside a loop), addressing the N+1 query issue for admin notifications.
+- **Benchmark:** Validated performance improvement: Database queries reduced from N (50) to 1 for 50 repeated notifications in a single request.
+
+## **[1.1.23] – Email Queue Table Existence Caching**
+
+### **Performance**
+- **Email Service:** Optimized `EmailService::tableExists` and `EmailService::adminQueueTableExists` to use a persistent transient cache (24 hours) for table existence checks.
+- **Why:** This eliminates redundant `SHOW TABLES LIKE ...` database queries on every email queue operation, which is particularly beneficial for high-throughput transactional emails and cron processing loops.
+- **Benchmark:** Validated performance improvement: ~50x speedup (0.51s -> 0.01s) for 50 iterations in simulated benchmarks, reducing per-check overhead from ~10ms (simulated DB latency) to ~0.2ms.
 
 ## **[1.1.22] – Storage Key Index Optimization**
 

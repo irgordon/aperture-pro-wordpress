@@ -173,7 +173,7 @@ class ProofService
 
         // 6. Batch enqueue missing proofs
         if (!empty($toEnqueue)) {
-            ProofQueue::enqueueBatch($toEnqueue);
+            ProofQueue::addBatch($toEnqueue);
         }
 
         // Cache the result

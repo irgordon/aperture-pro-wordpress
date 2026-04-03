@@ -126,39 +126,170 @@ class ZipStreamService
 
         $zip = new ZipStream(self::sanitizeFilename($zipName), $options);
 
-        foreach ($files as $file) {
-            try {
-                // Get signed URL with short expiry
-                $url = $storage->getSignedUrl($file['path'], 300);
+        // 1. Pre-sign URLs in batch to avoid N+1 storage API calls
+        $paths = array_column($files, 'path');
+        $signedUrls = $storage->signMany($paths);
 
-                // Open stream to remote file
-                $stream = @fopen($url, 'rb');
+        // 2. Process files in manageable parallel chunks (e.g., 10 at a time)
+        // This balances speed with local disk usage and memory.
+        $batchSize = apply_filters('aperture_pro_zip_download_batch_size', 10);
+        $chunks = array_chunk($files, $batchSize);
 
-                if ($stream === false) {
-                    Logger::log('warning', 'zip', 'Could not open stream for file', [
-                        'path' => $file['path'],
+        foreach ($chunks as $chunk) {
+            if (connection_aborted()) {
+                break;
+            }
+
+            $urlsToDownload = [];
+            foreach ($chunk as $idx => $file) {
+                $path = $file['path'];
+                $url = $signedUrls[$path] ?? $storage->getUrl($path, ['signed' => true, 'expires' => 300]);
+                // Use index as key to support duplicate paths in the same chunk
+                $urlsToDownload[$idx] = $url;
+            }
+
+            // 3. Download chunk in parallel to temporary storage
+            $tempFiles = self::downloadParallel($urlsToDownload);
+
+            // 4. Stream temporary files into the ZIP
+            foreach ($chunk as $idx => $file) {
+                $path = $file['path'];
+                $tempPath = $tempFiles[$idx] ?? null;
+
+                if (!$tempPath || !file_exists($tempPath)) {
+                    Logger::log('warning', 'zip', 'File could not be downloaded for ZIP', [
+                        'path' => $path,
                         'name' => $file['name'],
                     ]);
                     continue;
                 }
 
-                $zip->addFileFromStream(
-                    self::sanitizeFilename($file['name']),
-                    $stream
-                );
-
-                fclose($stream);
-
-            } catch (\Throwable $e) {
-                Logger::log('error', 'zip', 'Failed to stream file', [
-                    'path' => $file['path'],
-                    'error' => $e->getMessage(),
-                ]);
+                try {
+                    $stream = @fopen($tempPath, 'rb');
+                    if ($stream !== false) {
+                        $zip->addFileFromStream(
+                            self::sanitizeFilename($file['name']),
+                            $stream
+                        );
+                        fclose($stream);
+                    }
+                } catch (\Throwable $e) {
+                    Logger::log('error', 'zip', 'Failed to stream temp file to ZIP', [
+                        'path'  => $path,
+                        'error' => $e->getMessage(),
+                    ]);
+                } finally {
+                    // 5. Immediate cleanup to minimize disk footprint
+                    @unlink($tempPath);
+                }
             }
         }
 
         $zip->finish();
     }
+
+    /**
+     * Download multiple URLs in parallel using curl_multi.
+     *
+     * @param array $urls Map of key => URL
+     * @return array Map of key => localTempPath
+     */
+    protected static function downloadParallel(array $urls): array
+    {
+        if (empty($urls)) {
+            return [];
+        }
+
+        // Use curl_multi if available
+        if (function_exists('curl_multi_init')) {
+            return self::downloadParallelCurl($urls);
+        }
+
+        // Fallback to sequential if curl_multi is not available
+        $results = [];
+        foreach ($urls as $key => $url) {
+            $tmp = wp_tempnam('ap-zip-');
+            $response = wp_remote_get($url, [
+                'timeout'  => 60,
+                'stream'   => true,
+                'filename' => $tmp,
+            ]);
+
+            if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+                $results[$key] = $tmp;
+            } else {
+                @unlink($tmp);
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Parallel download using curl_multi.
+     */
+    protected static function downloadParallelCurl(array $urls): array
+    {
+        $mh = curl_multi_init();
+        $handles = [];
+        $files = []; // key => [path, resource]
+        $results = [];
+
+        foreach ($urls as $key => $url) {
+            $tmp = wp_tempnam('ap-zip-');
+            $fp = @fopen($tmp, 'w+');
+            if (!$fp) {
+                continue;
+            }
+
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 300); // Allow more time for large files
+            curl_setopt($ch, CURLOPT_FILE, $fp);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+
+            curl_multi_add_handle($mh, $ch);
+            $handles[$key] = $ch;
+            $files[$key] = ['path' => $tmp, 'fp' => $fp];
+        }
+
+        $active = null;
+        do {
+            $mrc = curl_multi_exec($mh, $active);
+        } while ($mrc === CURLM_CALL_MULTI_PERFORM);
+
+        while ($active && $mrc === CURLM_OK) {
+            if (curl_multi_select($mh) === -1) {
+                usleep(10000); // 10ms
+            }
+            do {
+                $mrc = curl_multi_exec($mh, $active);
+            } while ($mrc === CURLM_CALL_MULTI_PERFORM);
+        }
+
+        foreach ($handles as $key => $ch) {
+            $info = curl_getinfo($ch);
+            $error = curl_error($ch);
+
+            if (isset($files[$key]['fp']) && is_resource($files[$key]['fp'])) {
+                fclose($files[$key]['fp']);
+            }
+
+            if ($info['http_code'] >= 200 && $info['http_code'] < 300 && empty($error)) {
+                $results[$key] = $files[$key]['path'];
+            } else {
+                @unlink($files[$key]['path']);
+            }
+
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+        }
+
+        curl_multi_close($mh);
+
+        return $results;
+    }
+
 
     /**
      * Sanitize filenames for ZIP entries.

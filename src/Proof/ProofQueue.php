@@ -100,8 +100,10 @@ class ProofQueue
 
     /**
      * Add multiple items to the queue.
+     * Handles both ID-based and path-based items (with resolution).
      *
-     * @param array $items Array of ['project_id' => int, 'image_id' => int]
+     * @param array $items Array of items. Supports ['project_id' => int, 'image_id' => int]
+     *                     or ['original_path' => string, 'proof_path' => string]
      * @return bool
      */
     public static function addBatch(array $items): bool
@@ -110,40 +112,94 @@ class ProofQueue
             return false;
         }
 
-        // 1. Try DB Table (Optimized)
-        if (self::tableExists()) {
-            global $wpdb;
-            $table = $wpdb->prefix . self::TABLE_NAME;
+        $idItems = [];
+        $pathsToResolve = [];
+        $pathToItemMap = []; // Keep track of original items by path for fallback
+        $legacyPathItems = [];
 
-            $values = [];
-            $placeholders = [];
-            $now = current_time('mysql');
+        foreach ($items as $item) {
+            // If caller provided IDs (future-proofing refactor)
+            if (isset($item['project_id'], $item['image_id'])) {
+                $idItems[] = [
+                    'project_id' => (int)$item['project_id'],
+                    'image_id'   => (int)$item['image_id']
+                ];
+            } elseif (isset($item['original_path']) && !empty($item['original_path'])) {
+                $path = $item['original_path'];
+                $pathsToResolve[] = $path;
+                if (!isset($pathToItemMap[$path])) {
+                    $pathToItemMap[$path] = [];
+                }
+                $pathToItemMap[$path][] = $item;
+            } else {
+                // No IDs and no path? Treat as legacy but it's likely invalid
+                $legacyPathItems[] = $item;
+            }
+        }
 
-            foreach ($items as $item) {
-                if (isset($item['project_id'], $item['image_id'])) {
+        // Try to resolve IDs for path-based items
+        if (!empty($pathsToResolve)) {
+            $resolvedMap = self::resolveIdsFromPaths($pathsToResolve);
+            foreach ($pathToItemMap as $path => $mappedItems) {
+                if (isset($resolvedMap[$path])) {
+                    // Resolved successfully
+                    foreach ($mappedItems as $mappedItem) {
+                        $idItems[] = $resolvedMap[$path];
+                    }
+                } else {
+                    // Could not resolve, fallback to legacy path-based queue
+                    foreach ($mappedItems as $mappedItem) {
+                        $legacyPathItems[] = $mappedItem;
+                    }
+                }
+            }
+        }
+
+        $allSuccess = true;
+
+        if (!empty($idItems)) {
+            // 1. Try DB Table (Optimized)
+            if (self::tableExists()) {
+                global $wpdb;
+                $table = $wpdb->prefix . self::TABLE_NAME;
+
+                $values = [];
+                $placeholders = [];
+                $now = current_time('mysql');
+
+                foreach ($idItems as $item) {
                     $placeholders[] = "(%d, %d, %s)";
                     $values[] = $item['project_id'];
                     $values[] = $item['image_id'];
                     $values[] = $now;
                 }
-            }
 
-            if (empty($placeholders)) {
-                return false;
-            }
+                $query = "INSERT IGNORE INTO {$table} (project_id, image_id, created_at) VALUES " . implode(',', $placeholders);
+                $result = $wpdb->query($wpdb->prepare($query, ...$values));
 
-            $query = "INSERT IGNORE INTO {$table} (project_id, image_id, created_at) VALUES " . implode(',', $placeholders);
-            $result = $wpdb->query($wpdb->prepare($query, ...$values));
-
-            if ($result !== false) {
-                self::scheduleCronIfNeeded();
-                return true;
+                if ($result !== false) {
+                    self::scheduleCronIfNeeded();
+                } else {
+                    Logger::log('error', 'proof_queue', 'Failed to batch insert into DB queue', ['error' => $wpdb->last_error]);
+                    // Fallback to legacy ID queue
+                    if (!self::addToLegacyQueueBatchIds($idItems)) {
+                        $allSuccess = false;
+                    }
+                }
+            } else {
+                // Table missing, fallback to legacy ID queue
+                if (!self::addToLegacyQueueBatchIds($idItems)) {
+                    $allSuccess = false;
+                }
             }
-            Logger::log('error', 'proof_queue', 'Failed to batch insert into DB queue', ['error' => $wpdb->last_error]);
         }
 
-        // 2. Fallback to Legacy Option
-        return self::addToLegacyQueueBatchIds($items);
+        // 2. Process remaining path-based items (Legacy)
+        if (!empty($legacyPathItems)) {
+            self::addToLegacyQueueBatch($legacyPathItems);
+        }
+
+        return $allSuccess && (!empty($idItems) || !empty($legacyPathItems));
     }
 
     /**
@@ -188,98 +244,6 @@ class ProofQueue
         }
         $migrated = true;
         return $map;
-    }
-
-    /**
-     * Legacy enqueue method for backward compatibility.
-     * Should be updated to use add() by callers where possible.
-     *
-     * @deprecated Use add() with project/image ID instead.
-     */
-    public static function enqueue(string $originalPath, string $proofPath, ?int $projectId = null, ?int $imageId = null): void
-    {
-        // 1. If IDs are provided, use optimized path immediately
-        if ($projectId > 0 && $imageId > 0) {
-            self::add($projectId, $imageId);
-            return;
-        }
-
-        // 2. Try to resolve IDs from original path
-        $resolved = self::resolveIdsFromPaths([$originalPath]);
-        if (isset($resolved[$originalPath])) {
-            $ids = $resolved[$originalPath];
-            self::add($ids['project_id'], $ids['image_id']);
-            return;
-        }
-
-        // 3. Fallback to legacy queue
-        self::addToLegacyQueueBatch([
-            [
-                'original_path' => $originalPath,
-                'proof_path'    => $proofPath,
-            ]
-        ]);
-    }
-
-    /**
-     * Legacy batch enqueue.
-     *
-     * @deprecated Callers should use add() in a loop or we implement addBatch().
-     */
-    public static function enqueueBatch(array $items): void
-    {
-        // If items have IDs, redirect to optimized add()
-        // If items are just paths (legacy), go to legacy option.
-        $idItems = [];
-        $legacyItems = [];
-        $pathsToResolve = [];
-        $pathToItemMap = []; // Keep track of original items by path for fallback
-
-        foreach ($items as $item) {
-            // If caller provided IDs (future-proofing refactor)
-            if (isset($item['project_id'], $item['image_id'])) {
-                $idItems[] = [
-                    'project_id' => (int)$item['project_id'],
-                    'image_id'   => (int)$item['image_id']
-                ];
-            } elseif (isset($item['original_path']) && !empty($item['original_path'])) {
-                $path = $item['original_path'];
-                $pathsToResolve[] = $path;
-                if (!isset($pathToItemMap[$path])) {
-                    $pathToItemMap[$path] = [];
-                }
-                $pathToItemMap[$path][] = $item;
-            } else {
-                // No IDs and no path? Just legacy fallback (unlikely valid but safe)
-                $legacyItems[] = $item;
-            }
-        }
-
-        // Try to resolve IDs for path-based items
-        if (!empty($pathsToResolve)) {
-            $resolvedMap = self::resolveIdsFromPaths($pathsToResolve);
-            foreach ($pathToItemMap as $path => $mappedItems) {
-                if (isset($resolvedMap[$path])) {
-                    // Resolved successfully
-                    foreach ($mappedItems as $mappedItem) {
-                        $idItems[] = $resolvedMap[$path];
-                    }
-                } else {
-                    // Could not resolve, fallback to legacy
-                    foreach ($mappedItems as $mappedItem) {
-                        $legacyItems[] = $mappedItem;
-                    }
-                }
-            }
-        }
-
-        if (!empty($idItems)) {
-            self::addBatch($idItems);
-        }
-
-        if (!empty($legacyItems)) {
-            self::addToLegacyQueueBatch($legacyItems);
-        }
     }
 
     /**
