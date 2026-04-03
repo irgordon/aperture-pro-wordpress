@@ -93,6 +93,9 @@ class EmailService
         set_transient($cacheKey, (int) $exists, 24 * 3600);
 
         self::$adminQueueTableExistsCache = (bool) $exists;
+
+        set_transient($cacheKey, (int) self::$adminQueueTableExistsCache, 24 * 3600);
+
         return self::$adminQueueTableExistsCache;
     }
 
