@@ -1,52 +1,20 @@
 <?php
 
-namespace AperturePro\Helpers {
-    class Logger {
-        public static function log($level, $context, $message, $data = []) {
-            // No-op for benchmark
-        }
-    }
-}
-
 namespace {
-    // Mock wpdb
-    class wpdb {
-        public $prefix = 'wp_';
-        public $queries = [];
-        public $insert_calls = 0;
+    $mock_options = [];
 
-        public function insert($table, $data) {
-            $this->insert_calls++;
-            // Simulate insert latency
-            usleep(1000); // 1ms per insert
-            return 1;
-        }
-
-        public function query($query) {
-            $this->queries[] = $query;
-            // Simulate query latency
-            usleep(1000);
-            return 1;
-        }
-
-        public function prepare($query, ...$args) {
-            return $query;
-        }
-
-        public function get_var($query) {
-            return null;
-        }
-    }
-
-    global $wpdb;
-    $wpdb = new wpdb();
-
-    // Mock functions
     if (!function_exists('get_option')) {
-        $mock_options = [];
         function get_option($option, $default = false) {
             global $mock_options;
             return $mock_options[$option] ?? $default;
+        }
+    }
+
+    if (!function_exists('update_option')) {
+        function update_option($option, $value, $autoload = null) {
+            global $mock_options;
+            $mock_options[$option] = $value;
+            return true;
         }
     }
 
@@ -58,69 +26,102 @@ namespace {
         }
     }
 
+    if (!function_exists('wp_json_encode')) {
+        function wp_json_encode($data) {
+            return json_encode($data);
+        }
+    }
+
     if (!function_exists('current_time')) {
         function current_time($type, $gmt = 0) {
             return date('Y-m-d H:i:s');
         }
     }
 
+    if (!function_exists('set_transient')) {
+        function set_transient($transient, $value, $expiration = 0) { return true; }
+    }
+
     if (!function_exists('get_transient')) {
         function get_transient($transient) { return false; }
     }
-    if (!function_exists('set_transient')) {
-        function set_transient($t, $v, $e) { return true; }
-    }
-    if (!function_exists('wp_next_scheduled')) {
-        function wp_next_scheduled($h) { return false; }
-    }
-    if (!function_exists('wp_schedule_single_event')) {
-        function wp_schedule_single_event($t, $h) { return true; }
-    }
-    if (!function_exists('register_shutdown_function')) {
-        function register_shutdown_function($f) {}
+
+    class MockWPDB {
+        public $prefix = 'wp_';
+        public $insert_count = 0;
+        public $query_count = 0;
+
+        public function prepare($query, ...$args) {
+            return vsprintf(str_replace('%s', "'%s'", $query), $args);
+        }
+
+        public function insert($table, $data, $format = null) {
+            $this->insert_count++;
+            usleep(500); // 0.5ms latency
+            return 1;
+        }
+
+        public function query($query) {
+            $this->query_count++;
+            usleep(500); // 0.5ms latency
+            return 1;
+        }
+
+        public function esc_like($s) { return $s; }
+
+        public function get_var($query) {
+            if (strpos($query, "SHOW TABLES LIKE") !== false) {
+                return 'wp_ap_email_queue';
+            }
+            return null;
+        }
     }
 
-    // Load EmailService
+    global $wpdb;
+    $wpdb = new MockWPDB();
+}
+
+namespace AperturePro\Helpers {
+    class Logger {
+        public static function log($level, $context, $message, $data = []) {}
+    }
+}
+
+namespace {
     require_once __DIR__ . '/../src/Email/EmailService.php';
-
     use AperturePro\Email\EmailService;
 
-    // Setup legacy queue
-    $num_items = 100;
-    $legacy_queue = [];
-    for ($i = 0; $i < $num_items; $i++) {
-        $legacy_queue[] = [
-            'to' => "user{$i}@example.com",
-            'subject' => "Subject $i",
-            'body' => "Body $i",
-            'headers' => ['X-Custom: ' . $i],
-            'retries' => 0,
-            'created_at' => current_time('mysql')
-        ];
+    function run_migrate_legacy_benchmark($count) {
+        global $wpdb, $mock_options;
+
+        // Setup legacy queue
+        $queue = [];
+        for ($i = 0; $i < $count; $i++) {
+            $queue[] = [
+                'to' => 'test@example.com',
+                'subject' => "Subject $i",
+                'body' => "Body $i",
+                'headers' => [],
+                'retries' => 0,
+                'created_at' => current_time('mysql')
+            ];
+        }
+        $mock_options[EmailService::TRANSACTIONAL_QUEUE_OPTION] = $queue;
+        $wpdb->insert_count = 0;
+        $wpdb->query_count = 0;
+
+        echo "Migrating $count items from Legacy Transactional Queue...\n";
+        $start = microtime(true);
+        EmailService::migrateLegacyQueue();
+        $end = microtime(true);
+
+        echo "Time: " . number_format($end - $start, 4) . "s\n";
+        echo "Insert calls: " . $wpdb->insert_count . "\n";
+        echo "Query calls: " . $wpdb->query_count . "\n";
+        echo "---------------------------------\n";
+        return $end - $start;
     }
 
-    global $mock_options;
-    $mock_options[EmailService::TRANSACTIONAL_QUEUE_OPTION] = $legacy_queue;
-
-    echo "Benchmarking migrateLegacyQueue with $num_items items...\n";
-
-    $start = microtime(true);
-    // migrateLegacyQueue is private, so we need reflection or call it via processTransactionalQueue
-    // but processTransactionalQueue has side effects.
-    // Let's use reflection to test it directly.
-    $class = new ReflectionClass(EmailService::class);
-    $method = $class->getMethod('migrateLegacyQueue');
-    $method->setAccessible(true);
-    $method->invoke(null);
-    $end = microtime(true);
-
-    echo "Time taken: " . number_format($end - $start, 4) . "s\n";
-    echo "wpdb->insert calls: " . $wpdb->insert_calls . "\n";
-    echo "wpdb->query calls: " . count($wpdb->queries) . "\n";
-
-    if (empty($mock_options[EmailService::TRANSACTIONAL_QUEUE_OPTION])) {
-        echo "Queue successfully migrated and cleared.\n";
-    } else {
-        echo "FAILED: Queue not cleared.\n";
-    }
+    run_migrate_legacy_benchmark(100);
+    run_migrate_legacy_benchmark(1000);
 }

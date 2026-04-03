@@ -347,12 +347,10 @@ class EmailService
         global $wpdb;
         $table = $wpdb->prefix . 'ap_email_queue';
 
-        // Optimized batch insert in chunks of 100
         $chunks = array_chunk($queue, 100);
         foreach ($chunks as $chunk) {
             $values = [];
             $placeholders = [];
-            $now = current_time('mysql');
             foreach ($chunk as $item) {
                 $placeholders[] = "(%s, %s, %s, %s, %s, %d, %s, %s)";
                 $values[] = $item['to'];
@@ -361,12 +359,14 @@ class EmailService
                 $values[] = !empty($item['headers']) ? json_encode($item['headers']) : null;
                 $values[] = 'pending';
                 $values[] = $item['retries'] ?? 0;
-                $values[] = $item['created_at'] ?? $now;
-                $values[] = $now;
+                $values[] = $item['created_at'] ?? current_time('mysql');
+                $values[] = current_time('mysql');
             }
 
-            $query = "INSERT INTO $table (to_address, subject, body, headers, status, retries, created_at, updated_at) VALUES " . implode(', ', $placeholders);
-            $wpdb->query($wpdb->prepare($query, $values));
+            if (!empty($values)) {
+                $query = "INSERT INTO $table (to_address, subject, body, headers, status, retries, created_at, updated_at) VALUES " . implode(', ', $placeholders);
+                $wpdb->query($wpdb->prepare($query, ...$values));
+            }
         }
 
         delete_option(self::TRANSACTIONAL_QUEUE_OPTION);
@@ -617,18 +617,15 @@ class EmailService
         global $wpdb;
         $table = $wpdb->prefix . 'ap_admin_notifications';
 
-        // Optimized batch insert in chunks of 100
         $chunks = array_chunk($queue, 100);
         foreach ($chunks as $chunk) {
             $values = [];
             $placeholders = [];
             foreach ($chunk as $item) {
-                // Basic validation
                 if (!isset($item['level'])) continue;
 
                 $meta = $item['meta'] ?? [];
                 $message = $item['message'] ?? $item['body'] ?? '';
-                // If body was used (legacy), it contained the message.
                 $context = substr((string)($item['context'] ?? 'general'), 0, 128);
                 $level = substr((string)$item['level'], 0, 16);
                 $messageStr = (string)$message;
@@ -646,7 +643,7 @@ class EmailService
 
             if (!empty($values)) {
                 $query = "INSERT INTO $table (level, context, message, meta, dedupe_hash, created_at, processed) VALUES " . implode(', ', $placeholders);
-                $wpdb->query($wpdb->prepare($query, $values));
+                $wpdb->query($wpdb->prepare($query, ...$values));
             }
         }
 
@@ -702,6 +699,7 @@ class EmailService
         }
 
         $limit = self::MAX_PER_RUN;
+        $adminEmail = get_option('admin_email');
 
         foreach ($items as $item) {
             if ($sentCount >= $limit) {
@@ -718,7 +716,6 @@ class EmailService
                 continue;
             }
 
-            $adminEmail = get_option('admin_email');
             if (empty($adminEmail)) {
                 // Should we keep it? Yes.
                 continue;
@@ -776,6 +773,7 @@ class EmailService
         }
 
         $remaining = [];
+        $adminEmail = get_option('admin_email');
 
         foreach ($queue as $item) {
             if ($sentCount >= self::MAX_PER_RUN) {
@@ -791,7 +789,6 @@ class EmailService
                 continue;
             }
 
-            $adminEmail = get_option('admin_email');
             if (empty($adminEmail)) {
                 Logger::log('warning', 'email_queue', 'No admin email configured; keeping notification in queue', ['context' => $context]);
                 $remaining[] = $item;
