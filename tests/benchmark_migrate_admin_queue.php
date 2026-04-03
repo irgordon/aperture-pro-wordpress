@@ -71,7 +71,7 @@ namespace {
 
         public function get_var($query) {
             if (strpos($query, "SHOW TABLES LIKE") !== false) {
-                return 'wp_ap_email_queue';
+                return 'wp_ap_admin_notifications';
             }
             return null;
         }
@@ -91,28 +91,27 @@ namespace {
     require_once __DIR__ . '/../src/Email/EmailService.php';
     use AperturePro\Email\EmailService;
 
-    function run_migrate_legacy_benchmark($count) {
+    function run_migrate_admin_benchmark($count) {
         global $wpdb, $mock_options;
 
         // Setup legacy queue
         $queue = [];
         for ($i = 0; $i < $count; $i++) {
             $queue[] = [
-                'to' => 'test@example.com',
-                'subject' => "Subject $i",
-                'body' => "Body $i",
-                'headers' => [],
-                'retries' => 0,
+                'level' => 'info',
+                'context' => 'test',
+                'message' => "Message $i",
+                'meta' => ['id' => $i],
                 'created_at' => current_time('mysql')
             ];
         }
-        $mock_options[EmailService::TRANSACTIONAL_QUEUE_OPTION] = $queue;
+        $mock_options[EmailService::ADMIN_QUEUE_OPTION] = $queue;
         $wpdb->insert_count = 0;
         $wpdb->query_count = 0;
 
-        echo "Migrating $count items from Legacy Transactional Queue...\n";
+        echo "Migrating $count items from Admin Queue...\n";
         $start = microtime(true);
-        EmailService::migrateLegacyQueue();
+        EmailService::migrateAdminQueue();
         $end = microtime(true);
 
         echo "Time: " . number_format($end - $start, 4) . "s\n";
@@ -122,6 +121,6 @@ namespace {
         return $end - $start;
     }
 
-    run_migrate_legacy_benchmark(100);
-    run_migrate_legacy_benchmark(1000);
+    run_migrate_admin_benchmark(100);
+    run_migrate_admin_benchmark(1000);
 }
