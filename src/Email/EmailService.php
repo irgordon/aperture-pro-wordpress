@@ -699,6 +699,7 @@ class EmailService
         }
 
         $limit = self::MAX_PER_RUN;
+        $adminEmail = get_option('admin_email');
 
         foreach ($items as $item) {
             if ($sentCount >= $limit) {
@@ -715,7 +716,6 @@ class EmailService
                 continue;
             }
 
-            $adminEmail = get_option('admin_email');
             if (empty($adminEmail)) {
                 // Should we keep it? Yes.
                 continue;
@@ -773,6 +773,7 @@ class EmailService
         }
 
         $remaining = [];
+        $adminEmail = get_option('admin_email');
 
         foreach ($queue as $item) {
             if ($sentCount >= self::MAX_PER_RUN) {
@@ -788,7 +789,6 @@ class EmailService
                 continue;
             }
 
-            $adminEmail = get_option('admin_email');
             if (empty($adminEmail)) {
                 Logger::log('warning', 'email_queue', 'No admin email configured; keeping notification in queue', ['context' => $context]);
                 $remaining[] = $item;
